@@ -206,11 +206,25 @@ pub struct RawDecor {
   #[serde(default)]
   pub color: Option<Field>,
   #[serde(default)]
+  pub color_end: Option<Field>,
+  #[serde(default)]
+  pub gradient_angle: Option<Field>,
+  #[serde(default)]
+  pub radius: Option<Field>,
+  #[serde(default)]
+  pub border: Option<Field>,
+  #[serde(default)]
   pub bold: Option<Field>,
   #[serde(default)]
   pub tracking: Option<Field>,
   #[serde(default)]
+  pub stroke: Option<Field>,
+  #[serde(default)]
+  pub stroke_width: Option<Field>,
+  #[serde(default)]
   pub width: Option<Field>,
+  #[serde(default)]
+  pub height: Option<Field>,
   #[serde(default)]
   pub anchor: Option<Field>,
   #[serde(default)]
@@ -257,6 +271,16 @@ pub struct RawDecorMotion {
   pub fade_ms: Option<Field>,
   #[serde(default)]
   pub phase: Option<Field>,
+  #[serde(default)]
+  pub typer_ms: Option<Field>,
+  #[serde(default)]
+  pub blink_ms: Option<Field>,
+  #[serde(default)]
+  pub ticker_ms: Option<Field>,
+  #[serde(default)]
+  pub ticker_width: Option<Field>,
+  #[serde(default)]
+  pub ticker_gap: Option<Field>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -300,6 +324,8 @@ pub struct RawField {
   pub caret: Option<Field>,
   #[serde(default)]
   pub caret_width: Option<Field>,
+  #[serde(default)]
+  pub caret_style: Option<Field>,
   #[serde(default)]
   pub icon: Option<Field>,
   #[serde(default)]
@@ -372,6 +398,8 @@ pub struct RawClock {
   #[serde(default)]
   pub style: Option<Field>,
   #[serde(default)]
+  pub layer: Option<Field>,
+  #[serde(default)]
   pub time_format: Option<Field>,
   #[serde(default)]
   pub date_format: Option<Field>,
@@ -408,6 +436,8 @@ pub struct RawClock {
 pub struct RawMedia {
   #[serde(default)]
   pub enabled: Option<Field>,
+  #[serde(default)]
+  pub layer: Option<Field>,
   #[serde(default)]
   pub anchor: Option<Field>,
   #[serde(default)]

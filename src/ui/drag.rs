@@ -41,6 +41,11 @@ pub struct HitRegion {
   pub draggable: bool,
   /// Clockwise rotation around the rectangle's centre, in degrees.
   pub rotation: f32,
+  /// Scale that turns this region's saved offset into pixels. Screen-space
+  /// regions use the window scale, so `None` keeps the historical behaviour.
+  /// A front widget lives in card space and stores `card_scale` here; without
+  /// it a drag would move slower than the pointer on a shrunken hero card.
+  pub drag_scale: Option<f32>,
 }
 
 impl HitRegion {
@@ -51,6 +56,7 @@ impl HitRegion {
       rect,
       draggable,
       rotation: 0.0,
+      drag_scale: None,
     }
   }
 
@@ -61,7 +67,16 @@ impl HitRegion {
       rect,
       draggable,
       rotation,
+      drag_scale: None,
     }
+  }
+
+  /// Records a different offset-to-pixel scale for this region. See
+  /// [`Self::drag_scale`].
+  #[must_use]
+  pub fn with_drag_scale(mut self, scale: f32) -> Self {
+    self.drag_scale = Some(scale);
+    self
   }
 
   /// Moves the region's centre around another pivot and adds the pivot's
@@ -284,7 +299,7 @@ impl Drag {
       start_rect: region.rect,
       start_offset,
       last_cursor: cursor,
-      scale: scale.max(0.25),
+      scale: region.drag_scale.unwrap_or(scale).max(0.25),
       moved: false,
     });
     true
@@ -558,6 +573,19 @@ mod tests {
     let now = drag.last_frame + Duration::from_secs(2);
     assert!(drag.advance(now, false));
     assert!(!drag.is_animating());
+  }
+
+  #[test]
+  fn a_card_space_widget_drag_matches_the_pointer() {
+    // A front widget stores card_scale in its hit region. The pointer moved
+    // 30 screen pixels, so the logical offset must grow by 30 / 0.5 = 60.
+    // Without that, the widget would trail the pointer on a shrunken card.
+    let regions =
+      vec![region("clock", Rect::new(80.0, 80.0, 20.0, 20.0), true).with_drag_scale(0.5)];
+    let mut drag = Drag::empty();
+    assert!(drag.begin(&regions, (90.0, 90.0), 1.0));
+    assert!(drag.move_to((120.0, 90.0), (400.0, 400.0)));
+    assert_eq!(drag.saved_offsets()["clock"], [60.0, 0.0]);
   }
 
   #[test]

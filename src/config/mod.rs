@@ -386,6 +386,13 @@ pub enum DecorSpec {
     color: Option<Rgb>,
     bold: bool,
     tracking: f32,
+    /// Optional outline colour. When set, the run is drawn around a small
+    /// radius before the fill pass, which keeps a thin HUD label readable over
+    /// busy artwork.
+    stroke: Option<Rgb>,
+    /// Outline radius in logical pixels, 0 to 12. A set `stroke` with a zero
+    /// width is resolved to 2 so the option never silently does nothing.
+    stroke_width: f32,
     anchor: Anchor,
     offset: (i32, i32),
     rotation: f32,
@@ -400,14 +407,35 @@ pub enum DecorSpec {
     rotation: f32,
     motion: DecorMotion,
   },
+  /// An anchored plate behind or over other decor. Unlike an image it needs no
+  /// asset; the colour falls back to the theme tint. `color_end` turns the fill
+  /// into a linear gradient at `gradient_angle`, and `border` adds a one-pixel
+  /// stroke. Typewriter and ticker motion do not apply, but blink still does.
+  Panel {
+    width: f32,
+    height: f32,
+    color: Option<Rgb>,
+    color_end: Option<Rgb>,
+    gradient_angle: f32,
+    radius: f32,
+    border: Option<Rgb>,
+    opacity: f32,
+    anchor: Anchor,
+    offset: (i32, i32),
+    rotation: f32,
+    motion: DecorMotion,
+  },
 }
 
 /// How a decor item moves. All values are optional in TOML; an item with no
 /// motion table stays completely static.
 ///
-/// The motions are deliberately additive so one ornament can spin, drift, and
-/// breathe at the same time. `phase` offsets the whole pattern in turns, which
-/// is how a row of particles avoids moving in lockstep.
+/// The transform motions are deliberately additive so one ornament can spin,
+/// drift, and breathe at the same time. `phase` offsets the whole pattern in
+/// turns, which is how a row of particles avoids moving in lockstep. The
+/// clock-like fields have two scopes: `blink_ms` gates both text and image
+/// decor, while `typer_ms` and the ticker pair only apply to text; images
+/// ignore those three.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DecorMotion {
   /// Continuous rotation in degrees per second.
@@ -430,6 +458,25 @@ pub struct DecorMotion {
   pub fade_ms: f32,
   /// Phase offset in turns, 0 to 1.
   pub phase: f32,
+  /// One-shot character reveal time for text decor, in milliseconds. Zero
+  /// disables it. The reveal is linear, because a typewriter should not ease:
+  /// easing makes the rhythm feel like it stutters near the end.
+  pub typer_ms: f32,
+  /// Square-wave blink period for text and image decor, in milliseconds. Zero
+  /// disables it. The first half of each period is visible, the second half is
+  /// not, which is the classic terminal cursor rhythm rather than a smooth
+  /// fade.
+  pub blink_ms: f32,
+  /// Time for a ticker to travel one full tile, in milliseconds. Zero disables
+  /// scrolling. A ticker overrides the typewriter on the same item, since a
+  /// marquee is already showing the whole run.
+  pub ticker_ms: f32,
+  /// Width of the ticker strip in logical pixels. Zero leaves the ticker off
+  /// even when `ticker_ms` is set, because there is nowhere to draw it.
+  pub ticker_width: i32,
+  /// Space between two copies of the ticker text, in logical pixels. The gap
+  /// is part of the tile, so the loop stays seamless.
+  pub ticker_gap: i32,
 }
 
 impl Default for DecorMotion {
@@ -445,6 +492,11 @@ impl Default for DecorMotion {
       fade: 0.0,
       fade_ms: 3000.0,
       phase: 0.0,
+      typer_ms: 0.0,
+      blink_ms: 0.0,
+      ticker_ms: 0.0,
+      ticker_width: 0,
+      ticker_gap: 64,
     }
   }
 }
@@ -460,6 +512,15 @@ pub struct DecorSample {
   pub scale: f32,
   /// Opacity multiplier from `fade`, 0 to 1.
   pub opacity: f32,
+  /// Portion of the text visible from the typewriter, 0 to 1. It is 1 when
+  /// `typer_ms` is off, so a static item never looks half-written.
+  pub reveal: f32,
+  /// Whether the blink wave is in its visible half. It is true when blink is
+  /// off, which keeps the common case free of an extra branch in the renderer.
+  pub blink_on: bool,
+  /// Fraction of one ticker tile already travelled, 0 to 1. Zero when the
+  /// ticker is off.
+  pub loop_frac: f32,
 }
 
 impl DecorMotion {
@@ -471,6 +532,9 @@ impl DecorMotion {
       || self.float != (0, 0)
       || self.pulse > 0.0
       || self.fade > 0.0
+      || self.typer_ms > 0.0
+      || self.blink_ms > 0.0
+      || (self.ticker_ms > 0.0 && self.ticker_width > 0)
   }
 
   /// Samples the motion at `elapsed` seconds since the UI started.
@@ -485,9 +549,13 @@ impl DecorMotion {
         angle: 0.0,
         scale: 1.0,
         opacity: 1.0,
+        reveal: 1.0,
+        blink_on: true,
+        loop_frac: 0.0,
       };
     }
     let turns = elapsed.max(0.0);
+    let ms = turns * 1000.0;
     let phase = self.phase.rem_euclid(1.0) * std::f32::consts::TAU;
     let wave = |period_ms: f32| std::f32::consts::TAU * turns / (period_ms.max(1.0) / 1000.0);
     // Every oscillation subtracts its value at phase alone, so `elapsed = 0`
@@ -505,6 +573,43 @@ impl DecorMotion {
       angle,
       scale: scale.clamp(0.1, 2.0),
       opacity: opacity.clamp(0.0, 1.0),
+      reveal: if self.typer_ms <= 0.0 {
+        1.0
+      } else {
+        (ms / self.typer_ms).clamp(0.0, 1.0)
+      },
+      blink_on: if self.blink_ms <= 0.0 {
+        true
+      } else {
+        ((ms / self.blink_ms) as u64).is_multiple_of(2)
+      },
+      loop_frac: if self.ticker_ms <= 0.0 {
+        0.0
+      } else {
+        (ms / self.ticker_ms) % 1.0
+      },
+    }
+  }
+}
+
+/// Shape of the focused input caret.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CaretStyle {
+  /// A thin vertical line, the familiar text-editing caret.
+  #[default]
+  Bar,
+  /// A filled rectangle as wide as a character cell. This is the arcade and
+  /// terminal look, and it stays readable on top of a busy HUD background.
+  Block,
+}
+
+impl CaretStyle {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "bar" => Some(Self::Bar),
+      "block" => Some(Self::Block),
+      _ => None,
     }
   }
 }
@@ -544,6 +649,10 @@ pub struct FieldConfig {
   pub focus: Option<Rgb>,
   pub caret: Option<Rgb>,
   pub caret_width: f32,
+  /// Bar or block. The block style uses the same ink height and a wider
+  /// derived width, so a theme can switch the whole form to an arcade caret
+  /// without measuring anything again.
+  pub caret_style: CaretStyle,
   /// Leading glyph inside the field: `"user"`, `"lock"`, or empty.
   pub icon: String,
   /// Zero derives the icon size from the field text size.
@@ -579,6 +688,7 @@ impl FieldConfig {
       focus: None,
       caret: None,
       caret_width: 0.0,
+      caret_style: CaretStyle::Bar,
       icon: String::new(),
       icon_size: 0.0,
       icon_gap: 0.0,
@@ -668,10 +778,40 @@ impl ClockStyle {
   }
 }
 
+/// Where a built-in widget paints relative to the login decor.
+///
+/// The default is the historical order: widgets first, then the card and its
+/// decor, then the form. A theme with a HUD bar made of decor can move the
+/// widget in front of that decor so the digits are not covered, while the
+/// form still paints afterwards and can never be obscured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WidgetLayer {
+  /// Paint before the decor pass.
+  #[default]
+  Behind,
+  /// Paint after the decor pass but before the form.
+  Front,
+}
+
+impl WidgetLayer {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "behind" => Some(Self::Behind),
+      "front" => Some(Self::Front),
+      _ => None,
+    }
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct ClockConfig {
   pub enabled: bool,
   pub style: ClockStyle,
+  /// Draw order relative to the login decor. Built-in widgets default to
+  /// `Behind`; `Front` lets a clock sit inside a themed HUD bar. Plugin
+  /// widgets always stay behind.
+  pub layer: WidgetLayer,
   /// jiff/strftime format. Validated at load time so a bad format cannot
   /// produce an empty or panicking clock at draw time.
   pub time_format: String,
@@ -701,6 +841,8 @@ pub struct MediaConfig {
   pub placement: Placement,
   pub size: f32,
   pub show_art: bool,
+  /// Draw order relative to the login decor. See [`ClockConfig::layer`].
+  pub layer: WidgetLayer,
   /// Optional colour override. `None` follows the theme.
   pub color: Option<Rgb>,
   /// Show MPRIS metadata before authentication. This is what makes the widget
@@ -1109,6 +1251,7 @@ impl Default for Config {
       clock: ClockConfig {
         enabled: true,
         style: ClockStyle::Digital,
+        layer: WidgetLayer::Behind,
         time_format: "%H:%M".to_string(),
         date_format: "%A, %B %d".to_string(),
         hour12: false,
@@ -1137,6 +1280,7 @@ impl Default for Config {
         },
         size: 16.0,
         show_art: true,
+        layer: WidgetLayer::Behind,
         color: None,
         show_before_login: true,
         keep_last: true,
@@ -1695,6 +1839,11 @@ phase = 0.25
       fade: 0.4,
       fade_ms: 4000.0,
       phase: 0.0,
+      typer_ms: 0.0,
+      blink_ms: 0.0,
+      ticker_ms: 0.0,
+      ticker_width: 0,
+      ticker_gap: 64,
     };
     let start = motion.sample(0.0);
     assert_eq!(start.offset, (0.0, 0.0));
@@ -1718,6 +1867,197 @@ phase = 0.25
     assert!((shifted.scale - 1.0).abs() < 0.001);
     assert!((shifted.opacity - 1.0).abs() < 0.001);
     assert!(!super::DecorMotion::default().active());
+  }
+
+  #[test]
+  fn decor_typer_reveal_is_linear_and_off_by_default() {
+    let motion = super::DecorMotion {
+      typer_ms: 1000.0,
+      ..super::DecorMotion::default()
+    };
+    assert_eq!(motion.sample(0.0).reveal, 0.0);
+    assert!((motion.sample(0.5).reveal - 0.5).abs() < 0.001);
+    assert_eq!(motion.sample(1.0).reveal, 1.0);
+    // Beyond the duration the text stays complete instead of restarting.
+    assert_eq!(motion.sample(4.0).reveal, 1.0);
+    // With the typer off, expect a full reveal at any age.
+    assert_eq!(super::DecorMotion::default().sample(99.0).reveal, 1.0);
+  }
+
+  #[test]
+  fn decor_blink_is_a_square_wave() {
+    let motion = super::DecorMotion {
+      blink_ms: 1000.0,
+      ..super::DecorMotion::default()
+    };
+    assert!(motion.sample(0.0).blink_on);
+    // The second half of the first period is dark.
+    assert!(!motion.sample(1.1).blink_on);
+    // The first half of the second period is visible again.
+    assert!(motion.sample(2.3).blink_on);
+    assert!(super::DecorMotion::default().sample(1.1).blink_on);
+  }
+
+  #[test]
+  fn decor_ticker_loop_fraction_wraps_within_one_tile() {
+    let motion = super::DecorMotion {
+      ticker_ms: 1000.0,
+      ticker_width: 300,
+      ..super::DecorMotion::default()
+    };
+    assert_eq!(motion.sample(0.0).loop_frac, 0.0);
+    assert!((motion.sample(0.25).loop_frac - 0.25).abs() < 0.001);
+    let wrapped = motion.sample(1.25).loop_frac;
+    assert!((wrapped - 0.25).abs() < 0.001);
+    assert!((0.0..1.0).contains(&wrapped));
+    assert_eq!(motion.sample(2.0).loop_frac, 0.0);
+    assert_eq!(super::DecorMotion::default().sample(1.0).loop_frac, 0.0);
+  }
+
+  #[test]
+  fn decor_motion_active_tracks_the_text_motions() {
+    let typer = super::DecorMotion {
+      typer_ms: 1.0,
+      ..super::DecorMotion::default()
+    };
+    assert!(typer.active());
+    let blink = super::DecorMotion {
+      blink_ms: 1.0,
+      ..super::DecorMotion::default()
+    };
+    assert!(blink.active());
+    let ticker = super::DecorMotion {
+      ticker_ms: 1.0,
+      ticker_width: 100,
+      ..super::DecorMotion::default()
+    };
+    assert!(ticker.active());
+    // A ticker with no width cannot draw itself, so it must not request
+    // animation frames that would only repaint the same pixels.
+    let nowhere = super::DecorMotion {
+      ticker_ms: 1.0,
+      ..super::DecorMotion::default()
+    };
+    assert!(!nowhere.active());
+  }
+
+  #[test]
+  fn text_decor_motions_and_block_caret_are_configurable() {
+    let path = temp_config(
+      "text-motions",
+      r##"
+[[login.decor]]
+kind = "text"
+text = "HUD"
+[login.decor.motion]
+typer_ms = 1200
+blink_ms = 900
+ticker_ms = 3000
+ticker_width = 300
+ticker_gap = 80
+
+[login.username]
+caret_style = "block"
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    match &loaded.config.login.decor[0] {
+      super::DecorSpec::Text { motion, .. } => {
+        assert_eq!(motion.typer_ms, 1200.0);
+        assert_eq!(motion.blink_ms, 900.0);
+        assert_eq!(motion.ticker_ms, 3000.0);
+        assert_eq!(motion.ticker_width, 300);
+        assert_eq!(motion.ticker_gap, 80);
+      }
+      other => panic!("expected a text decor, got {other:?}"),
+    }
+    assert_eq!(
+      loaded.config.login.username.caret_style,
+      super::CaretStyle::Block
+    );
+  }
+
+  #[test]
+  fn bad_text_motions_and_caret_style_fall_back_with_issues() {
+    let path = temp_config(
+      "bad-text-motions",
+      r##"
+[login.field]
+caret_style = "sparkle"
+
+[[login.decor]]
+kind = "text"
+text = "HUD"
+[login.decor.motion]
+typer_ms = -1
+blink_ms = 30000
+ticker_ms = 200000
+ticker_width = 9999
+ticker_gap = 9999
+"##,
+    );
+    let loaded = load(Some(&path));
+    let motion = match &loaded.config.login.decor[0] {
+      super::DecorSpec::Text { motion, .. } => *motion,
+      other => panic!("expected a text decor, got {other:?}"),
+    };
+    assert_eq!(motion.typer_ms, 0.0);
+    assert_eq!(motion.blink_ms, 0.0);
+    assert_eq!(motion.ticker_ms, 0.0);
+    assert_eq!(motion.ticker_width, 0);
+    assert_eq!(motion.ticker_gap, 64);
+    assert_eq!(
+      loaded.config.login.field.caret_style,
+      super::CaretStyle::Bar
+    );
+    assert_eq!(
+      loaded.config.login.username.caret_style,
+      super::CaretStyle::Bar
+    );
+    for key in [
+      "login.decor[0].motion.typer_ms",
+      "login.decor[0].motion.blink_ms",
+      "login.decor[0].motion.ticker_ms",
+      "login.decor[0].motion.ticker_width",
+      "login.decor[0].motion.ticker_gap",
+      "login.field.caret_style",
+    ] {
+      assert!(
+        loaded.issues.iter().any(|issue| issue.key == key),
+        "missing issue {key}: {:?}",
+        loaded.issues
+      );
+    }
+  }
+
+  #[test]
+  fn a_ticker_without_a_width_is_reported() {
+    let path = temp_config(
+      "ticker-width",
+      r##"
+[[login.decor]]
+kind = "text"
+text = "Breaking news"
+[login.decor.motion]
+ticker_ms = 3000
+"##,
+    );
+    let loaded = load(Some(&path));
+    let issue = loaded
+      .issues
+      .iter()
+      .find(|issue| issue.key == "login.decor[0].motion.ticker_width")
+      .unwrap_or_else(|| panic!("expected a ticker_width issue, got {:?}", loaded.issues));
+    assert!(issue.message.contains("ticker_width"), "{issue:?}");
+  }
+
+  #[test]
+  fn caret_style_defaults_to_bar() {
+    let config = Config::default();
+    assert_eq!(config.login.field.caret_style, super::CaretStyle::Bar);
+    assert_eq!(config.login.username.caret_style, super::CaretStyle::Bar);
+    assert_eq!(config.login.password.caret_style, super::CaretStyle::Bar);
   }
 
   #[test]
@@ -1948,5 +2288,201 @@ fps = 500
     );
     // The invalid override falls back without discarding the valid base.
     assert_eq!(loaded.config.background.fit, crate::layout::Fit::Cover);
+  }
+
+  #[test]
+  fn built_in_widgets_can_paint_in_front_of_decor() {
+    let path = temp_config(
+      "widget-layer-front",
+      r##"
+[clock]
+layer = "front"
+
+[media]
+layer = "front"
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    assert_eq!(loaded.config.clock.layer, super::WidgetLayer::Front);
+    assert_eq!(loaded.config.media.layer, super::WidgetLayer::Front);
+    assert_eq!(Config::default().clock.layer, super::WidgetLayer::Behind);
+    assert_eq!(Config::default().media.layer, super::WidgetLayer::Behind);
+  }
+
+  #[test]
+  fn an_unknown_widget_layer_falls_back_behind() {
+    let path = temp_config(
+      "widget-layer-bad",
+      r##"
+[clock]
+layer = "middle"
+
+[media]
+layer = 3
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert_eq!(loaded.config.clock.layer, super::WidgetLayer::Behind);
+    assert_eq!(loaded.config.media.layer, super::WidgetLayer::Behind);
+    assert!(loaded.issues.iter().any(|issue| issue.key == "clock.layer"));
+    assert!(loaded.issues.iter().any(|issue| issue.key == "media.layer"));
+  }
+
+  #[test]
+  fn panel_decor_parses_its_plate_keys() {
+    let path = temp_config(
+      "panel",
+      r##"
+[[login.decor]]
+kind = "panel"
+width = 320
+height = 96
+color = "#112233"
+color_end = "#445566"
+gradient_angle = 90
+radius = 6
+border = "#ffffff"
+opacity = 0.5
+anchor = "bottom-left"
+offset = [10, 20]
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    match &loaded.config.login.decor[0] {
+      super::DecorSpec::Panel {
+        width,
+        height,
+        color,
+        color_end,
+        gradient_angle,
+        radius,
+        border,
+        opacity,
+        anchor,
+        offset,
+        ..
+      } => {
+        assert_eq!(*width, 320.0);
+        assert_eq!(*height, 96.0);
+        assert_eq!(*color, Some(crate::color::Rgb::solid(0x11, 0x22, 0x33)));
+        assert_eq!(*color_end, Some(crate::color::Rgb::solid(0x44, 0x55, 0x66)));
+        assert_eq!(*gradient_angle, 90.0);
+        assert_eq!(*radius, 6.0);
+        assert_eq!(*border, Some(crate::color::Rgb::solid(0xff, 0xff, 0xff)));
+        assert_eq!(*opacity, 0.5);
+        assert_eq!(*anchor, Anchor::BottomLeft);
+        assert_eq!(*offset, (10, 20));
+      }
+      other => panic!("expected a panel decor, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn out_of_range_panel_size_falls_back() {
+    let path = temp_config(
+      "panel-size",
+      r##"
+[[login.decor]]
+kind = "panel"
+width = 1
+height = 99999
+"##,
+    );
+    let loaded = load(Some(&path));
+    match &loaded.config.login.decor[0] {
+      super::DecorSpec::Panel { width, height, .. } => {
+        assert_eq!(*width, 320.0);
+        assert_eq!(*height, 120.0);
+      }
+      other => panic!("expected a panel decor, got {other:?}"),
+    }
+    assert!(
+      loaded
+        .issues
+        .iter()
+        .any(|issue| issue.key == "login.decor[0].width")
+    );
+    assert!(
+      loaded
+        .issues
+        .iter()
+        .any(|issue| issue.key == "login.decor[0].height")
+    );
+  }
+
+  #[test]
+  fn a_panel_with_a_text_payload_reports_one_issue() {
+    let path = temp_config(
+      "panel-text",
+      r##"
+[[login.decor]]
+kind = "panel"
+width = 120
+height = 40
+text = "ignored"
+"##,
+    );
+    let loaded = load(Some(&path));
+    let panel_issues: Vec<_> = loaded
+      .issues
+      .iter()
+      .filter(|issue| issue.key.starts_with("login.decor[0]"))
+      .collect();
+    assert_eq!(panel_issues.len(), 1, "{:?}", loaded.issues);
+    assert_eq!(panel_issues[0].key, "login.decor[0].kind");
+    assert!(panel_issues[0].message.contains("bare panel"));
+    assert!(matches!(
+      &loaded.config.login.decor[0],
+      super::DecorSpec::Panel { .. }
+    ));
+  }
+
+  #[test]
+  fn text_stroke_parses_and_defaults_its_width() {
+    let path = temp_config(
+      "text-stroke",
+      r##"
+[[login.decor]]
+kind = "text"
+text = "Outline"
+stroke = "#000000"
+
+[[login.decor]]
+kind = "text"
+text = "No outline"
+stroke_width = 99
+"##,
+    );
+    let loaded = load(Some(&path));
+    match &loaded.config.login.decor[0] {
+      super::DecorSpec::Text {
+        stroke,
+        stroke_width,
+        ..
+      } => {
+        assert_eq!(*stroke, Some(crate::color::Rgb::solid(0, 0, 0)));
+        assert_eq!(*stroke_width, 2.0);
+      }
+      other => panic!("expected text decor, got {other:?}"),
+    }
+    match &loaded.config.login.decor[1] {
+      super::DecorSpec::Text {
+        stroke,
+        stroke_width,
+        ..
+      } => {
+        assert_eq!(*stroke, None);
+        assert_eq!(*stroke_width, 0.0);
+      }
+      other => panic!("expected text decor, got {other:?}"),
+    }
+    assert!(
+      loaded
+        .issues
+        .iter()
+        .any(|issue| issue.key == "login.decor[1].stroke_width")
+    );
   }
 }

@@ -11,11 +11,11 @@ use tiny_skia::Pixmap;
 use tracing::warn;
 
 use crate::color::Rgb;
-use crate::config::{BlurConfig, Config, DecorSpec, LoginConfig, MotionConfig};
+use crate::config::{BlurConfig, Config, DecorSpec, LoginConfig, MotionConfig, WidgetLayer};
 use crate::layout::Anchor;
 use crate::ui::image::{DecodeLimits, load_native};
 
-/// A cosmetic image or text run inside the login card.
+/// A cosmetic image, text run, or plate inside the login card.
 #[derive(Debug, Clone)]
 pub struct Decor {
   pub image: Option<Pixmap>,
@@ -25,11 +25,26 @@ pub struct Decor {
   pub bold: bool,
   pub tracking: f32,
   pub width: f32,
+  /// Panel height. Zero for text and images.
+  pub height: f32,
   pub opacity: f32,
   pub anchor: Anchor,
   pub offset: (i32, i32),
   pub rotation: f32,
   pub motion: crate::config::DecorMotion,
+  /// True for a `kind = "panel"` item. Panels have no image or text, so an
+  /// explicit flag keeps the renderer from guessing based on empty strings.
+  pub panel: bool,
+  /// Optional second panel colour. When set, the plate is a linear gradient
+  /// from `color` to `color_end` at `gradient_angle`.
+  pub color_end: Option<Rgb>,
+  pub gradient_angle: f32,
+  pub radius: f32,
+  pub border: Option<Rgb>,
+  /// Optional text outline. The renderer draws the same run eight times around
+  /// a small circle before the fill pass.
+  pub stroke: Option<Rgb>,
+  pub stroke_width: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -50,8 +65,9 @@ pub struct Theme {
   /// The full login layout. Kept here so the renderer and the app read the
   /// same resolved values without threading the whole `Config` around.
   pub login: LoginConfig,
-  /// Decorative images and text placed inside the login card. Images are
-  /// decoded once at startup; a missing file is skipped with a warning.
+  /// Decorative images, text runs, and panels placed inside the login card.
+  /// Images are decoded once at startup; a missing file is skipped with a
+  /// warning.
   pub decor: Vec<Decor>,
   pub blur: BlurConfig,
   pub corner_radius: f32,
@@ -59,6 +75,11 @@ pub struct Theme {
   pub noise: bool,
   pub motion: MotionConfig,
   pub low_power: bool,
+  /// Draw order for the built-in clock. The renderer reads this instead of the
+  /// whole clock config, so the theme stays a bag of resolved values.
+  pub clock_layer: WidgetLayer,
+  /// Draw order for the built-in media widget. See [`Self::clock_layer`].
+  pub media_layer: WidgetLayer,
 }
 
 impl Theme {
@@ -151,6 +172,8 @@ impl From<&Config> for Theme {
       noise: config.theme.noise,
       motion: config.motion.clone(),
       low_power: config.power.low_power,
+      clock_layer: config.clock.layer,
+      media_layer: config.media.layer,
     }
   }
 }
@@ -175,6 +198,8 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       color,
       bold,
       tracking,
+      stroke,
+      stroke_width,
       anchor,
       offset,
       rotation,
@@ -187,11 +212,19 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       bold: *bold,
       tracking: *tracking,
       width: 0.0,
+      height: 0.0,
       opacity: 1.0,
       anchor: *anchor,
       offset: *offset,
       rotation: *rotation,
       motion: *motion,
+      panel: false,
+      color_end: None,
+      gradient_angle: 0.0,
+      radius: 0.0,
+      border: None,
+      stroke: *stroke,
+      stroke_width: *stroke_width,
     }),
     DecorSpec::Image {
       path,
@@ -211,13 +244,58 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
         bold: false,
         tracking: 0.0,
         width: *width,
+        height: 0.0,
         opacity: *opacity,
         anchor: *anchor,
         offset: *offset,
         rotation: *rotation,
         motion: *motion,
+        panel: false,
+        color_end: None,
+        gradient_angle: 0.0,
+        radius: 0.0,
+        border: None,
+        stroke: None,
+        stroke_width: 0.0,
       })
     }
+    DecorSpec::Panel {
+      width,
+      height,
+      color,
+      color_end,
+      gradient_angle,
+      radius,
+      border,
+      opacity,
+      anchor,
+      offset,
+      rotation,
+      motion,
+    } => Some(Decor {
+      image: None,
+      text: String::new(),
+      size: 0.0,
+      // A panel without a colour is just a piece of the card tint. That keeps
+      // a quick `kind = "panel"` useful without forcing a hex value.
+      color: color.unwrap_or(config.theme.tint),
+      bold: false,
+      tracking: 0.0,
+      width: *width,
+      height: *height,
+      opacity: *opacity,
+      anchor: *anchor,
+      offset: *offset,
+      rotation: *rotation,
+      motion: *motion,
+      panel: true,
+      color_end: *color_end,
+      gradient_angle: *gradient_angle,
+      radius: *radius,
+      border: *border,
+      stroke: None,
+      stroke_width: 0.0,
+    }),
   }
 }
 

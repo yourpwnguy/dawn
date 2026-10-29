@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 16 16" shape-rendering="crispEdges">
-  <!-- Original 8-bit plus spark on a 16 by 16 pixel grid. -->
-  <path fill="#b8f34a" d="M7 1h2v5h-2zM5 6h2v1h-2zM9 6h2v1h-2zM3 7h3v3h-3zM10 7h3v3h-3zM2 8h1v1h-1zM13 8h1v1h-1zM6 9h1v2h-1zM9 9h1v2h-1zM5 10h1v1h-1zM7 10h2v5h-2zM10 10h1v1h-1z"/>
-  <path fill="#f2e14c" d="M7 6h2v4h-2zM6 7h1v2h-1zM9 7h1v2h-1z"/>
-</svg>
