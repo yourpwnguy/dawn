@@ -1,0 +1,113 @@
+[package]
+name = "dawn"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.89"
+description = "A GPU-composited greetd login greeter with animated wallpapers, themes, widgets, and declarative plugins"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["greetd", "greeter", "wayland", "login", "wallpaper"]
+categories = ["gui", "command-line-utilities"]
+exclude = [
+    "examples/wallpapers/*.mp4",
+    "examples/wallpapers/*.jpg",
+    "examples/wallpapers/*.gif",
+    "examples/themes/*/wallpaper.mp4",
+]
+
+[dependencies]
+# The greeter talks to greetd with length-prefixed JSON. We own the wire
+# types so unknown message shapes are a plain protocol error instead of an
+# opaque codec failure.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Config and plugin manifests. toml gives us spans, which is how config
+# warnings can point at the exact key and line (see config/error.rs).
+toml = "1.1"
+
+# Library-style errors in modules, anyhow only in main.
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Structured logging. A login greeter must be debuggable from journalctl.
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# CLI parsing and help output. The greeter has one run mode plus a small theme
+# manager, which is exactly the shape clap is good at.
+clap = { version = "4.5", features = ["derive"] }
+
+# Theme installs are staged in a temporary sibling directory and renamed into
+# place. tempfile handles the unique name and cleanup, including panic paths.
+tempfile = "3"
+
+# Theme bundles are validated and copied with an explicit symlink policy.
+# WalkDir is battle-tested and keeps that logic small.
+walkdir = "2"
+
+# Credentials live in zeroizing buffers; nothing else holds them.
+zeroize = "1.8"
+
+# Window creation. The GPU compositor and the software fallback share the same
+# winit surface and raw-window-handle version.
+winit = { version = "0.30", default-features = false, features = [
+    "rwh_06",
+    "x11",
+    "wayland",
+    "wayland-dlopen",
+] }
+# Software presentation is the boot-safe fallback. A greeter has to come up on
+# machines where a compositor or GPU driver is missing, so this path stays.
+# No kms backend: dawn only presents through a winit surface, and pulling in
+# libdrm would add a privileged device path the greeter never uses.
+softbuffer = { version = "0.4", default-features = false, features = [
+    "x11",
+    "x11-dlopen",
+    "wayland",
+    "wayland-dlopen",
+] }
+
+# GPU compositing. The UI is still rasterised by tiny-skia so the visual result
+# is identical, but the per-frame blend, wallpaper upload, and presentation
+# happen on the GPU. Vulkan and GL cover modern and older Linux machines; if
+# neither can create a device, the window falls back to softbuffer above.
+wgpu = { version = "=30.0.1", default-features = false, features = [
+    "std",
+    "parking_lot",
+    "wgsl",
+    "vulkan",
+    "gles",
+] }
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+
+# CPU drawing (rounded rects, gradients, image scaling) and text shaping.
+tiny-skia = { version = "0.12", features = ["png-format"] }
+cosmic-text = "0.19"
+png = "0.18"
+
+# Wallpaper and album-art decoding. Only the formats we document are enabled:
+# default features would pull in AVIF/EXR and a second image stack. The decoder
+# is always given explicit size and allocation limits before it runs.
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "gif",
+    "webp",
+] }
+
+# MPRIS media metadata. zbus is the requested async D-Bus client; it runs on a
+# dedicated thread and never on the render or auth paths.
+zbus = "6"
+
+# Local wall-clock time for the clock widget, with the system tz database.
+jiff = "0.2"
+
+# Terminal attributes for the TTY fallback (hide the password as it is typed).
+rustix = { version = "1.0", features = ["termios"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

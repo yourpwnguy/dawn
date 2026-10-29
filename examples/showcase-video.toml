@@ -1,0 +1,108 @@
+# dawn showcase: MP4 live wallpaper.
+#
+# This uses input.mp4, a 1920x1080, 7.3 second H.264 clip at 25 fps. Video
+# wallpapers are decoded by the system `ffmpeg` on a background thread and
+# streamed as raw RGBA frames, so only one full-resolution frame is resident.
+#
+# Install ffmpeg first. If it is missing, dawn falls back to the gradient and
+# logs a warning; it never blocks the login form.
+#
+# Quick preview:
+#
+#   dawn --config examples/showcase-video.toml --screenshot video.png --size 1920x1080
+#
+# Live playback with fake authentication:
+#
+#   dawn --config examples/showcase-video.toml --dry-run
+#
+# Set fullscreen = false if you want a normal window while testing.
+
+[ui]
+font = "Inter"
+font_size = 18
+fullscreen = true
+
+[login]
+greeting = "Welcome back"
+width = 416
+draggable = true
+
+[login.username]
+placeholder = "Username"
+
+[login.password]
+placeholder = "Password"
+
+[clock]
+enabled = true
+style = "digital"
+time_format = "%H:%M"
+date_format = "%A, %B %d"
+anchor = "top-center"
+offset = [0, 36]
+size = 62
+date_size = 18
+color = "#fff7f1"
+date_color = "#dcc3c9"
+draggable = true
+
+[media]
+enabled = true
+anchor = "bottom-left"
+offset = [38, 38]
+size = 14
+show_art = true
+color = "#f4dcd3"
+show_before_login = true
+keep_last = true
+draggable = true
+
+[background]
+kind = "video"
+image = "wallpapers/input.mp4"
+fit = "cover"
+# 0 follows the source frame rate. A positive value caps it.
+fps = 0
+memory_limit_mb = 128
+idle_pause_secs = 45
+color = "#0d060d"
+
+[theme]
+preset = "glass-dark"
+text = "#fff6f0"
+muted = "#d8c1c8"
+accent = "#f0b08a"
+error = "#ff9aa2"
+tint = "#120915e6"
+border = "#ffd8c02e"
+shadow = "#00000099"
+focus_ring = "#f0b08a"
+corner_radius = 24
+spacing = 1.1
+noise = true
+min_contrast = 4.5
+
+[theme.blur]
+# Hyprland-compatible backdrop blur: size is a screen-space radius and passes
+# is the dual Kawase depth. The rest are the compositor's finish controls.
+size = 16
+passes = 3
+noise = 0.0117
+contrast = 0.8916
+brightness = 0.8172
+vibrancy = 0.1696
+vibrancy_darkness = 0.0
+refresh_ms = 300
+
+[motion]
+enabled = true
+reduced = false
+boot_ms = 700
+focus_ms = 180
+shake_ms = 320
+drag_ms = 120
+
+# Drag positions are remembered per widget id. Remove this block if the
+# greeter user cannot write `$XDG_STATE_HOME/dawn/layout.toml`.
+[layout]
+save = true

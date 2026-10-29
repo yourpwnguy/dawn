@@ -1,0 +1,104 @@
+# dawn showcase: animated GIF.
+#
+# Drop your GIF in wallpapers/ and point image at it. This one uses output.gif,
+# a 1920x1080, 182-frame loop at 25 fps. Animated GIF/WebP are decoded on a
+# background thread one frame at a time, so the full-resolution source plays
+# without a multi-gigabyte frame cache.
+#
+# Quick preview:
+#
+#   dawn --config examples/showcase-gif.toml --screenshot gif.png --size 1920x1080
+#
+# Live playback with fake authentication:
+#
+#   dawn --config examples/showcase-gif.toml --dry-run
+#
+# Set fullscreen = false if you want a normal window while testing.
+
+[ui]
+font = "Inter"
+font_size = 18
+fullscreen = true
+
+[login]
+greeting = "Welcome back"
+width = 416
+draggable = true
+
+[login.username]
+placeholder = "Username"
+
+[login.password]
+placeholder = "Password"
+
+[clock]
+enabled = true
+style = "digital"
+time_format = "%H:%M"
+date_format = "%A, %B %d"
+anchor = "top-center"
+offset = [0, 36]
+size = 62
+date_size = 18
+color = "#fff7f1"
+date_color = "#dcc3c9"
+draggable = true
+
+[media]
+enabled = true
+anchor = "bottom-left"
+offset = [38, 38]
+size = 14
+show_art = true
+color = "#f4dcd3"
+show_before_login = true
+keep_last = true
+draggable = true
+
+[background]
+kind = "animated"
+image = "wallpapers/output.gif"
+fit = "cover"
+# 0 follows the source frame rate. A positive value caps it.
+fps = 0
+memory_limit_mb = 128
+idle_pause_secs = 45
+color = "#0d060d"
+
+[theme]
+preset = "glass-dark"
+text = "#fff6f0"
+muted = "#d8c1c8"
+accent = "#f0b08a"
+error = "#ff9aa2"
+tint = "#120915e6"
+border = "#ffd8c02e"
+shadow = "#00000099"
+focus_ring = "#f0b08a"
+corner_radius = 24
+spacing = 1.1
+noise = true
+min_contrast = 4.5
+
+[theme.blur]
+# Hyprland-compatible backdrop blur: size is a screen-space radius and passes
+# is the dual Kawase depth. The rest are the compositor's finish controls.
+size = 16
+passes = 3
+noise = 0.0117
+contrast = 0.8916
+brightness = 0.8172
+vibrancy = 0.1696
+vibrancy_darkness = 0.0
+refresh_ms = 300
+
+[motion]
+enabled = true
+reduced = false
+boot_ms = 700
+focus_ms = 180
+shake_ms = 320
+drag_ms = 120
+
+[layout]
+save = true

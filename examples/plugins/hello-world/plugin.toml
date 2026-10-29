@@ -1,0 +1,26 @@
+# A minimal v1 plugin: one static label and one clock.
+#
+# Copy the containing directory into /usr/share/dawn/plugins/ or into the
+# per-user plugin directory listed in [plugins].dirs, then run
+# `dawn --check-config`.
+
+api_version = 1
+name = "Hello World"
+version = "1.0.0"
+description = "A small label and a seconds clock."
+
+[[widget]]
+kind = "text"
+text = "dawn"
+size = 22
+color = "#8b949e"
+anchor = "top-right"
+offset = [32, 24]
+
+[[widget]]
+kind = "clock"
+format = "%H:%M:%S"
+size = 14
+color = "#6e7681"
+anchor = "bottom-right"
+offset = [32, 24]

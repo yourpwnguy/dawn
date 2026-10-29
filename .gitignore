@@ -1,0 +1,9 @@
+/target
+/dist
+/pkg
+*.swp
+*.swo
+.DS_Store
+.opencode/
+.ruff_cache/
+dawn-preview.png

@@ -1,0 +1,6 @@
+# dawn follows the stable Rust channel. The crate itself declares a 1.89 MSRV
+# in Cargo.toml, so older toolchains still work when the features allow it.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

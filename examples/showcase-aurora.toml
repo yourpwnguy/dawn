@@ -1,0 +1,102 @@
+# dawn showcase: Midnight Aurora.
+#
+# A complete, opinionated config. It is the same schema as examples/config.toml,
+# just tuned for looks: a custom aurora wallpaper, a champagne accent, and a
+# wider card with more breathing room.
+#
+# Quick preview without a display server:
+#
+#   dawn --config examples/showcase-aurora.toml --screenshot aurora.png --size 1920x1080
+#
+# Live preview with fake authentication (any non-empty password works):
+#
+#   dawn --config examples/showcase-aurora.toml --dry-run
+#
+# The wallpaper path is relative to this file, so keep wallpapers/ next to it.
+# Set fullscreen = false below if you want a normal window while testing.
+
+[ui]
+font = "Inter"
+font_size = 18
+fullscreen = true
+
+[login]
+greeting = "Welcome back"
+width = 416
+draggable = true
+
+[login.username]
+placeholder = "Username"
+
+[login.password]
+placeholder = "Password"
+
+[clock]
+enabled = true
+style = "digital"
+time_format = "%H:%M"
+date_format = "%A, %B %d"
+anchor = "top-center"
+offset = [0, 36]
+size = 62
+date_size = 18
+color = "#f2fbff"
+date_color = "#b8c6d8"
+draggable = true
+
+[media]
+enabled = true
+anchor = "bottom-left"
+offset = [38, 38]
+size = 14
+show_art = true
+color = "#d7ecff"
+show_before_login = true
+keep_last = true
+draggable = true
+
+[background]
+# A still WebP rendered from wallpapers/aurora.svg. The solid colour is also
+# the fallback if the file is missing or corrupt.
+kind = "image"
+image = "wallpapers/aurora.webp"
+fit = "cover"
+color = "#050a12"
+
+[theme]
+preset = "glass-dark"
+text = "#f4fbff"
+muted = "#b3bfd0"
+accent = "#e7cf9c"
+error = "#ff9aa2"
+tint = "#060d18e0"
+border = "#f4e2bb2e"
+shadow = "#00000099"
+focus_ring = "#e7cf9c"
+corner_radius = 24
+spacing = 1.1
+noise = true
+min_contrast = 4.5
+
+[theme.blur]
+# Hyprland-compatible backdrop blur: size is a screen-space radius and passes
+# is the dual Kawase depth. The rest are the compositor's finish controls.
+size = 16
+passes = 3
+noise = 0.0117
+contrast = 0.8916
+brightness = 0.8172
+vibrancy = 0.1696
+vibrancy_darkness = 0.0
+refresh_ms = 300
+
+[motion]
+enabled = true
+reduced = false
+boot_ms = 700
+focus_ms = 180
+shake_ms = 320
+drag_ms = 120
+
+[layout]
+save = true

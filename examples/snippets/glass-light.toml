@@ -1,0 +1,31 @@
+# A sample light theme.
+#
+# dawn reads a single config file, so merge this table into your config.toml
+# instead of passing it as a separate file. The preset supplies a light
+# background colour automatically when [background].color is unset, which is
+# what makes this usable over a bright wallpaper or a daylight photo.
+
+[theme]
+preset = "glass-light"
+text = "#101318"
+muted = "#4d5665"
+accent = "#1f6feb"
+error = "#b42318"
+tint = "#f7f9fcd2"
+border = "#ffffffcc"
+shadow = "#00000033"
+focus_ring = "#1f6feb"
+corner_radius = 18
+spacing = 1.0
+noise = true
+min_contrast = 4.5
+
+[theme.blur]
+size = 8
+passes = 3
+noise = 0.0117
+contrast = 0.8916
+brightness = 0.8172
+vibrancy = 0.1696
+vibrancy_darkness = 0.0
+refresh_ms = 250
