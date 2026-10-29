@@ -1,0 +1,12 @@
+# /etc/greetd/config.toml
+#
+# X11 fallback. This is less reliable than cage because a bare X server does
+# not always give the new greeter window keyboard focus. Prefer cage whenever
+# the machine can run Wayland.
+
+[terminal]
+vt = 1
+
+[default_session]
+command = "xinit /usr/local/bin/dawn -- :1 vt1"
+user = "greeter"

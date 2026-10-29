@@ -1,0 +1,11 @@
+# /etc/greetd/config.toml
+#
+# Run dawn inside cage. cage is the kiosk compositor, dawn is the greeter
+# window inside it. Adjust the dawn path if you installed to another prefix.
+
+[terminal]
+vt = 1
+
+[default_session]
+command = "cage -s -- /usr/local/bin/dawn"
+user = "greeter"
