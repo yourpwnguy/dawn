@@ -9,11 +9,11 @@ presented through wgpu when a GPU is available, or softbuffer when it is not. If
 there is no display server at all, dawn falls back to a text prompt so the
 machine stays reachable.
 
-| Hu Tao | Genshin |
-| --- | --- |
-| [![Hu Tao theme in motion](docs/dawn-hutao.webp)](docs/dawn-hutao.mp4) | [![Genshin theme in motion](docs/dawn-genshin.webp)](docs/dawn-genshin.mp4) |
+| Hu Tao | Genshin | Kinich |
+| --- | --- | --- |
+| [![Hu Tao theme in motion](docs/dawn-hutao.webp)](docs/dawn-hutao.mp4) | [![Genshin theme in motion](docs/dawn-genshin.webp)](docs/dawn-genshin.mp4) | [![Kinich theme in motion](docs/dawn-kinich.webp)](docs/dawn-kinich.mp4) |
 
-Two bundled themes in motion. Click a preview to open the 60 fps clip.
+Three bundled themes in motion. Click a preview to open the 60 fps clip.
 
 ## How it works
 

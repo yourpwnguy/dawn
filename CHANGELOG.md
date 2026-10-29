@@ -12,6 +12,16 @@ All notable changes to dawn are recorded here.
 - `--theme ID` and `[theme].package = "ID"` for selecting a bundle.
 - `DAWN_THEME_DIRS` for extra read-only stores, including NixOS.
 - A Nix flake and package expression.
+- HUD text decor motions: a one-shot typewriter reveal, square-wave blink, and a
+  seamless horizontal ticker with configurable width and gap.
+- A `caret_style = "block"` option for input fields, alongside the existing bar
+  caret.
+- `layer = "behind" | "front"` on `[clock]` and `[media]`, so a built-in widget
+  can paint inside a decor-built HUD bar without covering the form.
+- A `kind = "panel"` decor item: an anchored solid or gradient plate with an
+  optional border, opacity, and the usual motion table.
+- Outlined text decor with `stroke` and `stroke_width`, drawn as an eight-copy
+  ring behind the fill pass.
 
 ### Security
 
@@ -23,12 +33,13 @@ All notable changes to dawn are recorded here.
 
 ### Changed
 
+- The kinich example theme is rebuilt as a full-bleed contract-terminal HUD.
 - Installation is binary-only. The shell installers and the `make install`
   targets are gone; distro package steps are documented for Arch, Debian,
   Ubuntu, and Nix.
 - The example themes moved to self-contained bundles under `examples/themes/`.
-- README previews are animated clips of the Hu Tao and Genshin example themes,
-  with full 60 fps MP4s under `docs/`.
+- README previews are animated clips of the Hu Tao, Genshin, and Kinich example
+  themes, with full 60 fps MP4s under `docs/`.
 - CLI parsing uses clap.
 
 ## 0.2.0 - 2026-10-29
