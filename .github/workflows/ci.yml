@@ -71,7 +71,18 @@ jobs:
         run: cargo build --release --locked
 
       - name: config check
-        run: ./target/release/dawn --config examples/config.toml --check-config
+        # The runner has no desktop sessions, and dawn refuses to call a
+        # config valid when a login would have nothing to start. Create one
+        # minimal session so this step checks the config, not the image.
+        run: |
+          sudo mkdir -p /usr/share/wayland-sessions
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Type=Application' \
+            'Name=CI Session' \
+            'Exec=/bin/true' \
+            | sudo tee /usr/share/wayland-sessions/dawn-ci.desktop >/dev/null
+          ./target/release/dawn --config examples/config.toml --check-config
 
       - name: theme store check
         run: |
