@@ -14,7 +14,9 @@ use std::time::{Duration, Instant};
 use cosmic_text::Align;
 
 use crate::color::Rgb;
-use crate::config::{ButtonConfig, ButtonEffect, HoverReveal, LoginLayout, SurfaceStyle};
+use crate::config::{
+  ButtonConfig, ButtonEffect, CaretStyle, HoverReveal, LoginLayout, SurfaceStyle, WidgetLayer,
+};
 use crate::plugin::{Plugin, Widget};
 use crate::ui::anim::{cycle, ease_out_cubic};
 use crate::ui::background::BackgroundView;
@@ -103,11 +105,11 @@ pub fn paint_overlay(
     canvas,
     text,
     scene,
-    screen,
-    scale,
+    WidgetFrame::screen(screen, scale),
     primary,
     muted,
     accent,
+    WidgetLayer::Behind,
     &mut regions,
   );
   draw_card(
@@ -308,6 +310,20 @@ fn field_block_height(
   label + label_gap + field_height(theme, field, scale)
 }
 
+/// Card geometry and colours shared by the chrome and form passes. Keeping the
+/// two passes separate is what lets a front widget paint between the decor and
+/// the form without rotating with the card.
+struct CardPaint<'a> {
+  card: Rect,
+  card_scale: f32,
+  metrics: &'a Metrics,
+  primary: Rgb,
+  muted: Rgb,
+  error: Rgb,
+  accent: Rgb,
+  focus: Rgb,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_card(
   canvas: &mut Canvas,
@@ -359,62 +375,123 @@ fn draw_card(
   let x = base_x + scene.motion.card_dx + drag_x;
   let y = base_y + scene.motion.card_dy + drag_y;
   let card = Rect::new(x, y, m.card_w, height);
+  let paint = CardPaint {
+    card,
+    card_scale,
+    metrics: &m,
+    primary,
+    muted,
+    error,
+    accent,
+    focus,
+  };
 
   if login.rotation.abs() <= 0.01 {
-    draw_card_body(
-      canvas, text, glass, scene, card, card_scale, &m, primary, muted, error, accent, focus,
-      regions,
-    );
+    draw_card_chrome(canvas, text, glass, scene, &paint, regions);
+    draw_front_widgets(canvas, text, scene, &paint, regions);
+    draw_card_form(canvas, text, scene, &paint, regions);
     return;
   }
 
-  // Rotate the whole card as one layer. Nested field/button rotations still
-  // compose inside the layer, and every hit region is moved around the card
-  // centre afterwards so the pointer keeps matching the pixels.
+  // Rotate the card in up to two layers so a front widget can land between the
+  // decor and the form in screen space. Painting the widget inside either
+  // layer would rotate its pixels away from the hit region the pointer sees.
   let center = card.center();
   let reach = (card.w.hypot(card.h) / 2.0 + 32.0 * card_scale).max(64.0);
   let bounds = Rect::new(center.0 - reach, center.1 - reach, reach * 2.0, reach * 2.0);
-  let width = bounds.w.ceil() as u32;
-  let height = bounds.h.ceil() as u32;
-  let Some(mut layer) = Canvas::region(width, height, (bounds.x, bounds.y))
+  let layer_w = bounds.w.ceil() as u32;
+  let layer_h = bounds.h.ceil() as u32;
+  let Some(mut chrome_layer) = Canvas::region(layer_w, layer_h, (bounds.x, bounds.y))
     .map(|layer| layer.with_screen(canvas.screen()))
   else {
-    draw_card_body(
-      canvas, text, glass, scene, card, card_scale, &m, primary, muted, error, accent, focus,
-      regions,
-    );
+    // No intermediate surface: fall back to the unrotated order. The card
+    // still paints, so a failed allocation never blanks the login form.
+    draw_card_chrome(canvas, text, glass, scene, &paint, regions);
+    draw_front_widgets(canvas, text, scene, &paint, regions);
+    draw_card_form(canvas, text, scene, &paint, regions);
     return;
   };
-  let mut inner = Vec::new();
-  draw_card_body(
-    &mut layer, text, glass, scene, card, card_scale, &m, primary, muted, error, accent, focus,
-    &mut inner,
+  let mut chrome_regions = Vec::new();
+  draw_card_chrome(
+    &mut chrome_layer,
+    text,
+    glass,
+    scene,
+    &paint,
+    &mut chrome_regions,
   );
-  canvas.draw_layer(&layer, center, login.rotation, 1.0);
-  for region in inner {
+  if !has_front_widgets(scene) {
+    // No widget asked for the front layer, so the card can stay a single
+    // layer exactly like before. This keeps the common rotated card cheap.
+    draw_card_form(&mut chrome_layer, text, scene, &paint, &mut chrome_regions);
+    canvas.draw_layer(&chrome_layer, center, login.rotation, 1.0);
+    for region in chrome_regions {
+      regions.push(region.rotated_around(center, login.rotation));
+    }
+    return;
+  }
+  canvas.draw_layer(&chrome_layer, center, login.rotation, 1.0);
+  for region in chrome_regions {
+    regions.push(region.rotated_around(center, login.rotation));
+  }
+
+  draw_front_widgets(canvas, text, scene, &paint, regions);
+
+  let Some(mut form_layer) = Canvas::region(layer_w, layer_h, (bounds.x, bounds.y))
+    .map(|layer| layer.with_screen(canvas.screen()))
+  else {
+    // The form still has to paint even if the second layer cannot be
+    // allocated. It loses the card rotation in that unlikely case, which is
+    // better than hiding the inputs.
+    draw_card_form(canvas, text, scene, &paint, regions);
+    return;
+  };
+  let mut form_regions = Vec::new();
+  draw_card_form(&mut form_layer, text, scene, &paint, &mut form_regions);
+  canvas.draw_layer(&form_layer, center, login.rotation, 1.0);
+  for region in form_regions {
     regions.push(region.rotated_around(center, login.rotation));
   }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn draw_card_body(
+/// Paints the built-in widgets that opted into the front layer. Plugin widgets
+/// never take this path: they always stay behind so a third-party widget
+/// cannot cover the login form.
+fn draw_front_widgets(
+  canvas: &mut Canvas,
+  text: &mut TextEngine,
+  scene: &Scene<'_>,
+  paint: &CardPaint<'_>,
+  regions: &mut Vec<HitRegion>,
+) {
+  draw_plugins(
+    canvas,
+    text,
+    scene,
+    WidgetFrame::card(paint.card, paint.card_scale),
+    paint.primary,
+    paint.muted,
+    paint.accent,
+    WidgetLayer::Front,
+    regions,
+  );
+}
+
+/// Paints the card surface and its decor. This is the half of the card that a
+/// front widget is allowed to cover.
+fn draw_card_chrome(
   canvas: &mut Canvas,
   text: &mut TextEngine,
   glass: &GlassCache,
   scene: &Scene<'_>,
-  card: Rect,
-  card_scale: f32,
-  m: &Metrics,
-  primary: Rgb,
-  muted: Rgb,
-  error: Rgb,
-  accent: Rgb,
-  focus: Rgb,
+  paint: &CardPaint<'_>,
   regions: &mut Vec<HitRegion>,
 ) {
-  let view = scene.view;
   let login = &scene.theme.login;
   let hero = login.layout == LoginLayout::Hero;
+  let card = paint.card;
+  let card_scale = paint.card_scale;
+  let m = paint.metrics;
   match login.surface {
     SurfaceStyle::None => {}
     SurfaceStyle::Glass if hero => {
@@ -463,6 +540,35 @@ fn draw_card_body(
   // one at zero avoids rotating the card's own hit box twice.
   regions.push(HitRegion::new("login", card, login.draggable));
   draw_login_decor(canvas, text, scene, card, card_scale);
+}
+
+/// Paints the interactive form: fields, button, status, session row, hints, and
+/// the card's drag highlight. A front widget paints underneath this pass, so
+/// the form always wins the top layer.
+fn draw_card_form(
+  canvas: &mut Canvas,
+  text: &mut TextEngine,
+  scene: &Scene<'_>,
+  paint: &CardPaint<'_>,
+  regions: &mut Vec<HitRegion>,
+) {
+  let view = scene.view;
+  let login = &scene.theme.login;
+  let hero = login.layout == LoginLayout::Hero;
+  let card = paint.card;
+  let card_scale = paint.card_scale;
+  let m = paint.metrics;
+  let (primary, muted, error, accent, focus) = (
+    paint.primary,
+    paint.muted,
+    paint.error,
+    paint.accent,
+    paint.focus,
+  );
+
+  // The hero tab belongs to the card chrome, but it paints at the start of the
+  // form pass so a front widget lands directly after the decor and cannot
+  // cover the tab either.
   if hero {
     draw_login_tab(canvas, text, scene, card, card_scale, primary);
   }
@@ -731,7 +837,8 @@ fn draw_login_tab(
 }
 
 /// Draws the configured decor inside the card. Images are already decoded, so
-/// this only card_scales them to their display width. The form paints afterwards,
+/// this only card_scales them to their display width. Items paint in list
+/// order, so a later item covers an earlier one. The form paints afterwards,
 /// which means a decor item can never cover an input or the submit button.
 fn draw_login_decor(
   canvas: &mut Canvas,
@@ -757,7 +864,52 @@ fn draw_login_decor(
       ((item.offset.0 as f32 + sample.offset.0) * card_scale).round() as i32,
       ((item.offset.1 as f32 + sample.offset.1) * card_scale).round() as i32,
     );
-    if let Some(image) = &item.image {
+    if item.panel {
+      // Typer and ticker only have a text run to work on, so a panel simply
+      // ignores them and stays static. Blink is different: it gates the whole
+      // plate, which is how a theme gets a radar blip.
+      if !sample.blink_on {
+        continue;
+      }
+      let width = item.width * card_scale;
+      let height = item.height * card_scale;
+      if width <= 0.0 || height <= 0.0 {
+        continue;
+      }
+      let (x, y) = item.anchor.place((card.w, card.h), (width, height), offset);
+      let rect = Rect::new(card.x + x, card.y + y, width, height);
+      paint_transformed(
+        canvas,
+        rect,
+        rect.center(),
+        angle,
+        sample.scale,
+        opacity,
+        |layer, _| {
+          let radius = item.radius * card_scale;
+          // Use the same primitive as a field background. A solid fill skips
+          // the shader entirely, which keeps the common plate cheap.
+          if let Some(end) = item.color_end {
+            layer.linear_gradient_stops(
+              rect,
+              radius,
+              item.gradient_angle,
+              &[(0.0, item.color), (1.0, end)],
+            );
+          } else {
+            layer.fill(rect, item.color, radius);
+          }
+          if let Some(border) = item.border {
+            layer.stroke(rect, border, radius, 1.0);
+          }
+        },
+      );
+    } else if let Some(image) = &item.image {
+      // Blink is a hard visibility gate for images too, so a chip or cursor
+      // can strobe without fading. Same rule as the panel and text branches.
+      if !sample.blink_on {
+        continue;
+      }
       let width = item.width * card_scale;
       if width <= 0.0 || image.width() == 0 {
         continue;
@@ -767,33 +919,144 @@ fn draw_login_decor(
       let rect = Rect::new(card.x + x, card.y + y, width, height);
       canvas.image_transformed(image, rect, angle, sample.scale, opacity);
     } else {
+      // Blink is a hard visibility gate, not a fade: a terminal cursor is
+      // either there or it is not. Do this before any measuring so a hidden
+      // item costs nothing and cannot leave a partial paint behind.
+      if !sample.blink_on {
+        continue;
+      }
       let size = item.size * card_scale;
-      let (width, height) = text.measure(&item.text, size, card.w.max(1.0), false);
-      let (x, y) = item
-        .anchor
-        .place((card.w, card.h), (width.max(1.0), height), offset);
-      let rect = Rect::new(card.x + x, card.y + y, width.max(1.0), height);
       let style = if item.bold {
         Style::new(size, item.color).bold()
       } else {
         Style::new(size, item.color)
-      };
-      paint_transformed(
-        canvas,
-        rect,
-        rect.center(),
-        angle,
-        sample.scale,
-        opacity,
-        |layer, _| {
-          text.draw_line(
-            layer,
-            &item.text,
-            style.tracking(item.tracking),
-            Area::new(rect.x, rect.y, width.max(1.0)),
-          );
-        },
-      );
+      }
+      .tracking(item.tracking);
+      if item.motion.ticker_ms > 0.0 && item.motion.ticker_width > 0 {
+        // A ticker repeats a whole run at a fixed cadence, so it keeps the
+        // fill style only. Stroke is deliberately ignored for tickered items.
+        // The strip is a fixed window placed like a normal text run. We build
+        // one tile per text run plus the configured gap, then repeat the tile
+        // far enough to cover the window at the current scroll offset. The
+        // tile keeps its exact measured width so the wrap at `loop_frac = 0`
+        // lands on the same pixels as the previous frame.
+        let strip_w = (item.motion.ticker_width as f32 * card_scale).max(1.0);
+        // Measure with the style we paint with. The default measurement is
+        // normal-weight and untracked, so a bold or letter-spaced ticker would
+        // come back narrower than the glyphs and adjacent tiles would collide.
+        let (tile_w, height) = text.measure_with(
+          &item.text,
+          size,
+          f32::MAX / 4.0,
+          false,
+          style.weight,
+          style.tracking,
+        );
+        let tile = (tile_w + item.motion.ticker_gap as f32 * card_scale).max(1.0);
+        let (x, y) = item
+          .anchor
+          .place((card.w, card.h), (strip_w, height), offset);
+        let strip = Rect::new(card.x + x, card.y + y, strip_w, height);
+        let scroll = sample.loop_frac * tile;
+        let tiles = ((strip_w + scroll) / tile).ceil() as usize;
+        paint_transformed(
+          canvas,
+          strip,
+          strip.center(),
+          angle,
+          sample.scale,
+          opacity,
+          |layer, _| {
+            for k in 0..=tiles {
+              let tile_x = strip.x + (k as f32) * tile - scroll;
+              text.draw_line(
+                layer,
+                &item.text,
+                style,
+                Area::new(tile_x, strip.y, tile_w.max(1.0)).clip(strip),
+              );
+            }
+          },
+        );
+      } else {
+        // Typewriter: reveal whole characters, never partial glyphs. `round`
+        // means the last character appears once we are past its midpoint,
+        // which keeps the cadence even for short strings. A tickered item
+        // never reaches this branch because a marquee already shows the run.
+        let shown = if item.motion.typer_ms > 0.0 {
+          let count = item.text.chars().count();
+          let visible = (sample.reveal * count as f32).round() as usize;
+          if visible == 0 {
+            continue;
+          }
+          item.text.chars().take(visible).collect::<String>()
+        } else {
+          item.text.clone()
+        };
+        // Same reasoning as the ticker: anchor the static and typer text by
+        // its painted width, not the default-style width.
+        let (width, height) = text.measure_with(
+          &shown,
+          size,
+          card.w.max(1.0),
+          false,
+          style.weight,
+          style.tracking,
+        );
+        let (x, y) = item
+          .anchor
+          .place((card.w, card.h), (width.max(1.0), height), offset);
+        let rect = Rect::new(card.x + x, card.y + y, width.max(1.0), height);
+        // The outline sits outside the fill bounds. Grow the layer by the
+        // stroke radius so the eight offset copies are not clipped at the
+        // edge of the text rectangle.
+        let stroke_radius = if item.stroke.is_some() {
+          item.stroke_width * card_scale
+        } else {
+          0.0
+        };
+        let bounds = if stroke_radius > 0.0 {
+          rect.inset(-stroke_radius)
+        } else {
+          rect
+        };
+        paint_transformed(
+          canvas,
+          bounds,
+          rect.center(),
+          angle,
+          sample.scale,
+          opacity,
+          |layer, _| {
+            if let Some(stroke) = item.stroke {
+              // Eight copies on a 45-degree ring is enough for a clean
+              // outline without a real glyph-stroking pass. The fill goes on
+              // top afterwards, so only the outer half of each copy shows.
+              let stroke_style = Style {
+                color: stroke,
+                ..style
+              };
+              let step = std::f32::consts::FRAC_PI_4;
+              for index in 0..8 {
+                let radians = step * index as f32;
+                let (dx, dy) = (radians.cos() * stroke_radius, radians.sin() * stroke_radius);
+                text.draw_line(
+                  layer,
+                  &shown,
+                  stroke_style,
+                  Area::new(rect.x + dx, rect.y + dy, width.max(1.0)),
+                );
+              }
+            }
+            text.draw_line(
+              layer,
+              &shown,
+              style,
+              Area::new(rect.x, rect.y, width.max(1.0)),
+            );
+          },
+        );
+      }
     }
   }
 }
@@ -1513,14 +1776,26 @@ fn draw_field(
   if field.focused && field.caret_visible {
     let prefix: String = shown.chars().take(field.cursor).collect();
     let caret_x = text_x + text.line_width(&prefix, base);
-    if caret_x < rect.right() - inset * 0.5 {
-      let caret_color = field.config.caret.unwrap_or(field.accent);
-      let caret_width = if field.config.caret_width > 0.0 {
-        field.config.caret_width * scale
-      } else {
-        (base * 0.12).max(1.0)
-      };
+    let caret_color = field.config.caret.unwrap_or(field.accent);
+    let caret_width = if field.config.caret_width > 0.0 {
+      field.config.caret_width * scale
+    } else {
+      match field.config.caret_style {
+        CaretStyle::Bar => (base * 0.12).max(1.0),
+        // A block stands in for one character cell, so it is much wider than
+        // a bar. The floor of two pixels keeps it visible on tiny fields.
+        CaretStyle::Block => (base * 0.55).max(2.0),
+      }
+    };
+    // The whole caret has to fit inside the field, not just its left edge.
+    // A block is wide enough that the old left-edge check would let it paint
+    // over the border, so use the right edge of the caret here.
+    if caret_x + caret_width <= rect.right() - inset * 0.5 {
       let caret_height = (ink_bottom - ink_top).max(base * 0.8) + base * 0.1;
+      let caret_radius = match field.config.caret_style {
+        CaretStyle::Bar => radius,
+        CaretStyle::Block => 0.0,
+      };
       canvas.fill(
         Rect::new(
           caret_x,
@@ -1529,7 +1804,7 @@ fn draw_field(
           caret_height,
         ),
         caret_color,
-        radius,
+        caret_radius,
       );
     }
   }
@@ -1796,16 +2071,106 @@ fn widget_id(plugin: &Plugin, index: usize, widget: &Widget) -> String {
   format!("{}:{index}", plugin.id)
 }
 
+/// True when at least one built-in widget asked for the front layer and is
+/// visible on this output. The rotated card uses this to avoid allocating a
+/// second full-card layer when no widget will land between decor and form.
+fn has_front_widgets(scene: &Scene<'_>) -> bool {
+  scene.plugins.iter().any(|plugin| {
+    plugin.widgets.iter().any(|widget| {
+      widget_layer(scene, plugin, widget) == WidgetLayer::Front
+        && widget.placement().visible_on(scene.monitor)
+    })
+  })
+}
+
+/// Resolves the paint layer for one widget. Only the built-in clock and media
+/// widgets read a config value; every plugin widget stays behind, so a theme
+/// cannot layer a third-party widget over the login form.
+fn widget_layer(scene: &Scene<'_>, plugin: &Plugin, widget: &Widget) -> WidgetLayer {
+  if !plugin.builtin {
+    return WidgetLayer::Behind;
+  }
+  match widget {
+    Widget::Clock { .. } => scene.theme.clock_layer,
+    Widget::Media { .. } => scene.theme.media_layer,
+    _ => WidgetLayer::Behind,
+  }
+}
+
+/// The coordinate frame a widget is placed in.
+///
+/// Behind widgets keep the historical screen-space frame: the screen's
+/// top-left is the origin and the output scale sizes the offset and the font.
+/// Front widgets on a built-in clock or media slot join the card frame the
+/// same way decor does: the card's top-left is the origin, the card extent is
+/// the anchor space, and `card_scale` scales both the offset and the size
+/// base. That is what makes a HUD pill shrink with a hero card on a smaller
+/// display instead of overflowing a decor bar that already shrank.
+#[derive(Debug, Clone, Copy)]
+struct WidgetFrame {
+  origin: (f32, f32),
+  extent: (f32, f32),
+  scale: f32,
+  card_space: bool,
+}
+
+impl WidgetFrame {
+  fn screen(screen: (f32, f32), scale: f32) -> Self {
+    Self {
+      origin: (0.0, 0.0),
+      extent: screen,
+      scale,
+      card_space: false,
+    }
+  }
+
+  fn card(card: Rect, card_scale: f32) -> Self {
+    Self {
+      origin: (card.x, card.y),
+      extent: (card.w, card.h),
+      scale: card_scale,
+      card_space: true,
+    }
+  }
+
+  /// The rectangle the widget anchors inside. Its top-left is already an
+  /// absolute screen coordinate, so drawing code adds it to the local anchor
+  /// result instead of threading a separate origin.
+  fn viewport(self) -> Rect {
+    Rect::new(self.origin.0, self.origin.1, self.extent.0, self.extent.1)
+  }
+}
+
+/// Resolves a manifest offset plus the live drag offset in the frame's units.
+///
+/// Card-space widgets round after adding the drag, matching decor, so a
+/// subpixel drag cannot drift by a pixel every frame. Screen-space widgets
+/// keep the old two-rounding rule, which is what leaves the behind layer
+/// byte-for-byte unchanged.
+fn widget_offset(frame: &WidgetFrame, configured: (i32, i32), drag: (f32, f32)) -> (i32, i32) {
+  if frame.card_space {
+    (
+      ((configured.0 as f32 + drag.0) * frame.scale).round() as i32,
+      ((configured.1 as f32 + drag.1) * frame.scale).round() as i32,
+    )
+  } else {
+    (
+      (configured.0 as f32 * frame.scale).round() as i32 + (drag.0 * frame.scale).round() as i32,
+      (configured.1 as f32 * frame.scale).round() as i32 + (drag.1 * frame.scale).round() as i32,
+    )
+  }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_plugins(
   canvas: &mut Canvas,
   text: &mut TextEngine,
   scene: &Scene<'_>,
-  screen: (f32, f32),
-  scale: f32,
+  frame: WidgetFrame,
   primary: Rgb,
   muted: Rgb,
   accent: Rgb,
+  layer: WidgetLayer,
   regions: &mut Vec<HitRegion>,
 ) {
   for plugin in scene.plugins {
@@ -1813,13 +2178,17 @@ fn draw_plugins(
       if !widget.placement().visible_on(scene.monitor) {
         continue;
       }
+      // Each widget is painted exactly once: the behind pass skips front
+      // widgets and the front pass skips everything else. The hit region is
+      // recorded in the same arm that paints, so both layers keep identical
+      // ids and geometry.
+      if widget_layer(scene, plugin, widget) != layer {
+        continue;
+      }
       let placement = widget.placement();
       let id = widget_id(plugin, index, widget);
       let drag = scene.drag.offset(&id);
-      let offset = (
-        (placement.offset.0 as f32 * scale).round() as i32 + (drag.0 * scale).round() as i32,
-        (placement.offset.1 as f32 * scale).round() as i32 + (drag.1 * scale).round() as i32,
-      );
+      let offset = widget_offset(&frame, placement.offset, drag);
       let rotation = placement.rotation;
       let draggable = widget.draggable();
       match widget {
@@ -1830,10 +2199,15 @@ fn draw_plugins(
           max_width,
           ..
         } => {
-          let size = *size * scale;
-          let limit = max_width.map_or((screen.0 - 16.0 * scale).max(1.0), |width| width * scale);
+          let size = *size * frame.scale;
+          let limit = max_width.map_or((frame.extent.0 - 16.0 * frame.scale).max(1.0), |width| {
+            width * frame.scale
+          });
           let (width, height) = text.measure(content, size, limit, max_width.is_some());
-          let (x, y) = placement.anchor.place(screen, (width, height), offset);
+          let (x, y) = placement
+            .anchor
+            .place(frame.extent, (width, height), offset);
+          let (x, y) = (frame.origin.0 + x, frame.origin.1 + y);
           let rect = Rect::new(x, y, width, height);
           paint_rotated(canvas, rect, rect.center(), rotation, |layer| {
             text.draw(
@@ -1844,7 +2218,7 @@ fn draw_plugins(
             );
           });
           regions.push(HitRegion::rotated(id.clone(), rect, draggable, rotation));
-          draw_drag_highlight(canvas, rect, &id, scene, accent, scale);
+          draw_drag_highlight(canvas, rect, &id, scene, accent, frame.scale);
         }
         Widget::Clock {
           spec, draggable, ..
@@ -1856,43 +2230,49 @@ fn draw_plugins(
             spec,
             placement.anchor,
             offset,
-            screen,
-            scale,
+            frame.viewport(),
+            frame.scale,
             scene.now,
           ) {
             paint_rotated(canvas, bounds, bounds.center(), rotation, |layer| {
-              draw_scrim(layer, bounds, scene.theme, scale);
+              draw_scrim(layer, bounds, scene.theme, frame.scale);
               clock::draw(
                 layer,
                 text,
                 spec,
                 placement.anchor,
                 offset,
-                screen,
-                scale,
+                frame.viewport(),
+                frame.scale,
                 color,
                 date_color,
                 scene.now,
               );
             });
-            regions.push(HitRegion::rotated(id.clone(), bounds, *draggable, rotation));
-            draw_drag_highlight(canvas, bounds, &id, scene, accent, scale);
+            regions.push(
+              HitRegion::rotated(id.clone(), bounds, *draggable, rotation)
+                .with_drag_scale(frame.scale),
+            );
+            draw_drag_highlight(canvas, bounds, &id, scene, accent, frame.scale);
           }
         }
         Widget::Image { image, width, .. } => {
-          let width = *width * scale;
+          let width = *width * frame.scale;
           let height = if image.width() == 0 {
             0.0
           } else {
             width * image.height() as f32 / image.width() as f32
           };
-          let (x, y) = placement.anchor.place(screen, (width, height), offset);
+          let (x, y) = placement
+            .anchor
+            .place(frame.extent, (width, height), offset);
+          let (x, y) = (frame.origin.0 + x, frame.origin.1 + y);
           let rect = Rect::new(x, y, width, height);
           paint_rotated(canvas, rect, rect.center(), rotation, |layer| {
             layer.image_in(image, rect);
           });
           regions.push(HitRegion::rotated(id.clone(), rect, draggable, rotation));
-          draw_drag_highlight(canvas, rect, &id, scene, accent, scale);
+          draw_drag_highlight(canvas, rect, &id, scene, accent, frame.scale);
         }
         Widget::Media {
           state,
@@ -1909,8 +2289,8 @@ fn draw_plugins(
             &snapshot,
             placement.anchor,
             offset,
-            screen,
-            scale,
+            frame.viewport(),
+            frame.scale,
             *size,
             *show_art,
             *show_before_login,
@@ -1924,8 +2304,8 @@ fn draw_plugins(
               &snapshot,
               placement.anchor,
               offset,
-              screen,
-              scale,
+              frame.viewport(),
+              frame.scale,
               *size,
               *show_art,
               *show_before_login,
@@ -1934,8 +2314,11 @@ fn draw_plugins(
               accent,
             );
           });
-          regions.push(HitRegion::rotated(id.clone(), bounds, *draggable, rotation));
-          draw_drag_highlight(canvas, bounds, &id, scene, accent, scale);
+          regions.push(
+            HitRegion::rotated(id.clone(), bounds, *draggable, rotation)
+              .with_drag_scale(frame.scale),
+          );
+          draw_drag_highlight(canvas, bounds, &id, scene, accent, frame.scale);
         }
       }
     }
@@ -1950,7 +2333,7 @@ fn media_bounds(
   snapshot: &MediaSnapshot,
   anchor: crate::layout::Anchor,
   offset: (i32, i32),
-  screen: (f32, f32),
+  viewport: Rect,
   scale: f32,
   logical_size: f32,
   show_art: bool,
@@ -1958,11 +2341,12 @@ fn media_bounds(
   authenticated: bool,
 ) -> Rect {
   let size = logical_size * scale;
+  let screen = (viewport.w, viewport.h);
   if (!authenticated && !show_before_login) || !snapshot.available {
     let label = "No media";
     let (width, height) = text.measure(label, size * 0.85, 320.0 * scale, false);
     let (x, y) = anchor.place(screen, (width, height), offset);
-    return Rect::new(x, y, width, height);
+    return Rect::new(viewport.x + x, viewport.y + y, width, height);
   }
   let art_size = if show_art && snapshot.art.is_some() {
     size * 3.0
@@ -1972,7 +2356,7 @@ fn media_bounds(
   let width = (300.0 * scale).max(art_size + size * 12.0);
   let height = art_size.max(size * 2.8);
   let (x, y) = anchor.place(screen, (width, height), offset);
-  Rect::new(x, y, width, height)
+  Rect::new(viewport.x + x, viewport.y + y, width, height)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1983,7 +2367,7 @@ fn draw_media(
   snapshot: &MediaSnapshot,
   anchor: crate::layout::Anchor,
   offset: (i32, i32),
-  screen: (f32, f32),
+  viewport: Rect,
   scale: f32,
   logical_size: f32,
   show_art: bool,
@@ -1998,7 +2382,7 @@ fn draw_media(
     snapshot,
     anchor,
     offset,
-    screen,
+    viewport,
     scale,
     logical_size,
     show_art,
@@ -2113,11 +2497,11 @@ fn scaled_offset(offset: (i32, i32), scale: f32) -> (i32, i32) {
 mod tests {
   use std::time::Instant;
 
-  use super::{Scene, draw_media};
+  use super::{Scene, WidgetFrame, draw_media, widget_offset};
   use crate::color::Rgb;
   use crate::config::Config;
   use crate::layout::Anchor;
-  use crate::ui::canvas::Canvas;
+  use crate::ui::canvas::{Canvas, Rect};
   use crate::ui::drag::Drag;
   use crate::ui::media::MediaSnapshot;
   use crate::ui::motion::MotionFrame;
@@ -2173,7 +2557,7 @@ mod tests {
       &snapshot,
       Anchor::TopLeft,
       (0, 0),
-      (480.0, 160.0),
+      Rect::new(0.0, 0.0, 480.0, 160.0),
       1.0,
       16.0,
       false,
@@ -2183,6 +2567,27 @@ mod tests {
       Rgb::solid(80, 120, 255),
     );
     canvas.pixmap().data().to_vec()
+  }
+
+  #[test]
+  fn front_widget_offsets_and_extent_follow_the_card_scale() {
+    // The card is 100x80 at 0.5 scale, so a front widget anchors inside that
+    // shrunken card and its configured offset shrinks with it. This is the
+    // exact math that keeps the kinich clock pill inside the scaled bar.
+    let card = WidgetFrame::card(Rect::new(10.0, 20.0, 100.0, 80.0), 0.5);
+    assert_eq!(card.origin, (10.0, 20.0));
+    assert_eq!(card.extent, (100.0, 80.0));
+    assert_eq!(card.scale, 0.5);
+    assert_eq!(widget_offset(&card, (48, 14), (0.0, 0.0)), (24, 7));
+    // Adding the drag before rounding matches decor and keeps a card-space
+    // widget moving with the same pixel grid as its configured offset.
+    assert_eq!(widget_offset(&card, (48, 14), (10.0, -4.0)), (29, 5));
+
+    // The behind layer keeps the screen-space frame and the old rounding.
+    let screen = WidgetFrame::screen((1920.0, 1080.0), 1.0);
+    assert_eq!(screen.origin, (0.0, 0.0));
+    assert_eq!(screen.extent, (1920.0, 1080.0));
+    assert_eq!(widget_offset(&screen, (48, 14), (0.0, 0.0)), (48, 14));
   }
 
   #[test]

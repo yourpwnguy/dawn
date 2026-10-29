@@ -165,13 +165,14 @@ pub fn bounds(
   spec: &ClockSpec,
   anchor: Anchor,
   offset: (i32, i32),
-  screen: (f32, f32),
+  viewport: Rect,
   scale: f32,
   now: &Zoned,
 ) -> Option<Rect> {
   let (time, date) = spec.texts(now);
   let size = spec.size * scale;
   let date_size = spec.date_size * scale;
+  let screen = (viewport.w, viewport.h);
   match spec.style {
     ClockStyle::Digital => {
       if time.is_empty() {
@@ -186,7 +187,12 @@ pub fn bounds(
       let total_width = width.max(date_width);
       let total_height = time_height + date_height + date_size * 0.15;
       let (x, y) = anchor.place(screen, (total_width, total_height), offset);
-      Some(Rect::new(x, y, total_width, total_height))
+      Some(Rect::new(
+        viewport.x + x,
+        viewport.y + y,
+        total_width,
+        total_height,
+      ))
     }
     ClockStyle::Analog => {
       let (date_width, date_height) = if date.is_empty() {
@@ -197,7 +203,12 @@ pub fn bounds(
       };
       let total_width = size.max(date_width);
       let (x, y) = anchor.place(screen, (total_width, size + date_height), offset);
-      Some(Rect::new(x, y, total_width, size + date_height))
+      Some(Rect::new(
+        viewport.x + x,
+        viewport.y + y,
+        total_width,
+        size + date_height,
+      ))
     }
   }
 }
@@ -211,7 +222,7 @@ pub fn draw(
   spec: &ClockSpec,
   anchor: Anchor,
   offset: (i32, i32),
-  screen: (f32, f32),
+  viewport: Rect,
   scale: f32,
   color: Rgb,
   date_color: Rgb,
@@ -222,10 +233,10 @@ pub fn draw(
   let date_size = spec.date_size * scale;
   match spec.style {
     ClockStyle::Digital => draw_digital(
-      canvas, text, &time, &date, anchor, offset, screen, size, date_size, color, date_color,
+      canvas, text, &time, &date, anchor, offset, viewport, size, date_size, color, date_color,
     ),
     ClockStyle::Analog => draw_analog(
-      canvas, text, spec, &date, anchor, offset, screen, size, date_size, color, date_color, now,
+      canvas, text, spec, &date, anchor, offset, viewport, size, date_size, color, date_color, now,
     ),
   }
 }
@@ -238,7 +249,7 @@ fn draw_digital(
   date: &str,
   anchor: Anchor,
   offset: (i32, i32),
-  screen: (f32, f32),
+  viewport: Rect,
   size: f32,
   date_size: f32,
   color: Rgb,
@@ -247,6 +258,7 @@ fn draw_digital(
   if time.is_empty() {
     return;
   }
+  let screen = (viewport.w, viewport.h);
   let (width, time_height) = text.measure(time, size, screen.0 - 40.0, false);
   let (date_width, date_height) = if date.is_empty() {
     (0.0, 0.0)
@@ -259,6 +271,7 @@ fn draw_digital(
   let total_width = width.max(date_width);
   let total = (total_width, time_height + date_height + date_size * 0.15);
   let (x, y) = anchor.place(screen, total, offset);
+  let (x, y) = (x + viewport.x, y + viewport.y);
 
   text.draw(
     canvas,
@@ -284,7 +297,7 @@ fn draw_analog(
   date: &str,
   anchor: Anchor,
   offset: (i32, i32),
-  screen: (f32, f32),
+  viewport: Rect,
   diameter: f32,
   date_size: f32,
   color: Rgb,
@@ -292,6 +305,7 @@ fn draw_analog(
   now: &Zoned,
 ) {
   let local = spec.local(now);
+  let screen = (viewport.w, viewport.h);
   let (date_width, date_height) = if date.is_empty() {
     (0.0, 0.0)
   } else {
@@ -304,6 +318,7 @@ fn draw_analog(
   let total_width = diameter.max(date_width);
   let total = (total_width, diameter + date_height);
   let (x, y) = anchor.place(screen, total, offset);
+  let (x, y) = (x + viewport.x, y + viewport.y);
   let radius = diameter / 2.0;
   let center = (x + total_width / 2.0, y + radius);
   let rim = color.with_alpha(70);
@@ -412,7 +427,7 @@ pub fn format(pattern: &str, now: &Zoned, posix_locale: bool) -> String {
 #[cfg(test)]
 mod tests {
   use super::{ClockSpec, format};
-  use crate::config::{ClockConfig, ClockStyle};
+  use crate::config::{ClockConfig, ClockStyle, WidgetLayer};
   use crate::layout::{Anchor, Placement};
 
   fn now() -> jiff::Zoned {
@@ -473,6 +488,7 @@ mod tests {
     let config = ClockConfig {
       enabled: true,
       style: ClockStyle::Analog,
+      layer: WidgetLayer::Behind,
       time_format: "%H:%M".to_string(),
       date_format: String::new(),
       hour12: false,

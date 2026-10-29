@@ -154,14 +154,43 @@ impl TextEngine {
 
   /// Measures wrapped text without painting it. The card layout uses this to
   /// decide how tall it needs to be before anything is drawn.
+  ///
+  /// This keeps measuring at the default weight and no tracking because every
+  /// current caller paints the run that way. If you need to measure something
+  /// that is actually painted bold or tracked out, call [`Self::measure_with`]
+  /// instead, otherwise the box you get back will be narrower than the pixels
+  /// that land on the canvas.
   pub fn measure(&mut self, text: &str, size: f32, max_width: f32, wrap: bool) -> (f32, f32) {
+    self.measure_with(text, size, max_width, wrap, Weight::NORMAL, 0.0)
+  }
+
+  /// Measures text with the same weight and tracking it will be painted with.
+  ///
+  /// `measure` is fine for plain body copy, but a ticker or a themed heading
+  /// can be bold and letter-spaced. Those runs are wider than the default
+  /// measurement, and using the narrow width to place or repeat them causes
+  /// neighbours to overlap. This version shapes with exactly the style the
+  /// draw calls use, so the returned width matches the painted run.
+  ///
+  /// The empty-input and zero-width handling is deliberately identical to
+  /// `measure`: callers rely on getting a line box back even when there is
+  /// nothing to shape.
+  pub fn measure_with(
+    &mut self,
+    text: &str,
+    size: f32,
+    max_width: f32,
+    wrap: bool,
+    weight: Weight,
+    tracking: f32,
+  ) -> (f32, f32) {
     if text.is_empty() || max_width <= 0.0 {
       return (0.0, line_height(size));
     }
     let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_height(size)));
     buffer.set_size(Some(max_width.max(1.0)), None);
     buffer.set_wrap(if wrap { Wrap::WordOrGlyph } else { Wrap::None });
-    let attrs = self.attrs(Weight::NORMAL, 0.0);
+    let attrs = self.attrs(weight, tracking);
     buffer.set_text(text, &attrs, Shaping::Advanced, None);
     buffer.shape_until_scroll(&mut self.font_system, false);
     let mut width: f32 = 0.0;
@@ -312,4 +341,73 @@ fn family_exists(font_system: &FontSystem, wanted: &str) -> bool {
       .iter()
       .any(|(family, _)| family.eq_ignore_ascii_case(wanted))
   })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  // These only need a working font stack, so the fallback family is fine and
+  // keeps the test independent of whatever fonts the machine happens to have.
+  fn engine() -> TextEngine {
+    TextEngine::new("")
+  }
+
+  #[test]
+  fn tracking_widens_the_measured_run() {
+    let mut text = engine();
+    let plain = text
+      .measure_with(
+        "MISSION BAR",
+        20.0,
+        f32::MAX / 4.0,
+        false,
+        Weight::NORMAL,
+        0.0,
+      )
+      .0;
+    let tracked = text
+      .measure_with(
+        "MISSION BAR",
+        20.0,
+        f32::MAX / 4.0,
+        false,
+        Weight::NORMAL,
+        0.3,
+      )
+      .0;
+    assert!(
+      tracked > plain,
+      "tracking must widen the run: plain={plain}, tracked={tracked}"
+    );
+  }
+
+  #[test]
+  fn bold_widens_the_measured_run() {
+    let mut text = engine();
+    let normal = text
+      .measure_with(
+        "MISSION BAR",
+        20.0,
+        f32::MAX / 4.0,
+        false,
+        Weight::NORMAL,
+        0.0,
+      )
+      .0;
+    let bold = text
+      .measure_with(
+        "MISSION BAR",
+        20.0,
+        f32::MAX / 4.0,
+        false,
+        Weight::BOLD,
+        0.0,
+      )
+      .0;
+    assert!(
+      bold > normal,
+      "bold must widen the run: normal={normal}, bold={bold}"
+    );
+  }
 }

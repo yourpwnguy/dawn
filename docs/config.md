@@ -136,7 +136,8 @@ it and can override every key. A zero in `font_size`, `height`, `radius`,
 | `placeholder_color` | colour | theme muted | Placeholder colour. |
 | `focus` | colour | theme focus ring | Focus border and glow. |
 | `caret` | colour | theme accent | Caret colour. |
-| `caret_width` | number | `0` (derive) | Caret width, 0 to 16. |
+| `caret_width` | number | `0` (derive) | Caret width, 0 to 16. Zero derives a bar or a wider block from the text size. |
+| `caret_style` | string | `"bar"` | `bar` for the thin text caret, `block` for a filled character cell. |
 | `icon` | string | `""` | Leading glyph: `user`, `lock`, or `none`. |
 | `icon_size` | number | `0` (derive) | Icon size, 0 to 64. |
 | `icon_gap` | number | `0` (derive) | Gap between the icon and the text, 0 to 64. |
@@ -219,10 +220,15 @@ glow, and `corners` draws four expanding target marks. Effects run only while th
 
 ### `[[login.decor]]`
 
-Decor places a logo, social button, footer line, or other cosmetic item inside
-the card. Items paint after the panel and before the form, so they can never
-cover an input or the submit button. Images are decoded once at startup; a
-missing image is logged and skipped. Anchors are relative to the card.
+Decor places a logo, social button, footer line, panel, or other cosmetic item
+inside the card. Items paint after the card surface and before the form, in
+list order, so a later item covers an earlier one and no item can cover an
+input or the submit button. The built-in clock and media widgets paint behind
+decor by default; set `layer = "front"` on `[clock]` or `[media]` to paint them
+after the decor but still before the form. A front widget joins the card's
+coordinate system: its anchor is the card, and its offset and size scale with
+the card just like decor. Images are decoded once at startup; a missing image is
+logged and skipped. Anchors are relative to the card.
 
 ```toml
 [[login.decor]]
@@ -244,8 +250,46 @@ offset = [24, 20]
 Image keys: `image` (required, relative to the config file), `width` (4 to
 2000), `anchor`, `offset`, `opacity` (0 to 1), and `rotation` (-360 to 360).
 Text keys: `text` (1 to 256 characters), `size` (6 to 200), `color`, `bold`,
-`tracking`, `anchor`, `offset`, and `rotation`. At most 32 decor items are
-supported.
+`tracking`, `stroke` (optional outline colour), `stroke_width` (0 to 12,
+default 0 when no stroke is set; a stroke with width 0 is resolved to 2),
+`anchor`, `offset`, and `rotation`. The outline draws the same run eight times
+around a small radius before the fill pass, and the typewriter reveal applies to
+both. A tickered item ignores `stroke` and keeps the plain fill. At most 32
+decor items are supported.
+
+#### Panels
+
+`kind = "panel"` draws an anchored plate with no asset. It is useful for a HUD
+bar, a label backplate, or a radar blip. Panels paint in list order like every
+other decor item, so a panel covers items earlier in the list and is covered by
+items later in the list.
+
+```toml
+[[login.decor]]
+kind = "panel"
+width = 420
+height = 48
+color = "#17191CE6"
+color_end = "#17191C00"
+gradient_angle = 0
+radius = 2
+border = "#E7DA1966"
+opacity = 1.0
+anchor = "bottom-left"
+offset = [0, 0]
+```
+
+Panel keys: `width` and `height` (required, 4 to 4000), `color` (falls back to
+`[theme].tint`), `color_end` (optional second colour; when set the plate becomes
+a linear gradient from `color` to `color_end`), `gradient_angle` (-360 to 360,
+0 is left to right), `radius` (0 to 64, default 0), `border` (optional one-pixel
+stroke colour), `opacity` (0 to 1), plus `anchor`, `offset`, `rotation`, and the
+usual motion table. A panel ignores `image` and `text`; if either is present the
+panel is still drawn as a bare plate and one issue is reported.
+
+`blink_ms` turns a panel into a radar blip by hiding the whole plate for the
+second half of each period. `typer_ms` and the ticker pair are text-only and do
+nothing to a panel.
 
 #### Animated decor
 
@@ -287,6 +331,39 @@ phase = 0.25        # cycle offset in turns, 0 to 1
 | `fade` | `0` | Opacity depth, 0 to 1. The item cycles between full and `1 - fade`. |
 | `fade_ms` | `3000` | Fade period, 200 to 20000 ms. |
 | `phase` | `0` | Phase offset in turns. Every oscillation is subtracted at its phase-only value, so `phase` staggers a row without moving the `elapsed = 0` pose. |
+| `typer_ms` | `0` | Text only. One-shot character reveal over this many milliseconds, 0 to 20000. Zero is off. The text is empty at `elapsed = 0` and complete at `typer_ms`. |
+| `blink_ms` | `0` | Text and image. Square-wave blink period, 0 to 20000. Visible for the first half of each period, hidden for the second. Zero is off. |
+| `ticker_ms` | `0` | Text only. Time for the marquee strip to travel one tile, 0 to 120000. Zero is off. |
+| `ticker_width` | `0` | Text only. Width of the marquee strip in logical pixels, 0 to 4000. Required when `ticker_ms` is set. |
+| `ticker_gap` | `64` | Text only. Space between repeated copies in the ticker, 0 to 2000. |
+
+A typewriter starts empty, so a screenshot at `elapsed = 0` shows no text for that item. A ticker overrides the typewriter on the same item, because the marquee already shows the full run. A ticker without a positive `ticker_width` is reported as a config issue.
+
+`blink_ms` is the one clock-like field that works on both kinds: it hides a text run or an image during the second half of each period, which is how you get a strobing cursor sprite.
+
+```toml
+[[login.decor]]
+kind = "text"
+text = "Welcome back, pilot"
+anchor = "top-left"
+offset = [24, 18]
+
+[login.decor.motion]
+typer_ms = 1600
+blink_ms = 900
+
+[[login.decor]]
+kind = "text"
+text = "SYSTEM ONLINE // SECTOR 7 // ALL SERVICES NOMINAL"
+size = 11
+anchor = "bottom-left"
+offset = [24, 18]
+
+[login.decor.motion]
+ticker_ms = 3000
+ticker_width = 300
+ticker_gap = 80
+```
 
 Motion runs inside the cached UI overlay. A moving ornament therefore asks the
 renderer for a fresh overlay frame; keep animated artwork small and prefer a
@@ -314,6 +391,7 @@ rules, and renderer as a plugin clock.
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Draw the clock. |
+| `layer` | string | `"behind"` | `behind` paints in screen space before decor; `front` paints after decor but before the form and places the widget in card space, so both its offset and size scale with the card. Only built-in widgets support this in v0.3. |
 | `style` | string | `"digital"` | `digital` or `analog`. For analog, `size` is the dial diameter. |
 | `time_format` | string | `"%H:%M"` | strftime pattern, validated at load time. Invalid patterns fall back. |
 | `date_format` | string | `"%A, %B %d"` | Empty hides the date line. |
@@ -339,6 +417,13 @@ POSIX/C forms. There is no full per-locale translation layer in v0.2.0.
 The clock asks for a redraw only when its visible strings change. A minute clock
 does not wake the renderer sixty times a minute.
 
+`layer = "front"` paints the clock after the login decor and before the form.
+Its placement then uses the card's coordinate system, exactly like decor: the
+anchor is relative to the card, and both `offset` and `size` scale with the
+card. That keeps the digits inside a HUD bar that shrank on a smaller display.
+The form still paints on top. Plugin clock widgets always stay behind, so they
+keep screen-space placement.
+
 ## `[media]`
 
 The media widget is also a first-party widget. It polls MPRIS on the greeter's
@@ -348,6 +433,7 @@ UI or the greetd socket.
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Show the media widget. |
+| `layer` | string | `"behind"` | `behind` paints in screen space before decor; `front` paints after decor but before the form and places the widget in card space, so both its offset and size scale with the card. Only built-in widgets support this in v0.3. |
 | `anchor` | string | `"bottom-left"` | Placement anchor. |
 | `offset` | `[x, y]` | `[32, 32]` | Logical pixel margin. |
 | `monitor` | string | unset | Output name restriction. |
@@ -365,6 +451,11 @@ If a player is visible and answers, dawn keeps the last useful snapshot instead
 of wiping the widget when the player goes away. On a shared machine, set
 `show_before_login = false` and the renderer keeps metadata off the login pixels
 until greetd accepts authentication.
+
+`layer = "front"` works the same way as it does for the clock: media paints after
+decor and before the form, using the card's coordinate system so its offset and
+size scale with the card. Plugin media widgets always stay behind and keep
+screen-space placement.
 
 ## `[background]`
 

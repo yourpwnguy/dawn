@@ -16,9 +16,10 @@ use crate::color::Rgb;
 use crate::config::raw::{Field, RawBackgroundOverride, RawConfig, RawField};
 use crate::config::{
   AuthConfig, BackgroundConfig, BackgroundKind, BackgroundOverride, BlurConfig, ButtonEffect,
-  ClockConfig, ClockStyle, Config, DecorMotion, FieldConfig, HintConfig, HoverReveal, Issue,
-  LayoutConfig, Location, LoginConfig, MediaConfig, MotionConfig, PluginsConfig, PowerConfig,
-  SessionRowConfig, SessionsConfig, SurfaceStyle, ThemeConfig, ThemePreset, UiConfig,
+  CaretStyle, ClockConfig, ClockStyle, Config, DecorMotion, FieldConfig, HintConfig, HoverReveal,
+  Issue, LayoutConfig, Location, LoginConfig, MediaConfig, MotionConfig, PluginsConfig,
+  PowerConfig, SessionRowConfig, SessionsConfig, SurfaceStyle, ThemeConfig, ThemePreset, UiConfig,
+  WidgetLayer,
 };
 use crate::layout::{Anchor, Fit, Placement};
 
@@ -342,6 +343,11 @@ impl<'a> Validator<'a> {
         defaults.clock.enabled,
       ),
       style: self.clock_style(raw.clock.style.as_ref(), defaults.clock.style),
+      layer: self.widget_layer(
+        raw.clock.layer.as_ref(),
+        "clock.layer",
+        defaults.clock.layer,
+      ),
       time_format: self.strftime(
         raw.clock.time_format.as_ref(),
         "clock.time_format",
@@ -427,6 +433,11 @@ impl<'a> Validator<'a> {
         raw.media.show_art.as_ref(),
         "media.show_art",
         defaults.media.show_art,
+      ),
+      layer: self.widget_layer(
+        raw.media.layer.as_ref(),
+        "media.layer",
+        defaults.media.layer,
       ),
       color: self.optional_color(raw.media.color.as_ref(), "media.color"),
       show_before_login: self.boolean(
@@ -825,6 +836,17 @@ impl<'a> Validator<'a> {
       return default;
     }
     value
+  }
+
+  /// A panel needs both dimensions. Missing or invalid values fall back to a
+  /// sane plate instead of dropping the item, so one typo does not remove the
+  /// backdrop that other decor was positioned against.
+  fn panel_size(&mut self, field: Option<&Field>, key: &str, default: u64) -> f32 {
+    let Some(field) = field else {
+      self.issue(key, None, "panel needs a whole number from 4 to 4000");
+      return default as f32;
+    };
+    self.integer_range(Some(field), key, default, 4, 4000) as f32
   }
 
   fn color(&mut self, field: Option<&Field>, key: &'static str, default: Rgb) -> Rgb {
@@ -1252,6 +1274,56 @@ impl<'a> Validator<'a> {
     }
   }
 
+  fn caret_style(&mut self, field: Option<&Field>, key: &str, default: CaretStyle) -> CaretStyle {
+    let Some(field) = field else {
+      return default;
+    };
+    let Some(value) = field.get_ref().as_str() else {
+      self.issue(key, Some(field), "expected bar or block");
+      return default;
+    };
+    match CaretStyle::parse(value) {
+      Some(style) => style,
+      None => {
+        self.issue(
+          key,
+          Some(field),
+          format!("unknown caret style {value:?}; use bar or block"),
+        );
+        default
+      }
+    }
+  }
+
+  /// Parses the built-in widget draw layer. The two values are deliberately
+  /// named after the paint order, not after a z-index: `behind` is the
+  /// historical order and `front` puts the widget between decor and the form.
+  fn widget_layer(
+    &mut self,
+    field: Option<&Field>,
+    key: &str,
+    default: WidgetLayer,
+  ) -> WidgetLayer {
+    let Some(field) = field else {
+      return default;
+    };
+    let Some(value) = field.get_ref().as_str() else {
+      self.issue(key, Some(field), "expected behind or front");
+      return default;
+    };
+    match WidgetLayer::parse(value) {
+      Some(layer) => layer,
+      None => {
+        self.issue(
+          key,
+          Some(field),
+          format!("unknown widget layer {value:?}; use behind or front"),
+        );
+        default
+      }
+    }
+  }
+
   fn rotation(&mut self, field: Option<&Field>, key: &str, default: f32) -> f32 {
     self.range(field, key, f64::from(default), -360.0, 360.0) as f32
   }
@@ -1457,7 +1529,7 @@ impl<'a> Validator<'a> {
         .string_value(
           item.kind.as_ref(),
           &format!("{prefix}.kind"),
-          "expected text or image",
+          "expected text, image, or panel",
           16,
         )
         .unwrap_or_default();
@@ -1474,6 +1546,22 @@ impl<'a> Validator<'a> {
           if text.is_empty() {
             continue;
           }
+          let stroke = self.optional_color(item.stroke.as_ref(), &format!("{prefix}.stroke"));
+          let stroke_width = self.integer_range(
+            item.stroke_width.as_ref(),
+            &format!("{prefix}.stroke_width"),
+            0,
+            0,
+            12,
+          ) as f32;
+          // A stroke colour without a width would look like a no-op in the
+          // config. Give it a visible two-pixel default; `stroke_width` can
+          // still raise it up to 12.
+          let stroke_width = if stroke.is_some() && stroke_width <= 0.0 {
+            2.0
+          } else {
+            stroke_width
+          };
           items.push(crate::config::DecorSpec::Text {
             text,
             size: self.range(
@@ -1492,6 +1580,8 @@ impl<'a> Validator<'a> {
               0.0,
               0.5,
             ) as f32,
+            stroke,
+            stroke_width,
             anchor: self.anchor(
               item.anchor.as_ref(),
               &format!("{prefix}.anchor"),
@@ -1532,11 +1622,60 @@ impl<'a> Validator<'a> {
             motion: self.decor_motion(item.motion.as_ref(), &format!("{prefix}.motion")),
           });
         }
+        "panel" => {
+          // A panel is a plate, not an image or a text run. Accept either key
+          // so an item can be switched from one kind to another without the
+          // parser rejecting it, but tell the author exactly once that the
+          // payload is being ignored and draw a bare plate.
+          if item.text.is_some() || item.image.is_some() {
+            self.issue(
+              format!("{prefix}.kind"),
+              item.kind.as_ref(),
+              "panel ignores text and image; drawing a bare panel",
+            );
+          }
+          items.push(crate::config::DecorSpec::Panel {
+            width: self.panel_size(item.width.as_ref(), &format!("{prefix}.width"), 320),
+            height: self.panel_size(item.height.as_ref(), &format!("{prefix}.height"), 120),
+            color: self.optional_color(item.color.as_ref(), &format!("{prefix}.color")),
+            color_end: self.optional_color(item.color_end.as_ref(), &format!("{prefix}.color_end")),
+            gradient_angle: self.range(
+              item.gradient_angle.as_ref(),
+              &format!("{prefix}.gradient_angle"),
+              0.0,
+              -360.0,
+              360.0,
+            ) as f32,
+            radius: self.range(
+              item.radius.as_ref(),
+              &format!("{prefix}.radius"),
+              0.0,
+              0.0,
+              64.0,
+            ) as f32,
+            border: self.optional_color(item.border.as_ref(), &format!("{prefix}.border")),
+            opacity: self.range(
+              item.opacity.as_ref(),
+              &format!("{prefix}.opacity"),
+              1.0,
+              0.0,
+              1.0,
+            ) as f32,
+            anchor: self.anchor(
+              item.anchor.as_ref(),
+              &format!("{prefix}.anchor"),
+              Anchor::TopLeft,
+            ),
+            offset: self.offset(item.offset.as_ref(), &format!("{prefix}.offset"), (0, 0)),
+            rotation: self.rotation(item.rotation.as_ref(), &format!("{prefix}.rotation"), 0.0),
+            motion: self.decor_motion(item.motion.as_ref(), &format!("{prefix}.motion")),
+          });
+        }
         _ => {
           self.issue(
             format!("{prefix}.kind"),
             item.kind.as_ref(),
-            "expected text or image",
+            "expected text, image, or panel",
           );
         }
       }
@@ -1557,7 +1696,7 @@ impl<'a> Validator<'a> {
       return default;
     };
     let key = |name: &str| format!("{prefix}.{name}");
-    DecorMotion {
+    let motion = DecorMotion {
       spin: self.range(
         raw.spin.as_ref(),
         &key("spin"),
@@ -1622,7 +1761,53 @@ impl<'a> Validator<'a> {
         0.0,
         1.0,
       ) as f32,
+      typer_ms: self.range(
+        raw.typer_ms.as_ref(),
+        &key("typer_ms"),
+        f64::from(default.typer_ms),
+        0.0,
+        20000.0,
+      ) as f32,
+      blink_ms: self.range(
+        raw.blink_ms.as_ref(),
+        &key("blink_ms"),
+        f64::from(default.blink_ms),
+        0.0,
+        20000.0,
+      ) as f32,
+      ticker_ms: self.range(
+        raw.ticker_ms.as_ref(),
+        &key("ticker_ms"),
+        f64::from(default.ticker_ms),
+        0.0,
+        120000.0,
+      ) as f32,
+      ticker_width: self.integer_range(
+        raw.ticker_width.as_ref(),
+        &key("ticker_width"),
+        default.ticker_width as u64,
+        0,
+        4000,
+      ) as i32,
+      ticker_gap: self.integer_range(
+        raw.ticker_gap.as_ref(),
+        &key("ticker_gap"),
+        default.ticker_gap as u64,
+        0,
+        2000,
+      ) as i32,
+    };
+    // A scrolling ticker needs a window. Without one the item would silently
+    // paint at its text width, which looks like a config typo rather than a
+    // deliberate marquee, so tell the author exactly which key is missing.
+    if motion.ticker_ms > 0.0 && motion.ticker_width <= 0 {
+      self.issue(
+        key("ticker_width"),
+        raw.ticker_width.as_ref(),
+        "ticker_ms needs ticker_width greater than 0",
+      );
     }
+    motion
   }
 
   /// Merges the shared `[login.field]` style with one field's overrides.
@@ -1766,6 +1951,11 @@ impl<'a> Validator<'a> {
         0.0,
         16.0,
       ) as f32,
+      caret_style: self.caret_style(
+        own.caret_style.as_ref().or(shared.caret_style.as_ref()),
+        &key("caret_style"),
+        default.caret_style,
+      ),
       icon: self.icon_name(
         own.icon.as_ref().or(shared.icon.as_ref()),
         &key("icon"),
