@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+# Nothing in this workflow writes to the repository. Keep the default token
+# read-only so a compromised step cannot push, tag, or release.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  check:
+    name: build, test, lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        # actions/checkout v7.0.1, pinned so a tag move cannot change the code
+        # that runs with our token.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: rust toolchain
+        # The ref selects the toolchain, so this one cannot be pinned to a SHA
+        # without also pinning the compiler. We want stable here.
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: cache
+        # Swatinem/rust-cache v2.9.3
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+
+      - name: system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libvulkan-dev \
+            libegl1-mesa-dev \
+            libgles2-mesa-dev \
+            libfontconfig1-dev \
+            ffmpeg
+
+      - name: formatting
+        run: cargo fmt --check
+
+      - name: clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: tests
+        run: cargo test --locked
+
+      - name: release build
+        run: cargo build --release --locked
+
+      - name: config check
+        run: ./target/release/dawn --config examples/config.toml --check-config
+
+      - name: theme store check
+        run: |
+          export XDG_DATA_HOME="$RUNNER_TEMP/dawn-data"
+          ./target/release/dawn add examples/themes
+          ./target/release/dawn list
+          ./target/release/dawn --theme hutao-chibi --check-config
+
+  security:
+    name: dependency policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: checkout
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: cargo deny
+        # EmbarkStudios/cargo-deny-action v2.1.1. Runs advisories, bans,
+        # licenses, and sources against deny.toml, with the same cargo-deny
+        # version this repository was checked against locally.
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25
+        with:
+          command: check
+          arguments: --all-features

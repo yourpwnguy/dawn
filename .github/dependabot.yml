@@ -1,0 +1,22 @@
+# Keep dependencies patched and the pinned action commits current.
+#
+# cargo-deny in CI is the hard gate. Dependabot opens the updates so the gate
+# does not just fail forever when an advisory lands.
+version: 2
+
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci

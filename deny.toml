@@ -1,0 +1,75 @@
+# Dependency policy for dawn.
+#
+# This is what CI runs, and it is intentionally strict because dawn is a login
+# greeter: a vulnerable or unmaintained dependency sits on the authentication
+# path, not in some optional feature. `cargo deny check` reads this file.
+#
+# The checks cover four things:
+#
+# - advisories: known vulnerabilities, unsound releases, yanked versions, and
+#   unmaintained crates anywhere in the graph.
+# - bans: wildcard requirements and duplicate versions.
+# - licenses: only licenses we can actually ship under.
+# - sources: only crates.io, no git or alternative registries.
+#
+# If a check fails, fix the dependency. Add an ignore only when there is no
+# upgrade path, and always write down why. An ignore without a reason is how a
+# policy like this quietly stops protecting anything.
+
+[graph]
+# dawn only supports Linux, so auditing every platform branch would create
+# noise for dependencies that are never compiled here.
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+]
+all-features = true
+
+[advisories]
+# A yanked release can disappear from the registry at any time, so it is an
+# error rather than a warning.
+yanked = "deny"
+# Check the whole graph, not just direct dependencies. A transitive crate that
+# nobody maintains still ends up in the binary.
+unmaintained = "all"
+unsound = "all"
+ignore = [
+  # cosmic-text 0.19 is the latest release and pulls fontdb 0.23, which pulls
+  # ttf-parser. There is no newer cosmic-text to move to yet. ttf-parser only
+  # parses font files we ship or load locally, so the exposure is small, but
+  # this entry should be deleted as soon as cosmic-text switches to skrifa.
+  { id = "RUSTSEC-2026-0192", reason = "transitive through cosmic-text 0.19 -> fontdb 0.23; no fixed upstream release yet" },
+]
+
+[bans]
+# Duplicate versions are usually harmless, just extra compile time. Keep the
+# warning visible without failing the build over it.
+multiple-versions = "warn"
+# A `*` requirement means the next build can pull an unreviewed release.
+wildcards = "deny"
+deny = []
+
+[sources]
+# Everything must come from crates.io. This blocks a dependency that silently
+# switches to a git branch or a private registry.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[licenses]
+# The project ships as MIT OR Apache-2.0, so the dependency set has to be
+# compatible with redistribution under those terms.
+confidence-threshold = 0.93
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
