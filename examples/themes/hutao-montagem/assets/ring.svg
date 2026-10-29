@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3cf"/>
+      <stop offset="0.35" stop-color="#f0d492"/>
+      <stop offset="0.68" stop-color="#d8a84b"/>
+      <stop offset="1" stop-color="#9a6424"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 32 gold bulbs on r=140. Circumference 879.65, so the dash step is
+       27.489. The ring is deliberately hollow: no wash, no fill, no haze. -->
+  <circle cx="160" cy="160" r="140" fill="none" stroke="#ffb45e" stroke-width="21" opacity="0.15" stroke-linecap="round" stroke-dasharray="0.01 27.489"/>
+  <circle cx="160" cy="160" r="140" fill="none" stroke="url(#gold)" stroke-width="11.5" stroke-linecap="round" stroke-dasharray="0.01 27.489"/>
+  <circle cx="160" cy="160" r="140" fill="none" stroke="#fff3cf" stroke-width="4.2" stroke-linecap="round" stroke-dasharray="0.01 27.489" opacity="0.55"/>
+
+  <!-- Supporting hairlines and a dashed inner tick ring. -->
+  <circle cx="160" cy="160" r="154" fill="none" stroke="#d8a84b" stroke-width="1" opacity="0.34"/>
+  <circle cx="160" cy="160" r="126" fill="none" stroke="#d8a84b" stroke-width="1" opacity="0.28"/>
+  <circle cx="160" cy="160" r="119" fill="none" stroke="#cf1230" stroke-width="1" opacity="0.34" stroke-dasharray="1.5 9"/>
+</svg>

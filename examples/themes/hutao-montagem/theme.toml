@@ -1,0 +1,6 @@
+schema = 1
+id = "hutao-montagem"
+name = "After Dark"
+version = "1.0.0"
+description = "A crimson concert poster with a marquee ring, notes, and a ticket stub."
+preview = "preview.webp"

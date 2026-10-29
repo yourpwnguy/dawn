@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3cf"/>
+      <stop offset="0.45" stop-color="#e8c87e"/>
+      <stop offset="0.78" stop-color="#d8a84b"/>
+      <stop offset="1" stop-color="#8f5f22"/>
+    </linearGradient>
+    <linearGradient id="crimson" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff3b52"/>
+      <stop offset="0.55" stop-color="#cf1230"/>
+      <stop offset="1" stop-color="#6e0a1a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- The three nested L rails are the main deco frame. The outer one is the
+       reading edge of the ornament, so it stays a touch heavier. -->
+  <path d="M6 188 V6 H188" fill="none" stroke="url(#gold)" stroke-width="2.4"/>
+  <path d="M16 176 V16 H176" fill="none" stroke="url(#crimson)" stroke-width="1.5" opacity="0.95"/>
+  <path d="M26 166 V26 H166" fill="none" stroke="#d8a84b" stroke-width="0.9" opacity="0.55" stroke-dasharray="3 5"/>
+
+  <!-- Stepped block at the elbow. -->
+  <path d="M6 6 H58 V16 H16 V58 H6 Z" fill="#cf1230" opacity="0.2"/>
+  <path d="M6 6 H58 V16 H16 V58 H6 Z" fill="none" stroke="#d8a84b" stroke-width="0.8" opacity="0.7"/>
+
+  <!-- Quarter sunburst. The arcs stay low contrast so the corner reads as
+       ornament first and geometry second. -->
+  <g fill="none">
+    <path d="M78 16 A62 62 0 0 1 16 78" stroke="#d8a84b" stroke-width="1" opacity="0.55"/>
+    <path d="M102 16 A86 86 0 0 1 16 102" stroke="#cf1230" stroke-width="1.2" opacity="0.6"/>
+    <path d="M126 16 A110 110 0 0 1 16 126" stroke="#d8a84b" stroke-width="0.9" opacity="0.38"/>
+    <path d="M150 16 A134 134 0 0 1 16 150" stroke="#d8a84b" stroke-width="0.8" opacity="0.22"/>
+  </g>
+  <g stroke="#d8a84b" stroke-width="0.8" opacity="0.28">
+    <path d="M18 18 L104 62"/>
+    <path d="M18 18 L62 104"/>
+    <path d="M18 18 L136 42"/>
+    <path d="M18 18 L42 136"/>
+  </g>
+
+  <!-- Chevrons point down the diagonal toward the room. -->
+  <g fill="none" stroke="#d8a84b" stroke-linecap="square">
+    <path d="M58 58 L72 58 L72 72" stroke-width="1.1" opacity="0.55"/>
+    <path d="M74 74 L86 74 L86 86" stroke-width="1" opacity="0.4"/>
+    <path d="M90 90 L100 90 L100 100" stroke-width="0.9" opacity="0.28"/>
+  </g>
+
+  <!-- Diamond finial on the diagonal. -->
+  <g transform="translate(132 132)">
+    <path d="M0 -12 L12 0 L0 12 L-12 0 Z" fill="url(#gold)"/>
+    <path d="M0 -6 L6 0 L0 6 L-6 0 Z" fill="#cf1230"/>
+    <circle cx="0" cy="0" r="1.6" fill="#fff3cf"/>
+  </g>
+
+  <!-- End caps where the rails stop. -->
+  <g fill="url(#gold)">
+    <path d="M190 0 L196 6 L190 12 L184 6 Z"/>
+    <path d="M0 190 L6 184 L12 190 L6 196 Z"/>
+  </g>
+  <g fill="#ff3b52">
+    <circle cx="188" cy="6" r="1.4"/>
+    <circle cx="6" cy="188" r="1.4"/>
+  </g>
+</svg>

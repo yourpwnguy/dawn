@@ -1,0 +1,433 @@
+# dawn showcase: Furina, Regina of All Waters, Kindreds, Peoples and Laws,
+# star of the Opera Epiclese and the Hydro Archon the audience adores.
+#
+# Furina is a divine performer who turns every trial into theatre, hides deep
+# loneliness behind spectacle, and still insists the show must be perfect. The
+# login is a Fontaine playbill: a swagged velvet curtain, a spotlight, a gold
+# crown, hydro droplets, and a programme for the evening's verdict. Her
+# constellation is Animula Choragi, the little soul of the chorus leader, and
+# her signature dish is "Pour la Justice".
+#
+# The wallpaper is example media in the bundle. Check its
+# provenance before redistributing it. Playing it needs ffmpeg on PATH.
+#
+# Noto Serif supplies the opera programme voice. If it is missing, dawn falls
+# back to the embedded Inter face.
+
+[ui]
+font = "Noto Serif"
+font_size = 17
+fullscreen = true
+
+[login]
+layout = "hero"
+anchor = "center"
+width = 1888
+height = 1048
+radius = 0
+padding = 0
+gap = 20
+surface = "none"
+show_shadow = false
+show_border = false
+draggable = false
+show_session = false
+show_hints = true
+show_picker = false
+tab = ""
+form_offset = [1210, 456]
+form_width = 470
+greeting = ""
+
+[login.field]
+height = 62
+radius = 2
+padding = 26
+font_size = 17
+background = "#081a3dee"
+background_end = "#0b2350ee"
+border = "#e8c98755"
+bracket = "#46c8ee"
+bracket_gap = 10
+text = "#f7fbff"
+placeholder_color = "#8fb6d8"
+focus = "#46c8ee"
+caret = "#e8c987"
+caret_width = 2
+icon_size = 19
+icon_gap = 14
+icon_color = "#8fe6ff"
+
+[login.username]
+label = "AUDIENCE"
+placeholder = "Traveler name"
+icon = "user"
+
+[login.password]
+label = "PASSCODE"
+placeholder = "Password"
+icon = "lock"
+mask = "•"
+
+[login.button]
+show = true
+text = "TAKE THE STAGE"
+gap = 26
+height = 58
+radius = 2
+font_size = 16
+bold = true
+tracking = 0.16
+background = "#46c8ee"
+background_end = "#1d6f9e"
+gradient_angle = 90
+text_color = "#06122b"
+bracket = "#e8c987"
+bracket_gap = 8
+hover_background = "#8fe6ff"
+hover_background_end = "#2a8ec0"
+hover_direction = "left"
+hover_ms = 220
+hover_scale = 1.02
+hover_lift = 2
+glow = "#8fe6ff"
+glow_size = 16
+effect = "sweep"
+effect_color = "#f7fbff"
+effect_ms = 2200
+effect_angle = 114
+effect_strength = 0.32
+
+# The playbill stays behind every field. Its centre is deliberately calm navy
+# so the pale type and gold rule read without another panel.
+[[login.decor]]
+kind = "image"
+image = "assets/spotlight.png"
+width = 760
+anchor = "top-left"
+offset = [500, 0]
+opacity = 0.45
+
+[[login.decor]]
+kind = "image"
+image = "assets/curtain.png"
+width = 1640
+anchor = "top-left"
+offset = [140, 0]
+opacity = 0.96
+
+[[login.decor]]
+kind = "image"
+image = "assets/playbill.png"
+width = 790
+anchor = "top-left"
+offset = [1080, 104]
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 84
+anchor = "top-left"
+offset = [1112, 142]
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 84
+anchor = "top-left"
+offset = [1768, 142]
+rotation = 90
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 84
+anchor = "top-left"
+offset = [1768, 960]
+rotation = 180
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 84
+anchor = "top-left"
+offset = [1112, 960]
+rotation = 270
+
+# The crown sits above the title, and the droplets drift on separate phases.
+[[login.decor]]
+kind = "image"
+image = "assets/crown.png"
+width = 150
+anchor = "top-left"
+offset = [1688, 146]
+opacity = 0.96
+[login.decor.motion]
+sway = 3.0
+sway_ms = 6400
+pulse = 0.03
+pulse_ms = 3400
+fade = 0.1
+fade_ms = 7200
+phase = 0.1
+
+[[login.decor]]
+kind = "image"
+image = "assets/droplet.png"
+width = 48
+anchor = "top-left"
+offset = [1140, 650]
+opacity = 0.9
+[login.decor.motion]
+float = [8, -18]
+float_ms = 6200
+fade = 0.35
+fade_ms = 4600
+pulse = 0.05
+pulse_ms = 2800
+phase = 0.0
+
+[[login.decor]]
+kind = "image"
+image = "assets/droplet.png"
+width = 38
+anchor = "top-left"
+offset = [1806, 408]
+opacity = 0.85
+[login.decor.motion]
+float = [-7, -14]
+float_ms = 7100
+fade = 0.4
+fade_ms = 5400
+pulse = 0.06
+pulse_ms = 3200
+phase = 0.24
+
+[[login.decor]]
+kind = "image"
+image = "assets/droplet.png"
+width = 56
+anchor = "top-left"
+offset = [1752, 802]
+opacity = 0.9
+[login.decor.motion]
+float = [9, -20]
+float_ms = 6800
+fade = 0.35
+fade_ms = 5000
+pulse = 0.04
+pulse_ms = 3000
+phase = 0.48
+
+[[login.decor]]
+kind = "image"
+image = "assets/droplet.png"
+width = 30
+anchor = "top-left"
+offset = [1150, 892]
+opacity = 0.8
+[login.decor.motion]
+float = [-5, -12]
+float_ms = 7600
+fade = 0.45
+fade_ms = 6200
+pulse = 0.05
+pulse_ms = 3600
+phase = 0.72
+
+# The mask is a quiet joke about the role she plays, tucked into the margin.
+[[login.decor]]
+kind = "image"
+image = "assets/mask.png"
+width = 76
+anchor = "top-left"
+offset = [1128, 858]
+opacity = 0.85
+[login.decor.motion]
+sway = 2.0
+sway_ms = 7000
+fade = 0.12
+fade_ms = 8000
+phase = 0.6
+
+# Brand lockup on the dark curtain: cream type, gold sigil.
+[[login.decor]]
+kind = "image"
+image = "assets/sigil.png"
+width = 64
+anchor = "top-left"
+offset = [58, 46]
+
+[[login.decor]]
+kind = "text"
+text = "DAWN"
+size = 30
+bold = true
+tracking = 0.3
+color = "#f7fbff"
+anchor = "top-left"
+offset = [132, 52]
+
+[[login.decor]]
+kind = "text"
+text = "AN OPERA AT FIRST LIGHT"
+size = 10
+tracking = 0.24
+color = "#bfe9f7"
+anchor = "top-left"
+offset = [134, 92]
+
+# Programme heading.
+[[login.decor]]
+kind = "text"
+text = "A FONTAINE OPERA IN THREE ACTS"
+size = 10
+tracking = 0.3
+color = "#e8c987"
+anchor = "top-left"
+offset = [1226, 238]
+
+[[login.decor]]
+kind = "text"
+text = "FURINA"
+size = 80
+bold = true
+tracking = 0.12
+color = "#f7fbff"
+anchor = "top-left"
+offset = [1220, 258]
+
+[[login.decor]]
+kind = "image"
+image = "assets/divider.png"
+width = 380
+anchor = "top-left"
+offset = [1226, 368]
+
+[[login.decor]]
+kind = "text"
+text = "Regina of All Waters, Kindreds, Peoples and Laws"
+size = 15
+tracking = 0.02
+color = "#cfe9fb"
+anchor = "top-left"
+offset = [1226, 392]
+
+[[login.decor]]
+kind = "text"
+text = "ANIMULA CHORAGI  ·  ACT III  ·  THE VERDICT"
+size = 9
+tracking = 0.22
+color = "#8fe6ff"
+anchor = "top-left"
+offset = [1226, 424]
+
+# Gamified programme footer: applause, case number, and the night's billing.
+[[login.decor]]
+kind = "text"
+text = "APPLAUSE METER"
+size = 9
+tracking = 0.22
+color = "#e8c987"
+anchor = "top-left"
+offset = [1226, 800]
+
+[[login.decor]]
+kind = "text"
+text = "100%"
+size = 15
+bold = true
+color = "#f7fbff"
+anchor = "top-left"
+offset = [1348, 794]
+
+[[login.decor]]
+kind = "text"
+text = "CASE 077  ·  ORATRICE MECHANIQUE  ·  3 ACTS"
+size = 9
+tracking = 0.16
+color = "#a9cee5"
+anchor = "top-left"
+offset = [1226, 832]
+
+[[login.decor]]
+kind = "text"
+text = "THE CURTAIN IS UP. THE SEAT IS YOURS."
+size = 10
+tracking = 0.2
+color = "#dff3ff"
+anchor = "top-left"
+offset = [64, 948]
+
+[[login.decor]]
+kind = "text"
+text = "FONTAINE  ·  OPERA EPICLESE  ·  EVENING PERFORMANCE"
+size = 9
+tracking = 0.16
+color = "#8fb6d8"
+anchor = "top-left"
+offset = [64, 970]
+
+[[login.decor]]
+kind = "text"
+text = "DAWN  ·  A NEW DAY"
+size = 10
+tracking = 0.22
+color = "#dff3ff"
+anchor = "bottom-right"
+offset = [64, 38]
+
+[background]
+kind = "video"
+image = "wallpaper.mp4"
+fit = "cover"
+fps = 0
+memory_limit_mb = 1024
+idle_pause_secs = 0
+
+[theme]
+preset = "glass-dark"
+text = "#f7fbff"
+muted = "#bfe0f2"
+accent = "#e8c987"
+error = "#ff9bb0"
+tint = "#06122bcc"
+border = "#e8c98744"
+shadow = "#020814aa"
+focus_ring = "#46c8ee"
+corner_radius = 2
+spacing = 1.0
+noise = false
+min_contrast = 4.5
+
+[theme.blur]
+enabled = false
+
+[motion]
+enabled = true
+reduced = false
+boot_ms = 650
+focus_ms = 180
+shake_ms = 320
+drag_ms = 120
+
+[layout]
+save = false
+
+[clock]
+enabled = false
+
+[media]
+enabled = false
+
+[power]
+low_power = false
+
+[sessions]
+dirs = ["/usr/share/wayland-sessions", "/usr/share/xsessions"]
+
+[plugins]
+enabled = false
+
+[auth]
+timeout_secs = 120

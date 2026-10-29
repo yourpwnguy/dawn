@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="28" viewBox="0 0 620 28">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d8a84b" stop-opacity="0"/>
+      <stop offset="0.18" stop-color="#d8a84b"/>
+      <stop offset="0.5" stop-color="#fff3cf"/>
+      <stop offset="0.82" stop-color="#d8a84b"/>
+      <stop offset="1" stop-color="#d8a84b" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="wing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff3b52"/>
+      <stop offset="0.6" stop-color="#cf1230"/>
+      <stop offset="1" stop-color="#7a0a1c"/>
+    </linearGradient>
+    <linearGradient id="bone" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbf4e6"/>
+      <stop offset="1" stop-color="#e2cfad"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Gold rule fades into the page at both ends. -->
+  <path d="M10 14 H252" stroke="url(#gold)" stroke-width="1.6"/>
+  <path d="M366 14 H438" stroke="url(#gold)" stroke-width="1.6"/>
+  <path d="M492 14 H610" stroke="url(#gold)" stroke-width="1.6"/>
+
+  <!-- A thin crimson thread underneath keeps the rule from reading as plain gold. -->
+  <path d="M46 17.4 H232 M508 17.4 H584" stroke="#cf1230" stroke-width="0.9" opacity="0.55"/>
+
+  <!-- Diamond terminals. -->
+  <g fill="url(#gold)">
+    <path d="M10 14 L15 11 L20 14 L15 17 Z"/>
+    <path d="M240 14 L245 11 L250 14 L245 17 Z"/>
+    <path d="M368 14 L373 11 L378 14 L373 17 Z"/>
+    <path d="M436 14 L441 11 L446 14 L441 17 Z"/>
+    <path d="M492 14 L497 11 L502 14 L497 17 Z"/>
+    <path d="M600 14 L605 11 L610 14 L605 17 Z"/>
+  </g>
+  <g fill="#ff3b52">
+    <circle cx="82" cy="14" r="1.5"/>
+    <circle cx="538" cy="14" r="1.5"/>
+  </g>
+
+  <!-- Centre butterfly, small enough to stay a grace note. -->
+  <g>
+    <path d="M310 14 C299 9 286 2 278 4 C269 6 273 15 284 18 C292 20 303 18 310 14 Z" fill="url(#wing)" stroke="#d8a84b" stroke-width="0.8"/>
+    <path d="M310 14 C321 9 334 2 342 4 C351 6 347 15 336 18 C328 20 317 18 310 14 Z" fill="url(#wing)" stroke="#d8a84b" stroke-width="0.8"/>
+    <path d="M310 14 C301 19 294 24 288 26 C281 28 277 23 282 19 C289 15 301 13 310 14 Z" fill="url(#wing)" stroke="#d8a84b" stroke-width="0.8"/>
+    <path d="M310 14 C319 19 326 24 332 26 C339 28 343 23 338 19 C331 15 319 13 310 14 Z" fill="url(#wing)" stroke="#d8a84b" stroke-width="0.8"/>
+    <circle cx="287" cy="10" r="1.1" fill="#f3e7d2" opacity="0.85"/>
+    <circle cx="333" cy="10" r="1.1" fill="#f3e7d2" opacity="0.85"/>
+    <path d="M310 7 L311.4 14 L310 21 L308.6 14 Z" fill="#f3e7d2"/>
+    <path d="M310 7 C307 4 304 3 301 3 M310 7 C313 4 316 3 319 3" stroke="#d8a84b" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Small eighth note on the right half. -->
+  <g>
+    <ellipse cx="462" cy="21" rx="5.6" ry="4.2" transform="rotate(-20 462 21)" fill="url(#bone)" stroke="#d8a84b" stroke-width="1"/>
+    <rect x="466" y="4.5" width="2.2" height="16" rx="1" fill="#f3e7d2"/>
+    <path d="M468 5 C476 8 479 14 473 18 C475 12 472 9 468 8 Z" fill="#d8a84b"/>
+    <path d="M462 25.5 C458 27 452 26 450 24" stroke="#cf1230" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.7"/>
+  </g>
+
+  <!-- Tiny four point accents flank the note. -->
+  <g fill="#ff7a3c" opacity="0.85">
+    <path d="M430 8 L431.5 12.5 L436 14 L431.5 15.5 L430 20 L428.5 15.5 L424 14 L428.5 12.5 Z"/>
+    <path d="M486 12 L487 15 L490 16 L487 17 L486 20 L485 17 L482 16 L485 15 Z"/>
+  </g>
+</svg>

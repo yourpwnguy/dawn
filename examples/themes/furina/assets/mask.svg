@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+  <defs>
+    <radialGradient id="porcelain" cx="0.4" cy="0.28" r="0.86">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.45" stop-color="#f7fbff"/>
+      <stop offset="0.78" stop-color="#e3eef7"/>
+      <stop offset="1" stop-color="#c2d8e8"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#fff3d0"/>
+      <stop offset="0.4" stop-color="#e8c987"/>
+      <stop offset="0.78" stop-color="#bf934a"/>
+      <stop offset="1" stop-color="#94662a"/>
+    </linearGradient>
+    <radialGradient id="hydro" cx="0.38" cy="0.3" r="0.75">
+      <stop offset="0" stop-color="#f4feff"/>
+      <stop offset="0.34" stop-color="#b8f3ff"/>
+      <stop offset="0.72" stop-color="#46c8ee"/>
+      <stop offset="1" stop-color="#207fa9"/>
+    </radialGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#46c8ee" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#46c8ee" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cheek">
+      <stop offset="0" stop-color="#a9c4da" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#a9c4da" stop-opacity="0"/>
+    </radialGradient>
+    <path id="face" d="M100 10 C136 10 162 30 169 66 C174 90 169 110 161 126
+      C153 144 141 160 125 174 C117 182 109 188 100 190 C91 188 83 182 75 174
+      C59 160 47 144 39 126 C31 110 26 90 31 66 C38 30 64 10 100 10 Z"/>
+  </defs>
+
+  <ellipse cx="100" cy="104" rx="94" ry="90" fill="url(#glow)"/>
+
+  <g transform="rotate(-4 100 100)">
+    <use href="#face" fill="url(#porcelain)" stroke="url(#gold)" stroke-width="2.6"/>
+    <use href="#face" fill="none" stroke="#c49a4f" stroke-width="0.9" stroke-opacity="0.4"
+         transform="translate(100 100) scale(0.955) translate(-100 -100)"/>
+
+    <path d="M100 10 C64 10 38 30 31 66 C26 90 31 110 39 126 C47 144 59 160 75 174
+             C83 182 91 188 100 190 C90 178 80 166 72 152 C60 132 54 110 56 88
+             C58 58 74 26 100 10 Z" fill="#a9c4da" fill-opacity="0.13"/>
+
+    <ellipse cx="58" cy="120" rx="20" ry="24" fill="url(#cheek)"/>
+    <ellipse cx="142" cy="120" rx="20" ry="24" fill="url(#cheek)"/>
+    <ellipse cx="82" cy="44" rx="30" ry="18" fill="#ffffff" fill-opacity="0.3"/>
+
+    <ellipse cx="72" cy="82" rx="19" ry="9" fill="#6a5acd" fill-opacity="0.07"/>
+    <ellipse cx="128" cy="82" rx="19" ry="9" fill="#6a5acd" fill-opacity="0.07"/>
+    <path d="M52 86 C60 64 84 62 92 82" fill="none" stroke="url(#gold)" stroke-width="1.6"
+          stroke-linecap="round"/>
+    <path d="M148 86 C140 64 116 62 108 82" fill="none" stroke="url(#gold)" stroke-width="1.6"
+          stroke-linecap="round"/>
+    <path d="M54 92 C61 75 81 75 88 92 C80 83 62 83 54 92 Z"
+          fill="#06122b" stroke="#c79b4d" stroke-width="1.1"/>
+    <path d="M146 92 C139 75 119 75 112 92 C120 83 138 83 146 92 Z"
+          fill="#06122b" stroke="#c79b4d" stroke-width="1.1"/>
+    <path d="M52 80 C56 76 60 76 63 78" fill="none" stroke="#e8c987" stroke-width="1"
+          stroke-linecap="round" stroke-opacity="0.7"/>
+    <path d="M148 80 C144 76 140 76 137 78" fill="none" stroke="#e8c987" stroke-width="1"
+          stroke-linecap="round" stroke-opacity="0.7"/>
+
+    <path d="M100 28 C92 34 86 42 84 54 C90 49 96 47 100 47 C104 47 110 49 116 54
+             C114 42 108 34 100 28 Z" fill="none" stroke="url(#gold)" stroke-width="1.3"
+          stroke-linecap="round"/>
+    <path d="M100 38 L104 44 L100 50 L96 44 Z" fill="url(#hydro)" stroke="#e6fdff" stroke-width="0.7"/>
+    <circle cx="100" cy="57" r="1.3" fill="url(#gold)"/>
+    <path d="M76 52 C70 54 66 58 64 64" fill="none" stroke="#e8c987" stroke-width="0.9"
+          stroke-linecap="round" stroke-opacity="0.6"/>
+    <path d="M124 52 C130 54 134 58 136 64" fill="none" stroke="#e8c987" stroke-width="0.9"
+          stroke-linecap="round" stroke-opacity="0.6"/>
+
+    <path d="M100 96 C99 108 95 116 91 120 C95 122 99 121 101 119" fill="none"
+          stroke="#b99b62" stroke-width="1.2" stroke-linecap="round" stroke-opacity="0.8"/>
+    <circle cx="91" cy="122" r="1" fill="#b99b62" fill-opacity="0.5"/>
+    <circle cx="108" cy="122" r="1" fill="#b99b62" fill-opacity="0.5"/>
+
+    <path d="M62 128 C76 150 124 150 138 128 C134 160 66 160 62 128 Z"
+          fill="#06122b" stroke="url(#gold)" stroke-width="1.6"/>
+    <path d="M68 130 C82 142 118 142 132 130 C124 137 76 137 68 130 Z"
+          fill="#f7fbff" fill-opacity="0.92"/>
+    <path d="M52 124 C48 130 48 137 53 143" fill="none" stroke="#b99b62" stroke-width="1"
+          stroke-linecap="round" stroke-opacity="0.5"/>
+    <path d="M148 124 C152 130 152 137 147 143" fill="none" stroke="#b99b62" stroke-width="1"
+          stroke-linecap="round" stroke-opacity="0.5"/>
+
+    <path d="M33 82 C41 76 47 78 49 84 C51 90 45 94 41 90 C38 87 40 83 44 84"
+          fill="none" stroke="url(#gold)" stroke-width="1.1" stroke-linecap="round" stroke-opacity="0.8"/>
+    <path d="M167 82 C159 76 153 78 151 84 C149 90 155 94 159 90 C162 87 160 83 156 84"
+          fill="none" stroke="url(#gold)" stroke-width="1.1" stroke-linecap="round" stroke-opacity="0.8"/>
+    <path d="M61 159 C68 166 76 168 83 165" fill="none" stroke="url(#gold)" stroke-width="1"
+          stroke-linecap="round" stroke-opacity="0.6"/>
+    <path d="M139 159 C132 166 124 168 117 165" fill="none" stroke="url(#gold)" stroke-width="1"
+          stroke-linecap="round" stroke-opacity="0.6"/>
+
+    <path d="M32 100 C22 96 13 100 8 110 C16 105 24 107 31 114 Z"
+          fill="url(#gold)" fill-opacity="0.9" stroke="#b8893f" stroke-width="0.6"/>
+    <path d="M168 100 C178 96 187 100 192 110 C184 105 176 107 169 114 Z"
+          fill="url(#gold)" fill-opacity="0.9" stroke="#b8893f" stroke-width="0.6"/>
+    <path d="M31 106 C24 106 19 108 15 112" fill="none" stroke="#e8c987" stroke-width="1.2"
+          stroke-linecap="round" stroke-opacity="0.8"/>
+    <path d="M169 106 C176 106 181 108 185 112" fill="none" stroke="#e8c987" stroke-width="1.2"
+          stroke-linecap="round" stroke-opacity="0.8"/>
+
+    <path d="M128 106 C132 113 137 118 137 124 A9 9 0 0 1 119 124 C119 118 124 113 128 106 Z"
+          fill="url(#hydro)" stroke="#e0fcff" stroke-width="0.9"/>
+    <path d="M123 121 C121 124 121 127 123 129" fill="none" stroke="#ffffff" stroke-width="1.7"
+          stroke-linecap="round" stroke-opacity="0.7"/>
+    <circle cx="132" cy="127" r="1.1" fill="#ffffff" fill-opacity="0.65"/>
+
+    <path d="M44 40 L46 45 L51 47 L46 49 L44 54 L42 49 L37 47 L42 45 Z" fill="#e8c987"
+          fill-opacity="0.55"/>
+    <path d="M156 40 L158 45 L163 47 L158 49 L156 54 L154 49 L149 47 L154 45 Z" fill="#e8c987"
+          fill-opacity="0.55"/>
+  </g>
+</svg>

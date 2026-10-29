@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="28" viewBox="0 0 620 28">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8e9ba"/>
+      <stop offset="0.5" stop-color="#e8c987"/>
+      <stop offset="1" stop-color="#b8893f"/>
+    </linearGradient>
+    <linearGradient id="lineFade" x1="10" y1="0" x2="238" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e8c987" stop-opacity="0"/>
+      <stop offset="0.55" stop-color="#e8c987" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#f3dda6" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="hydro" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#e9fdff"/>
+      <stop offset="0.45" stop-color="#8fe6ff"/>
+      <stop offset="1" stop-color="#2598c6"/>
+    </linearGradient>
+  </defs>
+
+  <g id="half">
+    <path d="M10 14 H232" fill="none" stroke="url(#lineFade)" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="M14 14 H58" fill="none" stroke="#e8c987" stroke-width="0.8" stroke-opacity="0.35"/>
+    <path d="M236 8 L242 14 L236 20 L230 14 Z" fill="url(#gold)"/>
+    <path d="M244 18 C252 8 264 4 272 10 C280 16 286 20 292 14 C296 10 293 6 289 7"
+          fill="none" stroke="url(#gold)" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M250 22 C258 16 268 14 276 18 C282 21 288 20 292 17" fill="none"
+          stroke="#8fe6ff" stroke-width="1.1" stroke-linecap="round" stroke-opacity="0.55"/>
+    <path d="M296 10 L298 14 L296 18 L294 14 Z" fill="#8fe6ff" fill-opacity="0.8"/>
+    <circle cx="252" cy="14" r="1.3" fill="#f3dda6" fill-opacity="0.9"/>
+  </g>
+  <use href="#half" transform="translate(620 0) scale(-1 1)"/>
+
+  <path d="M310 2 C313 8 318 13 318 18 A8 8 0 0 1 302 18 C302 13 307 8 310 2 Z"
+        fill="url(#hydro)" stroke="#c9f6ff" stroke-width="0.9"/>
+  <ellipse cx="307" cy="15" rx="1.3" ry="2.4" fill="#ffffff" fill-opacity="0.8"/>
+</svg>

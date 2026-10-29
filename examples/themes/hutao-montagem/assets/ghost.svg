@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="280" viewBox="0 0 240 280">
+  <defs>
+    <linearGradient id="spirit" x1="0.35" y1="0" x2="0.65" y2="1">
+      <stop offset="0" stop-color="#f4fffd"/>
+      <stop offset="0.28" stop-color="#d4f8f2"/>
+      <stop offset="0.58" stop-color="#a5e5de"/>
+      <stop offset="0.76" stop-color="#8fc9c9"/>
+      <stop offset="0.88" stop-color="#c89a80"/>
+      <stop offset="1" stop-color="#ff8a4a"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.46" r="0.5">
+      <stop offset="0" stop-color="#b9ede6" stop-opacity="0.26"/>
+      <stop offset="0.62" stop-color="#8fd4d4" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#8fd4d4" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="emberWash" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff7a3c" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#ff8a4a" stop-opacity="0.28"/>
+      <stop offset="0.78" stop-color="#ff7a3c" stop-opacity="0.62"/>
+      <stop offset="1" stop-color="#cf1230" stop-opacity="0.72"/>
+    </linearGradient>
+    <linearGradient id="crest" x1="0.3" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#fff3cf"/>
+      <stop offset="0.32" stop-color="#ffd27a"/>
+      <stop offset="0.7" stop-color="#ff9a4a"/>
+      <stop offset="1" stop-color="#ff5a2e"/>
+    </linearGradient>
+    <linearGradient id="plum" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#4a1a33" stop-opacity="0"/>
+      <stop offset="0.6" stop-color="#4a1a33" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#4a1a33" stop-opacity="0.42"/>
+    </linearGradient>
+
+    <!-- The body outline is reused as a clip so the plum shadow and the ember
+         tail tint stay inside the silhouette rather than floating over it. -->
+    <path id="body" d="M120 24 C164 24 194 56 194 100 C194 128 180 152 160 168 C172 180 170 196 156 202 C146 206 136 200 132 190 C134 212 148 230 168 240 C146 244 126 230 116 210 C106 226 88 236 68 234 C86 220 94 200 96 184 C88 194 72 196 62 186 C52 176 56 160 68 152 C52 136 46 116 46 96 C46 54 76 24 120 24 Z"/>
+    <clipPath id="bodyClip"><use href="#body"/></clipPath>
+  </defs>
+
+  <ellipse cx="120" cy="136" rx="104" ry="118" fill="url(#halo)"/>
+
+  <!-- Candle-like flame crest: the quickest way to read flame instead of
+       jellyfish. Drawn behind the head so it grows out of the crown. -->
+  <path d="M120 5 C128 15 130 25 124 33 C119 40 109 40 104 33 C99 25 103 15 111 11 C108 6 113 2 120 5 Z" fill="url(#crest)" stroke="#b9863a" stroke-width="1" stroke-opacity="0.5"/>
+  <path d="M118 15 C122 21 122 27 119 31 C116 34 112 31 112 26 C112 21 115 18 118 15 Z" fill="#fff8e6" opacity="0.8"/>
+
+  <use href="#body" fill="url(#spirit)"/>
+  <g clip-path="url(#bodyClip)">
+    <path d="M-10 150 C40 156 88 176 128 206 L150 300 H-10 Z" fill="url(#plum)"/>
+    <rect x="0" y="132" width="240" height="148" fill="url(#emberWash)"/>
+    <ellipse cx="86" cy="86" rx="34" ry="30" fill="#ffffff" opacity="0.3"/>
+  </g>
+  <use href="#body" fill="none" stroke="#2a0f1c" stroke-width="2" opacity="0.6"/>
+
+  <!-- Little ember licks at the tips of the two flame tails. -->
+  <path d="M163 230 C167 238 165 245 160 250 C155 245 156 237 163 230 Z" fill="#ff9a4a" opacity="0.8"/>
+  <path d="M73 226 C77 234 75 241 70 246 C65 241 66 233 73 226 Z" fill="#ff7a3c" opacity="0.75"/>
+
+  <!-- Face. The lids tilt inward for the prankster look; this is a grin, not
+       a scare. -->
+  <path d="M82 112 C88 104 100 104 106 112 C100 120 88 120 82 112 Z" fill="#241021"/>
+  <path d="M134 112 C140 104 152 104 158 112 C152 120 140 120 134 112 Z" fill="#241021"/>
+  <circle cx="100" cy="110" r="2.6" fill="#e8fffb"/>
+  <circle cx="147" cy="110" r="2.6" fill="#e8fffb"/>
+  <circle cx="102.5" cy="113" r="1.1" fill="#ffffff" opacity="0.9"/>
+  <circle cx="149.5" cy="113" r="1.1" fill="#ffffff" opacity="0.9"/>
+  <path d="M84 98 C90 94 98 94 104 98 M136 98 C142 94 150 94 156 98" fill="none" stroke="#4a1a33" stroke-width="2.2" stroke-linecap="round" opacity="0.55"/>
+
+  <path d="M106 132 C112 144 128 144 134 132 C128 138 112 138 106 132 Z" fill="#241021"/>
+  <path d="M120 138 C123 136 126 136 129 138 C127 141 122 141 120 138 Z" fill="#ff9a86" opacity="0.8"/>
+  <circle cx="78" cy="130" r="9" fill="#ff7a3c" opacity="0.2"/>
+  <circle cx="162" cy="130" r="9" fill="#ff7a3c" opacity="0.2"/>
+
+  <!-- Floating sparks, sized to feel like distant candle motes. -->
+  <g fill="#ffd27a">
+    <path d="M34 76 L36 83 L43 85 L36 87 L34 94 L32 87 L25 85 L32 83 Z" opacity="0.85"/>
+    <path d="M202 112 L203.5 117 L208 118.5 L203.5 120 L202 125 L200.5 120 L196 118.5 L200.5 117 Z" opacity="0.7"/>
+    <circle cx="190" cy="57" r="2" opacity="0.55"/>
+    <circle cx="50" cy="126" r="1.6" fill="#b9ede6" opacity="0.7"/>
+    <circle cx="180" cy="210" r="1.8" fill="#ff9a4a" opacity="0.6"/>
+  </g>
+</svg>

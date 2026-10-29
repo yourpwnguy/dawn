@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="760" viewBox="0 0 64 760">
+  <defs>
+    <linearGradient id="line" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E9CA80" stop-opacity="0"/>
+      <stop offset="0.14" stop-color="#E9CA80" stop-opacity="0.7"/>
+      <stop offset="0.86" stop-color="#E9CA80" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#E9CA80" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF3CF"/>
+      <stop offset="1" stop-color="#C49445"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 0 V760" stroke="url(#line)" stroke-width="3"/>
+  <g fill="#0A2340" stroke="url(#gold)" stroke-width="3">
+    <path d="M32 34 L46 62 L32 90 L18 62 Z"/>
+    <path d="M32 230 L44 254 L32 278 L20 254 Z"/>
+    <path d="M32 356 L50 386 L32 416 L14 386 Z"/>
+    <path d="M32 494 L44 518 L32 542 L20 518 Z"/>
+    <path d="M32 670 L46 698 L32 726 L18 698 Z"/>
+  </g>
+  <g fill="#9BEAFF" fill-opacity="0.85">
+    <path d="M32 44 L39 62 L32 80 L25 62 Z"/>
+    <path d="M32 366 L41 386 L32 406 L23 386 Z"/>
+    <path d="M32 680 L39 698 L32 716 L25 698 Z"/>
+  </g>
+  <g fill="#E9CA80" fill-opacity="0.6">
+    <circle cx="32" cy="152" r="2.5"/>
+    <circle cx="32" cy="168" r="2.5"/>
+    <circle cx="32" cy="592" r="2.5"/>
+    <circle cx="32" cy="608" r="2.5"/>
+  </g>
+  <path d="M18 152 Q32 136 46 152 Q32 168 18 152 Z" fill="none" stroke="#E9CA80" stroke-opacity="0.4" stroke-width="1.6"/>
+  <path d="M18 608 Q32 592 46 608 Q32 624 18 608 Z" fill="none" stroke="#E9CA80" stroke-opacity="0.4" stroke-width="1.6"/>
+</svg>

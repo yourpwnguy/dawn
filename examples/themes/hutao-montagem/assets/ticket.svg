@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="130" viewBox="0 0 280 130">
+  <defs>
+    <linearGradient id="bone" x1="0" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#fdf7ea"/>
+      <stop offset="0.5" stop-color="#f3e7d2"/>
+      <stop offset="1" stop-color="#ddc8a4"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#b9863a"/>
+      <stop offset="0.45" stop-color="#e8c87e"/>
+      <stop offset="1" stop-color="#b9863a"/>
+    </linearGradient>
+    <linearGradient id="crimson" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff3b52"/>
+      <stop offset="0.6" stop-color="#cf1230"/>
+      <stop offset="1" stop-color="#7a0a1c"/>
+    </linearGradient>
+
+    <!-- Two punched notches sit on the tear line. A mask gives a real cut so
+         the transparent page shows through instead of a painted bone circle. -->
+    <path id="ticket" d="M22 8 H258 L272 22 V108 L258 122 H22 L8 108 V22 Z"/>
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="280" height="130">
+      <use href="#ticket" fill="#ffffff"/>
+      <circle cx="196" cy="8" r="6" fill="#000000"/>
+      <circle cx="196" cy="122" r="6" fill="#000000"/>
+    </mask>
+  </defs>
+
+  <!-- Offset crimson board, like a second pass through the press. -->
+  <use href="#ticket" transform="translate(0 4)" fill="#cf1230" opacity="0.32"/>
+
+  <g mask="url(#cut)">
+    <use href="#ticket" fill="url(#bone)" stroke="#cf1230" stroke-width="2.4"/>
+    <path d="M26 14 H254 L266 26 V104 L254 116 H26 L14 104 V26 Z" fill="none" stroke="#d8a84b" stroke-width="0.9" opacity="0.75"/>
+
+    <!-- Left hand print block: abstract programme marks, no type. -->
+    <rect x="28" y="30" width="92" height="6" rx="3" fill="url(#crimson)"/>
+    <rect x="28" y="41" width="68" height="3" rx="1.5" fill="url(#gold)"/>
+    <rect x="28" y="48" width="80" height="2" rx="1" fill="#cf1230" opacity="0.55"/>
+    <rect x="28" y="54" width="46" height="2" rx="1" fill="#cf1230" opacity="0.35"/>
+
+    <!-- Cancellation stamp with a butterfly mark. -->
+    <g>
+      <circle cx="58" cy="88" r="22" fill="#cf1230" opacity="0.08"/>
+      <circle cx="58" cy="88" r="22" fill="none" stroke="#cf1230" stroke-width="1.2" stroke-dasharray="2 4"/>
+      <g fill="url(#crimson)" stroke="#d8a84b" stroke-width="0.7">
+        <path d="M58 88 C52 81 43 76 38 79 C33 82 37 89 46 91 C51 92 55 91 58 88 Z"/>
+        <path d="M58 88 C64 81 73 76 78 79 C83 82 79 89 70 91 C65 92 61 91 58 88 Z"/>
+        <path d="M58 88 C53 93 49 98 47 100 C43 103 40 99 44 95 C48 91 54 89 58 88 Z"/>
+        <path d="M58 88 C63 93 67 98 69 100 C73 103 76 99 72 95 C68 91 62 89 58 88 Z"/>
+      </g>
+      <path d="M58 84 L59 88 L58 92 L57 88 Z" fill="#f3e7d2"/>
+    </g>
+
+    <!-- Right hand print block beside the stamp. -->
+    <g fill="#cf1230">
+      <rect x="92" y="76" width="80" height="3" rx="1.5" opacity="0.8"/>
+      <rect x="92" y="84" width="62" height="2" rx="1" opacity="0.55"/>
+      <rect x="92" y="91" width="72" height="2" rx="1" opacity="0.4"/>
+      <rect x="92" y="98" width="38" height="2" rx="1" opacity="0.3"/>
+    </g>
+    <path d="M174 34 L175.5 39.5 L181 41 L175.5 42.5 L174 48 L172.5 42.5 L167 41 L172.5 39.5 Z" fill="#ff7a3c" opacity="0.9"/>
+
+    <!-- Perforation. The dashes are gold over a crimson guide. -->
+    <path d="M196 16 V114" stroke="#cf1230" stroke-width="1.3" stroke-dasharray="3 5" opacity="0.7"/>
+    <path d="M196 16 V114" stroke="#d8a84b" stroke-width="0.8" stroke-dasharray="1 7"/>
+
+    <!-- Stub: barcode and a drawn 77, both pure geometry. -->
+    <g fill="#cf1230">
+      <rect x="212" y="30" width="2" height="28"/>
+      <rect x="216" y="30" width="1" height="28" opacity="0.6"/>
+      <rect x="220" y="30" width="3" height="28"/>
+      <rect x="225" y="30" width="1.5" height="28" opacity="0.7"/>
+      <rect x="229" y="30" width="2" height="28"/>
+      <rect x="234" y="30" width="1" height="28" opacity="0.55"/>
+      <rect x="238" y="30" width="3.5" height="28"/>
+      <rect x="244" y="30" width="1.5" height="28" opacity="0.7"/>
+      <rect x="248" y="30" width="2" height="28"/>
+      <rect x="253" y="30" width="1" height="28" opacity="0.55"/>
+      <rect x="257" y="30" width="2.5" height="28"/>
+    </g>
+    <g fill="none" stroke="#b9863a" stroke-width="3.2" stroke-linecap="square">
+      <path d="M216 78 H231 L224 100"/>
+      <path d="M237 78 H252 L245 100"/>
+    </g>
+    <circle cx="224" cy="109" r="1.5" fill="#cf1230"/>
+    <circle cx="245" cy="109" r="1.5" fill="#d8a84b"/>
+  </g>
+</svg>

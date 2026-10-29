@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="620" height="28" viewBox="0 0 620 28">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8e6ae"/>
+      <stop offset=".5" stop-color="#e6c56e"/>
+      <stop offset="1" stop-color="#a97a2f"/>
+    </linearGradient>
+    <linearGradient id="fadeL" gradientUnits="userSpaceOnUse" x1="10" y1="14" x2="296" y2="14">
+      <stop offset="0" stop-color="#a97a2f" stop-opacity="0"/>
+      <stop offset=".28" stop-color="#b8893a" stop-opacity=".65"/>
+      <stop offset=".72" stop-color="#e6c56e" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#f8e6ae" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="fadeR" gradientUnits="userSpaceOnUse" x1="610" y1="14" x2="324" y2="14">
+      <stop offset="0" stop-color="#a97a2f" stop-opacity="0"/>
+      <stop offset=".28" stop-color="#b8893a" stop-opacity=".65"/>
+      <stop offset=".72" stop-color="#e6c56e" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#f8e6ae" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient id="jewel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d9c4ff"/>
+      <stop offset=".5" stop-color="#8a63e8"/>
+      <stop offset="1" stop-color="#3d2478"/>
+    </linearGradient>
+    <g id="star4">
+      <path d="M0-7C.9-2.4 2.4-.9 7 0 2.4.9.9 2.4 0 7-0.9 2.4-2.4.9-7 0-2.4-.9-.9-2.4 0-7Z"/>
+    </g>
+  </defs>
+
+  <path d="M24 14 H286" stroke="url(#fadeL)" stroke-width="2.2"/>
+  <path d="M334 14 H596" stroke="url(#fadeR)" stroke-width="2.2"/>
+  <path d="M48 18 H270 M350 18 H572" stroke="#e6c56e" stroke-width="1" opacity=".22"/>
+
+  <g fill="url(#gold)">
+    <path d="M12 7 L20 14 L12 21 L4 14 Z"/>
+    <path d="M608 7 L616 14 L608 21 L600 14 Z"/>
+    <path d="M170 11 L173 14 L170 17 L167 14 Z"/>
+    <path d="M450 11 L453 14 L450 17 L447 14 Z"/>
+  </g>
+
+  <g fill="#b48cff" opacity=".9">
+    <use xlink:href="#star4" transform="translate(250 14) scale(.8)"/>
+    <use xlink:href="#star4" transform="translate(370 14) scale(.8)"/>
+  </g>
+  <g fill="#b48cff" opacity=".7">
+    <use xlink:href="#star4" transform="translate(214 14) scale(.42)"/>
+    <use xlink:href="#star4" transform="translate(406 14) scale(.42)"/>
+  </g>
+
+  <path d="M310 1 L324 14 L310 27 L296 14 Z" fill="url(#jewel)" stroke="url(#gold)" stroke-width="1.6"/>
+  <path d="M310 6 L318 14 L310 22 L302 14 Z" fill="none" stroke="#f4efff" stroke-width="1" opacity=".65"/>
+  <path d="M310 1 V27 M296 14 H324" stroke="#f4efff" stroke-width=".8" opacity=".25"/>
+</svg>

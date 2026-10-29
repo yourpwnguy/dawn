@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="110" height="150" viewBox="0 0 110 150">
+  <defs>
+    <linearGradient id="bone" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#fffaf0"/>
+      <stop offset="0.45" stop-color="#f3e7d2"/>
+      <stop offset="0.82" stop-color="#e2c894"/>
+      <stop offset="1" stop-color="#c19a55"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3cf"/>
+      <stop offset="0.4" stop-color="#e8c87e"/>
+      <stop offset="0.75" stop-color="#d8a84b"/>
+      <stop offset="1" stop-color="#8f5f22"/>
+    </linearGradient>
+    <linearGradient id="shadow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff3b52"/>
+      <stop offset="0.6" stop-color="#cf1230"/>
+      <stop offset="1" stop-color="#6e0a1a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Crimson plate behind the note. The offset is deliberate: it gives the
+       mark a printed, poster ink drop without any filter work. -->
+  <g transform="translate(6 7)" fill="url(#shadow)">
+    <ellipse cx="42" cy="116" rx="27" ry="20" transform="rotate(-18 42 116)"/>
+    <rect x="63.5" y="26" width="9" height="92" rx="4.5"/>
+    <path d="M68 26 C90 34 102 52 96 72 C92 86 80 92 70 92 C80 78 80 58 68 48 Z"/>
+  </g>
+
+  <!-- Main note body. -->
+  <g>
+    <ellipse cx="42" cy="116" rx="27" ry="20" transform="rotate(-18 42 116)" fill="url(#bone)" stroke="#8f5f22" stroke-width="1.6"/>
+    <rect x="63.5" y="26" width="9" height="92" rx="4.5" fill="url(#gold)" stroke="#8f5f22" stroke-width="1.2"/>
+    <path d="M68 26 C90 34 102 52 96 72 C92 86 80 92 70 92 C80 78 80 58 68 48 Z" fill="url(#gold)" stroke="#8f5f22" stroke-width="1.2"/>
+
+    <!-- Printed highlights, not glossy 3D. -->
+    <path d="M26 106 C34 100 48 100 56 106" fill="none" stroke="#fffaf0" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+    <path d="M67 30 V112" stroke="#fff3cf" stroke-width="2" stroke-linecap="round" opacity="0.55"/>
+    <path d="M73 38 C86 46 92 57 90 67" fill="none" stroke="#fff3cf" stroke-width="1.6" stroke-linecap="round" opacity="0.45"/>
+    <circle cx="45" cy="119" r="3.2" fill="#cf1230" opacity="0.85"/>
+
+    <!-- A single ember spark keeps the note in the same family as the
+         marquee bulbs and the ghost flame. -->
+    <path d="M99 18 L100.5 22.5 L105 24 L100.5 25.5 L99 30 L97.5 25.5 L93 24 L97.5 22.5 Z" fill="#ff7a3c"/>
+  </g>
+</svg>

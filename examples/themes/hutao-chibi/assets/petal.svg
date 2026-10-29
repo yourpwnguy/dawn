@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <radialGradient id="petal" cx="0.35" cy="0.3" r="0.75">
+      <stop offset="0" stop-color="#ffe0c8"/>
+      <stop offset="0.55" stop-color="#e0745a"/>
+      <stop offset="1" stop-color="#9c2c34"/>
+    </radialGradient>
+  </defs>
+  <path d="M24 6 C34 10 42 20 40 30 C38 39 30 44 24 42 C18 44 10 39 8 30 C6 20 14 10 24 6 Z" fill="url(#petal)"/>
+  <path d="M24 10 C28 18 28 30 24 38" fill="none" stroke="#ffe0c8" stroke-opacity="0.35" stroke-width="1.2"/>
+  <path d="M14 26 C18 24 21 24 24 26" fill="none" stroke="#5b1e28" stroke-opacity="0.35" stroke-width="1"/>
+</svg>

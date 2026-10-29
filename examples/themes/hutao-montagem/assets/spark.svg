@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ff7a3c" stop-opacity="0.38"/>
+      <stop offset="0.55" stop-color="#ff3b52" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#ff3b52" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="star" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#fff3cf"/>
+      <stop offset="0.38" stop-color="#ffd27a"/>
+      <stop offset="0.72" stop-color="#ff9a4a"/>
+      <stop offset="1" stop-color="#ff5a2e"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#fffdf7"/>
+      <stop offset="1" stop-color="#ffe6ad"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Soft ember bloom, kept faint so the sparkle sits on any panel. -->
+  <circle cx="32" cy="32" r="31" fill="url(#halo)"/>
+
+  <!-- Four point sparkle: the concave sides keep the tips sharp at 64 px. -->
+  <path d="M32 2 C35 20 44 29 62 32 C44 35 35 44 32 62 C29 44 20 35 2 32 C20 29 29 20 32 2 Z" fill="url(#star)"/>
+
+  <!-- Inner hot core and a pin of light at the crossing. -->
+  <path d="M32 12 C34 25 39 30 52 32 C39 34 34 39 32 52 C30 39 25 34 12 32 C25 30 30 25 32 12 Z" fill="url(#core)" opacity="0.92"/>
+  <circle cx="32" cy="32" r="2.1" fill="#fffdf7"/>
+
+  <!-- Two diagonal needles give the sparkle a little night sky twinkle. -->
+  <path d="M12 12 L17 17 M52 12 L47 17 M12 52 L17 47 M52 52 L47 47" stroke="#ffd27a" stroke-width="1.2" stroke-linecap="round" opacity="0.55"/>
+</svg>

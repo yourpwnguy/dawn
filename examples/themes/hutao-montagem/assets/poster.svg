@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="1000" viewBox="0 0 840 1000">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3cf"/>
+      <stop offset="0.3" stop-color="#f0d492"/>
+      <stop offset="0.62" stop-color="#d8a84b"/>
+      <stop offset="0.86" stop-color="#b9863a"/>
+      <stop offset="1" stop-color="#8f5f22"/>
+    </linearGradient>
+    <radialGradient id="lacquer" cx="0.5" cy="0.47" r="0.64">
+      <stop offset="0" stop-color="#0a0509"/>
+      <stop offset="0.5" stop-color="#0c060a"/>
+      <stop offset="0.82" stop-color="#120811"/>
+      <stop offset="1" stop-color="#1a0a12"/>
+    </radialGradient>
+    <radialGradient id="mTL" gradientUnits="userSpaceOnUse" cx="62" cy="62" r="340">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#8a8a8a"/>
+      <stop offset="1" stop-color="#000000"/>
+    </radialGradient>
+    <radialGradient id="mBR" gradientUnits="userSpaceOnUse" cx="778" cy="938" r="340">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#8a8a8a"/>
+      <stop offset="1" stop-color="#000000"/>
+    </radialGradient>
+    <mask id="maskTL" maskUnits="userSpaceOnUse" x="0" y="0" width="840" height="1000">
+      <rect width="840" height="1000" fill="url(#mTL)"/>
+    </mask>
+    <mask id="maskBR" maskUnits="userSpaceOnUse" x="0" y="0" width="840" height="1000">
+      <rect width="840" height="1000" fill="url(#mBR)"/>
+    </mask>
+    <pattern id="halftone" width="14" height="14" patternUnits="userSpaceOnUse">
+      <circle cx="3.5" cy="3.5" r="1.7" fill="#cf1230"/>
+      <circle cx="10.5" cy="10.5" r="0.8" fill="#ff3b52"/>
+    </pattern>
+    <pattern id="speck" width="9" height="9" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="0.7" fill="#f3e7d2"/>
+      <circle cx="6" cy="5.5" r="0.45" fill="#d8a84b"/>
+    </pattern>
+
+    <!-- One art deco cut corner, mirrored into the other three. -->
+    <g id="cutTL">
+      <path d="M52 16 L80 16 L52 44 Z" fill="#cf1230" opacity="0.18"/>
+      <path d="M52 16 L80 16 L52 44 Z" fill="none" stroke="#d8a84b" stroke-width="0.9" opacity="0.7"/>
+      <path d="M64 28 L28 64" stroke="#d8a84b" stroke-width="1" opacity="0.55"/>
+      <path d="M76 40 L40 76" stroke="#d8a84b" stroke-width="0.7" opacity="0.3"/>
+      <path d="M74 74 L79 69 L84 74 L79 79 Z" fill="#d8a84b" opacity="0.85"/>
+      <path d="M79 71.5 L81.5 74 L79 76.5 L76.5 74 Z" fill="#cf1230"/>
+    </g>
+  </defs>
+
+  <!-- Black lacquer panel. The fill runs from near black in the middle to a
+       slightly warmer black at the rim, so the login form always has a quiet
+       bed to sit on. -->
+  <path d="M52 16 H788 L824 52 V948 L788 984 H52 L16 948 V52 Z" fill="url(#lacquer)"/>
+
+  <!-- Crimson edge: a wide low opacity bleed under a solid lacquer line. -->
+  <path d="M52 16 H788 L824 52 V948 L788 984 H52 L16 948 V52 Z" fill="none" stroke="#cf1230" stroke-width="16" opacity="0.16"/>
+  <path d="M52 16 H788 L824 52 V948 L788 984 H52 L16 948 V52 Z" fill="none" stroke="#cf1230" stroke-width="5"/>
+  <path d="M52 16 H788 L824 52 V948 L788 984 H52 L16 948 V52 Z" fill="none" stroke="#ff3b52" stroke-width="0.9" opacity="0.45"/>
+
+  <!-- Halftone grain bloomed into the top left and bottom right corners. The
+       masks keep the pattern away from the middle. -->
+  <g mask="url(#maskTL)" opacity="0.5">
+    <rect x="30" y="30" width="430" height="430" fill="url(#halftone)"/>
+    <rect x="30" y="30" width="430" height="430" fill="url(#speck)" opacity="0.6"/>
+  </g>
+  <g mask="url(#maskBR)" opacity="0.5">
+    <rect x="380" y="540" width="430" height="430" fill="url(#halftone)"/>
+    <rect x="380" y="540" width="430" height="430" fill="url(#speck)" opacity="0.6"/>
+  </g>
+
+  <!-- Faint 77 watermark, built from strokes so the file stays font free. -->
+  <g fill="none" stroke="#d8a84b" stroke-width="26" stroke-linecap="square" opacity="0.034">
+    <path d="M298 330 H386 L348 690"/>
+    <path d="M454 330 H542 L504 690"/>
+  </g>
+
+  <!-- Double gold border. -->
+  <path d="M74 40 H766 L800 74 V926 L766 960 H74 L40 926 V74 Z" fill="none" stroke="url(#gold)" stroke-width="2.2"/>
+  <path d="M86 52 H754 L788 86 V914 L754 948 H86 L52 914 V86 Z" fill="none" stroke="#d8a84b" stroke-width="0.9" opacity="0.55"/>
+  <path d="M80 46 H760 L794 80 V920 L760 954 H80 L46 920 V80 Z" fill="none" stroke="#cf1230" stroke-width="0.8" opacity="0.3"/>
+
+  <!-- Cut corner ornaments, mirrored from a single definition. -->
+  <use href="#cutTL"/>
+  <use href="#cutTL" transform="translate(840 0) scale(-1 1)"/>
+  <use href="#cutTL" transform="translate(0 1000) scale(1 -1)"/>
+  <use href="#cutTL" transform="translate(840 1000) scale(-1 -1)"/>
+
+  <!-- Bottom marquee rule: dashed light rail, bulb row, crimson stage line. -->
+  <g fill="none" stroke="#d8a84b" stroke-dasharray="2 7" opacity="0.45" stroke-width="0.9">
+    <path d="M120 870 H380"/>
+    <path d="M460 870 H720"/>
+  </g>
+  <path d="M110 882 H390" stroke="url(#gold)" stroke-width="1.6"/>
+  <path d="M450 882 H730" stroke="url(#gold)" stroke-width="1.6"/>
+
+  <!-- Ten bulbs per side, alternating gold and ember. -->
+  <g fill="#d8a84b">
+    <circle cx="122" cy="882" r="2.4"/><circle cx="170" cy="882" r="2.4"/>
+    <circle cx="218" cy="882" r="2.4"/><circle cx="266" cy="882" r="2.4"/>
+    <circle cx="314" cy="882" r="2.4"/><circle cx="362" cy="882" r="2.4"/>
+    <circle cx="482" cy="882" r="2.4"/><circle cx="530" cy="882" r="2.4"/>
+    <circle cx="578" cy="882" r="2.4"/><circle cx="626" cy="882" r="2.4"/>
+    <circle cx="674" cy="882" r="2.4"/><circle cx="722" cy="882" r="2.4"/>
+  </g>
+  <g fill="#ff7a3c">
+    <circle cx="146" cy="882" r="1.8"/><circle cx="194" cy="882" r="1.8"/>
+    <circle cx="242" cy="882" r="1.8"/><circle cx="290" cy="882" r="1.8"/>
+    <circle cx="338" cy="882" r="1.8"/><circle cx="386" cy="882" r="1.8"/>
+    <circle cx="506" cy="882" r="1.8"/><circle cx="554" cy="882" r="1.8"/>
+    <circle cx="602" cy="882" r="1.8"/><circle cx="650" cy="882" r="1.8"/>
+    <circle cx="698" cy="882" r="1.8"/><circle cx="746" cy="882" r="1.8"/>
+  </g>
+
+  <!-- Centre lozenge closes the rail and holds a single crimson eye. -->
+  <path d="M420 868 L442 882 L420 896 L398 882 Z" fill="#10060b" stroke="#d8a84b" stroke-width="1.4"/>
+  <path d="M420 874 L430 882 L420 890 L410 882 Z" fill="#cf1230"/>
+  <circle cx="420" cy="882" r="1.8" fill="#fff3cf"/>
+
+  <path d="M180 902 H660" stroke="#cf1230" stroke-width="1.2" opacity="0.45"/>
+  <g fill="#d8a84b" opacity="0.7">
+    <path d="M176 902 L182 899 L188 902 L182 905 Z"/>
+    <path d="M652 902 L658 899 L664 902 L658 905 Z"/>
+  </g>
+
+  <!-- Small dust motes near the corners, subtle enough not to read as stars. -->
+  <g fill="#ff7a3c" opacity="0.5">
+    <circle cx="104" cy="160" r="1.4"/>
+    <circle cx="142" cy="208" r="1"/>
+    <circle cx="736" cy="790" r="1.4"/>
+    <circle cx="694" cy="842" r="1"/>
+  </g>
+</svg>

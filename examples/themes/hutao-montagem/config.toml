@@ -1,0 +1,445 @@
+# dawn showcase: Hu Tao After Dark, a late-night Liyue concert poster for the
+# 77th Director of the Wangsheng Funeral Parlor.
+#
+# Hu Tao is a poet, prankster, and guide of the dead who makes mortality feel
+# like a party without ever disrespecting the rites. This theme leans into the
+# meme energy of the source clip: crimson and black, marquee bulbs, a cheeky
+# ghost flame, a butterfly (Papilio Charontis), and a ticket stub for the
+# night's set. The copy still keeps her real work in view.
+#
+# The wallpaper is example media in the bundle. Check its
+# provenance before redistributing it. Playing it needs ffmpeg on PATH.
+#
+# D-DIN Condensed gives the poster its loud, narrow voice. If it is missing,
+# dawn falls back to the embedded Inter face.
+
+[ui]
+font = "D-DIN Condensed"
+font_size = 17
+fullscreen = true
+
+[login]
+layout = "hero"
+anchor = "center"
+width = 1888
+height = 1048
+radius = 0
+padding = 0
+gap = 20
+surface = "none"
+show_shadow = false
+show_border = false
+draggable = false
+show_session = false
+show_hints = true
+show_picker = false
+tab = ""
+form_offset = [1210, 446]
+form_width = 470
+greeting = ""
+
+[login.field]
+height = 62
+radius = 0
+padding = 26
+font_size = 18
+background = "#120a0dee"
+background_end = "#1c0d12ee"
+border = "#d8a84b55"
+bracket = "#ff3b52"
+bracket_gap = 10
+text = "#f3e7d2"
+placeholder_color = "#b79a8e"
+focus = "#ff3b52"
+caret = "#ff7a3c"
+caret_width = 2
+icon_size = 19
+icon_gap = 14
+icon_color = "#d8a84b"
+
+[login.username]
+label = "GUEST LIST"
+placeholder = "Traveler name"
+icon = "user"
+
+[login.password]
+label = "BACKSTAGE PASS"
+placeholder = "Password"
+icon = "lock"
+mask = "•"
+
+[login.button]
+show = true
+text = "ENTER THE PARLOR"
+gap = 26
+height = 58
+radius = 0
+font_size = 18
+bold = true
+tracking = 0.14
+background = "#cf1230"
+background_end = "#7a0a1c"
+gradient_angle = 90
+text_color = "#f3e7d2"
+bracket = "#d8a84b"
+bracket_gap = 8
+hover_background = "#ff3b52"
+hover_background_end = "#9a1024"
+hover_direction = "left"
+hover_ms = 220
+hover_scale = 1.02
+hover_lift = 2
+glow = "#ff3b52"
+glow_size = 16
+effect = "sweep"
+effect_color = "#ffd9b0"
+effect_ms = 2000
+effect_angle = 112
+effect_strength = 0.34
+
+# The poster is the stage. It stays behind every field and ornament.
+[[login.decor]]
+kind = "image"
+image = "assets/poster.png"
+width = 800
+anchor = "top-left"
+offset = [1070, 96]
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 76
+anchor = "top-left"
+offset = [1100, 130]
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 76
+anchor = "top-left"
+offset = [1772, 130]
+rotation = 90
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 76
+anchor = "top-left"
+offset = [1772, 916]
+rotation = 180
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 76
+anchor = "top-left"
+offset = [1100, 916]
+rotation = 270
+
+# The marquee ring spins slowly. The ghost bobs, and the notes drift on
+# separate phases so the poster feels like a live set.
+[[login.decor]]
+kind = "image"
+image = "assets/ring.png"
+width = 150
+anchor = "top-left"
+offset = [1694, 146]
+opacity = 0.95
+[login.decor.motion]
+spin = 14.0
+fade = 0.16
+fade_ms = 6800
+phase = 0.08
+
+[[login.decor]]
+kind = "image"
+image = "assets/ghost.png"
+width = 110
+anchor = "top-left"
+offset = [1120, 708]
+opacity = 0.95
+[login.decor.motion]
+float = [8, -16]
+float_ms = 6200
+pulse = 0.05
+pulse_ms = 2800
+fade = 0.2
+fade_ms = 5000
+phase = 0.18
+
+[[login.decor]]
+kind = "image"
+image = "assets/note.png"
+width = 60
+anchor = "top-left"
+offset = [1136, 350]
+opacity = 0.9
+[login.decor.motion]
+float = [10, -22]
+float_ms = 5600
+fade = 0.45
+fade_ms = 4600
+spin = 14.0
+phase = 0.0
+
+[[login.decor]]
+kind = "image"
+image = "assets/note.png"
+width = 48
+anchor = "top-left"
+offset = [1800, 410]
+opacity = 0.85
+[login.decor.motion]
+float = [-8, -18]
+float_ms = 6800
+fade = 0.5
+fade_ms = 5800
+spin = -12.0
+phase = 0.26
+
+[[login.decor]]
+kind = "image"
+image = "assets/note.png"
+width = 54
+anchor = "top-left"
+offset = [1150, 890]
+opacity = 0.8
+[login.decor.motion]
+float = [9, -20]
+float_ms = 7400
+fade = 0.5
+fade_ms = 5200
+spin = 10.0
+phase = 0.54
+
+[[login.decor]]
+kind = "image"
+image = "assets/note.png"
+width = 44
+anchor = "top-left"
+offset = [1790, 760]
+opacity = 0.8
+[login.decor.motion]
+float = [-7, -16]
+float_ms = 6400
+fade = 0.55
+fade_ms = 6200
+spin = -11.0
+phase = 0.78
+
+[[login.decor]]
+kind = "image"
+image = "assets/spark.png"
+width = 24
+anchor = "top-left"
+offset = [1168, 300]
+opacity = 0.9
+[login.decor.motion]
+fade = 0.8
+fade_ms = 3000
+pulse = 0.12
+pulse_ms = 2600
+phase = 0.14
+
+[[login.decor]]
+kind = "image"
+image = "assets/spark.png"
+width = 18
+anchor = "top-left"
+offset = [1810, 330]
+opacity = 0.85
+[login.decor.motion]
+fade = 0.8
+fade_ms = 3600
+pulse = 0.1
+pulse_ms = 3000
+phase = 0.66
+
+# A ticket stub and the seal live in the margins, below the form.
+[[login.decor]]
+kind = "image"
+image = "assets/ticket.png"
+width = 150
+anchor = "top-left"
+offset = [1112, 918]
+rotation = -6
+opacity = 0.9
+[login.decor.motion]
+sway = 1.5
+sway_ms = 8200
+fade = 0.08
+fade_ms = 9000
+phase = 0.4
+
+# Brand lockup on the red wallpaper: cream type, gold sigil.
+[[login.decor]]
+kind = "image"
+image = "assets/sigil.png"
+width = 64
+anchor = "top-left"
+offset = [58, 46]
+
+[[login.decor]]
+kind = "text"
+text = "DAWN"
+size = 30
+bold = true
+tracking = 0.3
+color = "#f3e7d2"
+anchor = "top-left"
+offset = [132, 52]
+
+[[login.decor]]
+kind = "text"
+text = "AFTER DARK AT FIRST LIGHT"
+size = 10
+tracking = 0.24
+color = "#ffd9b0"
+anchor = "top-left"
+offset = [134, 92]
+
+# Poster heading.
+[[login.decor]]
+kind = "text"
+text = "AFTER DARK // LIYUE HARBOR"
+size = 10
+tracking = 0.28
+color = "#d8a84b"
+anchor = "top-left"
+offset = [1226, 224]
+
+[[login.decor]]
+kind = "text"
+text = "HU TAO"
+size = 84
+bold = true
+tracking = 0.1
+color = "#f3e7d2"
+anchor = "top-left"
+offset = [1220, 244]
+
+[[login.decor]]
+kind = "image"
+image = "assets/divider.png"
+width = 380
+anchor = "top-left"
+offset = [1226, 358]
+
+[[login.decor]]
+kind = "text"
+text = "One more song before the witching hour."
+size = 16
+tracking = 0.02
+color = "#e7d3bd"
+anchor = "top-left"
+offset = [1226, 382]
+
+[[login.decor]]
+kind = "text"
+text = "PAPILIO CHARONTIS  ·  77TH DIRECTOR  ·  DOORS 23:00"
+size = 9
+tracking = 0.18
+color = "#ff7a3c"
+anchor = "top-left"
+offset = [1226, 412]
+
+# Gamified set list.
+[[login.decor]]
+kind = "text"
+text = "NOW PLAYING: GHOSTLY MARCH"
+size = 9
+tracking = 0.2
+color = "#d8a84b"
+anchor = "top-left"
+offset = [1226, 786]
+
+[[login.decor]]
+kind = "text"
+text = "CROWD 1,000,000  ·  REQUESTS OPEN  ·  DJ SET 77:00"
+size = 9
+tracking = 0.14
+color = "#e7d3bd"
+anchor = "top-left"
+offset = [1226, 818]
+
+[[login.decor]]
+kind = "text"
+text = "WANGSHENG AFTER DARK  ·  ONE NIGHT ONLY"
+size = 10
+tracking = 0.2
+color = "#f3e7d2"
+anchor = "top-left"
+offset = [64, 948]
+
+[[login.decor]]
+kind = "text"
+text = "NO REFUNDS. NO REGRETS. BRING YOUR OWN COFFIN."
+size = 9
+tracking = 0.16
+color = "#ffd9b0"
+anchor = "top-left"
+offset = [64, 970]
+
+[[login.decor]]
+kind = "text"
+text = "DAWN  ·  A NEW DAY"
+size = 10
+tracking = 0.22
+color = "#f3e7d2"
+anchor = "bottom-right"
+offset = [64, 38]
+
+[background]
+kind = "video"
+image = "wallpaper.mp4"
+fit = "cover"
+fps = 0
+memory_limit_mb = 1024
+idle_pause_secs = 0
+
+[theme]
+preset = "glass-dark"
+text = "#f3e7d2"
+muted = "#c9ab9c"
+accent = "#d8a84b"
+error = "#ff9b8a"
+tint = "#070408cc"
+border = "#d8a84b44"
+shadow = "#000000aa"
+focus_ring = "#ff3b52"
+corner_radius = 0
+spacing = 1.0
+noise = false
+min_contrast = 4.5
+
+[theme.blur]
+enabled = false
+
+[motion]
+enabled = true
+reduced = false
+boot_ms = 650
+focus_ms = 180
+shake_ms = 320
+drag_ms = 120
+
+[layout]
+save = false
+
+[clock]
+enabled = false
+
+[media]
+enabled = false
+
+[power]
+low_power = false
+
+[sessions]
+dirs = ["/usr/share/wayland-sessions", "/usr/share/xsessions"]
+
+[plugins]
+enabled = false
+
+[auth]
+timeout_secs = 120

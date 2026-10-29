@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="24" viewBox="0 0 620 24" shape-rendering="crispEdges">
+  <!-- Original pixel-stepped divider with a lime centre mark and coral side diamonds. -->
+  <g fill="none" stroke="#b8f34a" stroke-width="2">
+    <path d="M0 12H104V8H120V12H145"/>
+    <path d="M165 12H204V8H220V12H292"/>
+    <path d="M328 12H400V8H416V12H455"/>
+    <path d="M475 12H500V8H516V12H620"/>
+  </g>
+  <g fill="#b8f34a">
+    <path d="M0 10H8V14H0Z"/>
+    <path d="M612 10H620V14H612Z"/>
+    <path d="M306 2H314V6H306Z"/>
+    <path d="M302 6H318V10H302Z"/>
+    <path d="M298 10H322V14H298Z"/>
+    <path d="M302 14H318V18H302Z"/>
+    <path d="M306 18H314V22H306Z"/>
+    <path d="M80 3H84V9H80Z"/>
+    <path d="M536 3H540V9H536Z"/>
+  </g>
+  <g fill="#ff6a3d">
+    <path d="M151 6H159V10H151Z"/>
+    <path d="M147 10H163V14H147Z"/>
+    <path d="M151 14H159V18H151Z"/>
+    <path d="M461 6H469V10H461Z"/>
+    <path d="M457 10H473V14H457Z"/>
+    <path d="M461 14H469V18H461Z"/>
+    <path d="M306 8H314V10H306Z"/>
+    <path d="M304 10H316V14H304Z"/>
+    <path d="M306 14H314V16H306Z"/>
+  </g>
+  <g fill="#2ad3a8">
+    <path d="M246 3H250V7H246Z"/>
+    <path d="M370 3H374V7H370Z"/>
+    <path d="M246 17H250V21H246Z"/>
+    <path d="M370 17H374V21H370Z"/>
+  </g>
+</svg>

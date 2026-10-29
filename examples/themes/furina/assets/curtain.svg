@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="150" viewBox="0 0 1600 300" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff2cd"/>
+      <stop offset="0.4" stop-color="#e8c987"/>
+      <stop offset="0.8" stop-color="#c1974c"/>
+      <stop offset="1" stop-color="#9a6d2c"/>
+    </linearGradient>
+    <linearGradient id="velvet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#154079"/>
+      <stop offset="0.35" stop-color="#0b2350"/>
+      <stop offset="1" stop-color="#06122b"/>
+    </linearGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#020814" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#020814" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.2"/>
+      <stop offset="0.05" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="0.95" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.2"/>
+    </linearGradient>
+    <pattern id="fringe" width="20" height="14" patternUnits="userSpaceOnUse">
+      <path d="M2 0 L10 10 L18 0 Z" fill="#e8c987" fill-opacity="0.9"/>
+      <circle cx="10" cy="12.5" r="1.4" fill="#f8e9ba" fill-opacity="0.85"/>
+      <path d="M0 0 H20" stroke="#9a6d2c" stroke-width="1" stroke-opacity="0.5"/>
+    </pattern>
+    <mask id="edgeFade">
+      <rect width="1600" height="300" fill="url(#edge)"/>
+    </mask>
+
+    <g id="swag">
+      <path d="M0 22 C8 128 126 258 266 258 C406 258 524 128 532 22 Z" fill="url(#velvet)"/>
+      <path d="M0 22 C8 128 126 258 266 258 C406 258 524 128 532 22" fill="none"
+            stroke="#4a82c2" stroke-width="2.2" stroke-opacity="0.28"/>
+      <path d="M18 24 C26 120 136 240 264 248" fill="none" stroke="#3d74b4" stroke-width="3"
+            stroke-opacity="0.22"/>
+      <path d="M128 24 C142 108 178 192 232 244" fill="none" stroke="#041023" stroke-width="24"
+            stroke-opacity="0.22" stroke-linecap="round"/>
+      <path d="M210 24 C212 104 222 176 254 250" fill="none" stroke="#2a5c9a" stroke-width="17"
+            stroke-opacity="0.13" stroke-linecap="round"/>
+      <path d="M308 24 C300 104 290 176 266 252" fill="none" stroke="#041023" stroke-width="22"
+            stroke-opacity="0.2" stroke-linecap="round"/>
+      <path d="M392 24 C378 104 342 192 300 244" fill="none" stroke="#2a5c9a" stroke-width="15"
+            stroke-opacity="0.11" stroke-linecap="round"/>
+      <path d="M470 24 C458 100 420 180 372 238" fill="none" stroke="#041023" stroke-width="18"
+            stroke-opacity="0.16" stroke-linecap="round"/>
+      <path d="M256 24 C254 96 258 170 266 250" fill="none" stroke="#6a9bd2" stroke-width="2"
+            stroke-opacity="0.16"/>
+      <path d="M0 22 C8 128 126 258 266 258 C406 258 524 128 532 22" fill="none"
+            stroke="#e8c987" stroke-width="5.5" stroke-opacity="0.28"/>
+      <path d="M0 22 C8 128 126 258 266 258 C406 258 524 128 532 22" fill="none"
+            stroke="#f8e9ba" stroke-width="2.2" stroke-opacity="0.55"/>
+      <path d="M0 22 C8 128 126 258 266 258 C406 258 524 128 532 22" fill="none"
+            stroke="#f3dda6" stroke-width="1.5" stroke-dasharray="1 6" stroke-linecap="round"
+            stroke-opacity="0.85"/>
+      <path d="M0 22 C8 128 126 258 266 258 C406 258 524 128 532 22" fill="none"
+            stroke="#e8c987" stroke-width="1.3" stroke-dasharray="1 5" stroke-linecap="round"
+            stroke-opacity="0.55" transform="translate(0 4)"/>
+      <path d="M0 22 C8 128 126 258 266 258 C406 258 524 128 532 22" fill="none"
+            stroke="#e8c987" stroke-width="1" stroke-dasharray="1 5" stroke-linecap="round"
+            stroke-opacity="0.32" transform="translate(0 7)"/>
+    </g>
+
+    <g id="tie">
+      <ellipse cx="0" cy="46" rx="17" ry="8.5" fill="none" stroke="url(#gold)" stroke-width="3.2"/>
+      <ellipse cx="0" cy="46" rx="13" ry="5.5" fill="none" stroke="#fff1c6" stroke-width="1"
+              stroke-opacity="0.55"/>
+      <circle cx="0" cy="46" r="4.6" fill="url(#gold)" stroke="#9a6d2c" stroke-width="1"/>
+      <path d="M0 51 C4 60 4 68 0 76" fill="none" stroke="url(#gold)" stroke-width="2.4"/>
+      <path d="M-8 76 H8 L6 87 H-6 Z" fill="url(#gold)" stroke="#9a6d2c" stroke-width="0.8"/>
+      <g stroke="#e8c987" stroke-width="1.2" stroke-linecap="round" stroke-opacity="0.95">
+        <path d="M-5 87 L-8 108"/>
+        <path d="M-1.5 87 L-2 110"/>
+        <path d="M2 87 L3 110"/>
+        <path d="M5 87 L8 108"/>
+      </g>
+      <circle cx="0" cy="76" r="1.5" fill="#f8e9ba"/>
+    </g>
+  </defs>
+
+  <g mask="url(#edgeFade)">
+    <use href="#swag"/>
+    <use href="#swag" transform="translate(534 0)"/>
+    <use href="#swag" transform="translate(1068 0)"/>
+
+    <rect x="0" y="22" width="1600" height="34" fill="url(#shade)" opacity="0.5"/>
+
+    <use href="#tie" transform="translate(533 0)"/>
+    <use href="#tie" transform="translate(1067 0)"/>
+
+    <rect x="0" y="0" width="1600" height="22" fill="url(#gold)" opacity="0.96"/>
+    <path d="M0 7 H1600" stroke="#fff6d9" stroke-width="1" stroke-opacity="0.6"/>
+    <path d="M0 18 H1600" stroke="#8f6326" stroke-width="1" stroke-opacity="0.55"/>
+    <rect x="0" y="22" width="1600" height="14" fill="url(#fringe)"/>
+    <path d="M0 22 H1600" stroke="#fff1c6" stroke-width="1" stroke-opacity="0.7"/>
+  </g>
+</svg>

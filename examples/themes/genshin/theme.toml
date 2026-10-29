@@ -1,0 +1,6 @@
+schema = 1
+id = "genshin"
+name = "Traveller's Dawn"
+version = "1.0.0"
+description = "A card-free hero login with a hydro sigil and an open gold frame."
+preview = "preview.webp"

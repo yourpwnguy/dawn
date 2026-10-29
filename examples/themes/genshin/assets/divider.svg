@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="44" viewBox="0 0 720 44">
+  <defs>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#E9CA80" stop-opacity="0"/>
+      <stop offset="0.35" stop-color="#E9CA80" stop-opacity="0.55"/>
+      <stop offset="0.5" stop-color="#FFF3CF" stop-opacity="0.95"/>
+      <stop offset="0.65" stop-color="#E9CA80" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#E9CA80" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E4FDFF"/>
+      <stop offset="1" stop-color="#4FB4E2"/>
+    </linearGradient>
+  </defs>
+  <path d="M8 22 H282 M438 22 H712" stroke="url(#fade)" stroke-width="1.5"/>
+  <path d="M296 22 Q310 8 324 22 Q310 36 296 22 Z" fill="none" stroke="#E9CA80" stroke-opacity="0.55" stroke-width="1.2"/>
+  <path d="M424 22 Q410 8 396 22 Q410 36 424 22 Z" fill="none" stroke="#E9CA80" stroke-opacity="0.55" stroke-width="1.2"/>
+  <path d="M360 4 L378 22 L360 40 L342 22 Z" fill="#0A2340" stroke="url(#fade)" stroke-width="1.5"/>
+  <path d="M360 13 L369 22 L360 31 L351 22 Z" fill="url(#cyan)" fill-opacity="0.85"/>
+  <circle cx="310" cy="22" r="2" fill="#E9CA80" fill-opacity="0.8"/>
+  <circle cx="410" cy="22" r="2" fill="#E9CA80" fill-opacity="0.8"/>
+  <path d="M270 22 l6 4 -6 4 -6 -4 Z" fill="#E9CA80" fill-opacity="0.45"/>
+  <path d="M450 22 l6 4 -6 4 -6 -4 Z" fill="#E9CA80" fill-opacity="0.45"/>
+</svg>

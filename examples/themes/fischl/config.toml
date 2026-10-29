@@ -1,0 +1,412 @@
+# dawn showcase: Fischl, Prinzessin der Verurteilung, Sovereign of
+# Immernachtreich, investigator of the Mondstadt Adventurers' Guild.
+#
+# Fischl is a kind, bookish girl who performs a grand royal fantasy with total
+# commitment, with the night raven Oz translating for her. The login is staged
+# as a royal decree hung in the night: a violet banner, a gold crown, a raven,
+# a crescent moon, and a field of stars. Her constellation is Corvus, so the
+# raven is the brand mark as well as the companion.
+#
+# The wallpaper is example media in the bundle. Check its
+# provenance before redistributing it. Playing it needs ffmpeg on PATH.
+#
+# Noto Serif carries the decree's formal voice. If it is missing, dawn falls
+# back to the embedded Inter face.
+
+[ui]
+font = "Noto Serif"
+font_size = 17
+fullscreen = true
+
+[login]
+layout = "hero"
+anchor = "center"
+width = 1888
+height = 1048
+radius = 0
+padding = 0
+gap = 20
+surface = "none"
+show_shadow = false
+show_border = false
+draggable = false
+show_session = false
+show_hints = true
+show_picker = false
+tab = ""
+form_offset = [1210, 430]
+form_width = 470
+greeting = ""
+
+[login.field]
+height = 62
+radius = 2
+padding = 26
+font_size = 17
+background = "#1a1238ee"
+background_end = "#2a1b58ee"
+border = "#e6c56e55"
+bracket = "#b48cff"
+bracket_gap = 10
+text = "#f4efff"
+placeholder_color = "#a894d8"
+focus = "#b48cff"
+caret = "#e6c56e"
+caret_width = 2
+icon_size = 19
+icon_gap = 14
+icon_color = "#e6c56e"
+
+[login.username]
+label = "SUBJECT"
+placeholder = "Traveler name"
+icon = "user"
+
+[login.password]
+label = "ROYAL SEAL"
+placeholder = "Password"
+icon = "lock"
+mask = "•"
+
+[login.button]
+show = true
+text = "ENTER THE NIGHT"
+gap = 26
+height = 58
+radius = 2
+font_size = 16
+bold = true
+tracking = 0.14
+background = "#6b4bd6"
+background_end = "#2a1b58"
+gradient_angle = 90
+text_color = "#fff6da"
+bracket = "#e6c56e"
+bracket_gap = 8
+hover_background = "#8a6cf0"
+hover_background_end = "#3c2878"
+hover_direction = "center"
+hover_ms = 220
+hover_scale = 1.02
+hover_lift = 2
+glow = "#b48cff"
+glow_size = 16
+effect = "sheen"
+effect_color = "#f4efff"
+effect_ms = 2400
+effect_angle = 118
+effect_strength = 0.3
+
+# The banner is the stage. It hangs behind every field and ornament.
+[[login.decor]]
+kind = "image"
+image = "assets/banner.png"
+width = 760
+anchor = "top-left"
+offset = [1070, 120]
+
+# A crown sits at the top of the banner without touching the title. The raven
+# floats below the form, where it cannot cover a field.
+[[login.decor]]
+kind = "image"
+image = "assets/crown.png"
+width = 150
+anchor = "top-left"
+offset = [1680, 154]
+opacity = 0.95
+[login.decor.motion]
+sway = 3.0
+sway_ms = 6200
+pulse = 0.03
+pulse_ms = 3200
+fade = 0.1
+fade_ms = 7000
+phase = 0.12
+
+[[login.decor]]
+kind = "image"
+image = "assets/raven.png"
+width = 200
+anchor = "top-left"
+offset = [1690, 828]
+opacity = 0.95
+[login.decor.motion]
+float = [8, -16]
+float_ms = 6800
+sway = 5.0
+sway_ms = 5200
+pulse = 0.03
+pulse_ms = 3000
+fade = 0.12
+fade_ms = 6000
+phase = 0.3
+
+# Stars use staggered phases so the field twinkles instead of blinking in
+# unison. Screenshots capture the neutral pose.
+[[login.decor]]
+kind = "image"
+image = "assets/star.png"
+width = 30
+anchor = "top-left"
+offset = [1128, 300]
+opacity = 0.9
+[login.decor.motion]
+fade = 0.75
+fade_ms = 3000
+pulse = 0.1
+pulse_ms = 3000
+phase = 0.0
+
+[[login.decor]]
+kind = "image"
+image = "assets/star.png"
+width = 20
+anchor = "top-left"
+offset = [1748, 420]
+opacity = 0.8
+[login.decor.motion]
+fade = 0.7
+fade_ms = 3800
+pulse = 0.08
+pulse_ms = 3400
+phase = 0.16
+
+[[login.decor]]
+kind = "image"
+image = "assets/star.png"
+width = 24
+anchor = "top-left"
+offset = [1812, 560]
+opacity = 0.85
+[login.decor.motion]
+fade = 0.8
+fade_ms = 4200
+pulse = 0.12
+pulse_ms = 2800
+phase = 0.33
+
+[[login.decor]]
+kind = "image"
+image = "assets/star.png"
+width = 18
+anchor = "top-left"
+offset = [1124, 760]
+opacity = 0.75
+[login.decor.motion]
+fade = 0.7
+fade_ms = 3400
+pulse = 0.08
+pulse_ms = 3600
+phase = 0.52
+
+[[login.decor]]
+kind = "image"
+image = "assets/star.png"
+width = 26
+anchor = "top-left"
+offset = [1742, 980]
+opacity = 0.85
+[login.decor.motion]
+fade = 0.75
+fade_ms = 4600
+pulse = 0.1
+pulse_ms = 3100
+phase = 0.68
+
+[[login.decor]]
+kind = "image"
+image = "assets/star.png"
+width = 16
+anchor = "top-left"
+offset = [1160, 980]
+opacity = 0.7
+[login.decor.motion]
+fade = 0.65
+fade_ms = 3600
+pulse = 0.08
+pulse_ms = 2900
+phase = 0.84
+
+# Brand lockup on the white wallpaper, kept dark violet for contrast.
+[[login.decor]]
+kind = "image"
+image = "assets/sigil.png"
+width = 64
+anchor = "top-left"
+offset = [58, 46]
+
+[[login.decor]]
+kind = "text"
+text = "DAWN"
+size = 30
+bold = true
+tracking = 0.3
+color = "#1a1238"
+anchor = "top-left"
+offset = [132, 52]
+
+[[login.decor]]
+kind = "text"
+text = "A ROYAL DECREE AT FIRST LIGHT"
+size = 10
+tracking = 0.24
+color = "#4a3a7a"
+anchor = "top-left"
+offset = [134, 92]
+
+# Decree heading.
+[[login.decor]]
+kind = "text"
+text = "FISCHL"
+size = 76
+bold = true
+tracking = 0.12
+color = "#f4efff"
+anchor = "top-left"
+offset = [1220, 252]
+
+[[login.decor]]
+kind = "image"
+image = "assets/divider.png"
+width = 380
+anchor = "top-left"
+offset = [1226, 356]
+
+[[login.decor]]
+kind = "text"
+text = "Sovereign of Immernachtreich. Night raven at your service."
+size = 15
+tracking = 0.02
+color = "#d9cdf8"
+anchor = "top-left"
+offset = [1226, 380]
+
+[[login.decor]]
+kind = "text"
+text = "CORVUS  ·  ADVENTURERS' GUILD  ·  OZ ONLINE"
+size = 9
+tracking = 0.22
+color = "#b48cff"
+anchor = "top-left"
+offset = [1226, 410]
+
+# Gamified footer: adventure rank, constellation, and a small royal boast.
+[[login.decor]]
+kind = "text"
+text = "ADVENTURE RANK"
+size = 9
+tracking = 0.22
+color = "#e6c56e"
+anchor = "top-left"
+offset = [1226, 792]
+
+[[login.decor]]
+kind = "image"
+image = "assets/star.png"
+width = 18
+anchor = "top-left"
+offset = [1360, 792]
+[login.decor.motion]
+fade = 0.6
+fade_ms = 3200
+phase = 0.4
+
+[[login.decor]]
+kind = "text"
+text = "60"
+size = 15
+bold = true
+color = "#f4efff"
+anchor = "top-left"
+offset = [1384, 786]
+
+[[login.decor]]
+kind = "text"
+text = "CORVUS  ·  ELECTRO  ·  6 / 6"
+size = 9
+tracking = 0.16
+color = "#b8a8e0"
+anchor = "top-left"
+offset = [1226, 824]
+
+[[login.decor]]
+kind = "text"
+text = "THE NIGHT HAS FALLEN. THE RAVEN HAS THE PASSWORD."
+size = 10
+tracking = 0.2
+color = "#2a1b58"
+anchor = "top-left"
+offset = [64, 948]
+
+[[login.decor]]
+kind = "text"
+text = "IMMERNACHTREICH  ·  A WORLD BEYOND TEYVAT"
+size = 9
+tracking = 0.16
+color = "#5a4a8a"
+anchor = "top-left"
+offset = [64, 970]
+
+[[login.decor]]
+kind = "text"
+text = "DAWN  ·  A NEW DAY"
+size = 10
+tracking = 0.22
+color = "#2a1b58"
+anchor = "bottom-right"
+offset = [64, 38]
+
+[background]
+kind = "video"
+image = "wallpaper.mp4"
+fit = "cover"
+fps = 0
+memory_limit_mb = 1024
+idle_pause_secs = 0
+
+[theme]
+preset = "glass-dark"
+text = "#f4efff"
+muted = "#c3b6e6"
+accent = "#e6c56e"
+error = "#ff9bb0"
+tint = "#100b26cc"
+border = "#e6c56e44"
+shadow = "#05030eaa"
+focus_ring = "#b48cff"
+corner_radius = 2
+spacing = 1.0
+noise = false
+min_contrast = 4.5
+
+[theme.blur]
+enabled = false
+
+[motion]
+enabled = true
+reduced = false
+boot_ms = 650
+focus_ms = 180
+shake_ms = 320
+drag_ms = 120
+
+[layout]
+save = false
+
+[clock]
+enabled = false
+
+[media]
+enabled = false
+
+[power]
+low_power = false
+
+[sessions]
+dirs = ["/usr/share/wayland-sessions", "/usr/share/xsessions"]
+
+[plugins]
+enabled = false
+
+[auth]
+timeout_secs = 120

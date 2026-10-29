@@ -1,0 +1,6 @@
+schema = 1
+id = "hutao-chibi"
+name = "Wangsheng Terminal"
+version = "1.0.0"
+description = "A cardless terminal with line fields, a HUD ring, a seal, and a ghost."
+preview = "preview.webp"

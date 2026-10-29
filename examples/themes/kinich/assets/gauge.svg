@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="28" viewBox="0 0 360 28" shape-rendering="crispEdges">
+  <!-- Original unlabelled pixel status frame. The stepped tip reads at any fill length. -->
+  <path d="M12 2H348V8H356V20H348V26H12V20H4V8H12Z"
+        fill="#111a12" stroke="#b8f34a" stroke-width="2"/>
+  <rect x="14" y="8" width="332" height="12" fill="#0a0f0c"/>
+  <path d="M16 9H244V11H250V13H254V17H250V19H244V20H16Z" fill="#b8f34a"/>
+  <g fill="#0a0f0c" opacity=".28">
+    <path d="M56 9H58V20H56ZM96 9H98V20H96ZM136 9H138V20H136ZM176 9H178V20H176ZM216 9H218V20H216Z"/>
+  </g>
+  <path d="M14 8H346V9H14Z" fill="#e9eadf" opacity=".12"/>
+  <path d="M14 19H344V20H14Z" fill="#050806" opacity=".4"/>
+  <path d="M348 10H352V18H348Z" fill="#2ad3a8" opacity=".7"/>
+  <path d="M8 4H12V6H8ZM348 22H352V24H348Z" fill="#ff6a3d" opacity=".75"/>
+</svg>

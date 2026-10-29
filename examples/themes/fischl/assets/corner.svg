@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="220" height="220" viewBox="0 0 220 220">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8e6ae"/>
+      <stop offset=".45" stop-color="#e6c56e"/>
+      <stop offset="1" stop-color="#a97a2f"/>
+    </linearGradient>
+    <linearGradient id="goldV" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8e6ae"/>
+      <stop offset=".5" stop-color="#e6c56e"/>
+      <stop offset="1" stop-color="#a97a2f"/>
+    </linearGradient>
+    <linearGradient id="jewel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f0e6ff"/>
+      <stop offset=".35" stop-color="#b48cff"/>
+      <stop offset=".7" stop-color="#6b4bd6"/>
+      <stop offset="1" stop-color="#2a1b58"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#b48cff" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#b48cff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- soft jewel glow -->
+  <circle cx="56" cy="56" r="46" fill="url(#glow)"/>
+
+  <!-- open bracket, outer arm -->
+  <path d="M18 202 V18 H202" fill="none" stroke="url(#gold)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M202 18 C207 31 199 42 187 42 C177 42 171 35 171 26" fill="none" stroke="url(#goldV)" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M18 202 C31 207 42 199 42 187 C42 177 35 171 26 171" fill="none" stroke="url(#goldV)" stroke-width="2.4" stroke-linecap="round"/>
+
+  <!-- inner arm -->
+  <path d="M38 180 V38 H180" fill="none" stroke="url(#gold)" stroke-width="2" opacity=".85" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M180 38 C184 48 178 56 169 56" fill="none" stroke="url(#goldV)" stroke-width="1.6" opacity=".8" stroke-linecap="round"/>
+  <path d="M38 180 C48 184 56 178 56 169" fill="none" stroke="url(#goldV)" stroke-width="1.6" opacity=".8" stroke-linecap="round"/>
+
+  <!-- filigree along the arms -->
+  <g fill="none" stroke="url(#goldV)" stroke-width="1.5" opacity=".9">
+    <path d="M92 18 C104 18 112 26 112 38 C112 46 106 52 98 52"/>
+    <path d="M104 18 C114 18 120 24 120 32"/>
+    <path d="M18 92 C18 104 26 112 38 112 C46 112 52 106 52 98"/>
+    <path d="M18 104 C18 114 24 120 32 120"/>
+  </g>
+
+  <!-- ornaments on the arms -->
+  <g fill="url(#gold)">
+    <path d="M146 10 L156 18 L146 26 L136 18 Z"/>
+    <path d="M10 146 L18 156 L26 146 L18 136 Z"/>
+    <circle cx="146" cy="18" r="2.2" fill="#6b4bd6"/>
+    <circle cx="18" cy="146" r="2.2" fill="#6b4bd6"/>
+    <circle cx="70" cy="26" r="1.8"/>
+    <circle cx="26" cy="70" r="1.8"/>
+    <circle cx="34" cy="18" r="1.6"/>
+    <circle cx="18" cy="34" r="1.6"/>
+  </g>
+
+  <!-- violet crystal at the elbow -->
+  <path d="M56 24 L88 56 L56 88 L24 56 Z" fill="#140d33" stroke="url(#gold)" stroke-width="2.4"/>
+  <path d="M56 34 L78 56 L56 78 L34 56 Z" fill="url(#jewel)"/>
+  <path d="M56 34 L56 78 M34 56 H78" stroke="#f4efff" stroke-width="1" opacity=".35"/>
+  <path d="M56 34 L48 56 L56 78 L64 56 Z" fill="#f4efff" opacity=".18"/>
+  <path d="M56 24 L88 56 L56 88 L24 56 Z" fill="none" stroke="#f8e6ae" stroke-width="1" opacity=".55"/>
+  <path d="M24 56 L40 40 M88 56 L72 40" stroke="#e6c56e" stroke-width="1" opacity=".5"/>
+</svg>

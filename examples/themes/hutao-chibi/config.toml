@@ -1,0 +1,393 @@
+# dawn showcase: chibi Hu Tao as a cardless Wangsheng system terminal.
+#
+# The wallpaper keeps the character. The right third is the login surface: a
+# strict typographic grid, line fields instead of boxes, a thin rune rule, a
+# slow HUD ring, and small game-status details. Nothing sits on a card.
+#
+# Hu Tao is the 77th Director of the Wangsheng Funeral Parlor, so the terminal
+# speaks in that voice: director credentials, a 77 seal, a daily commission,
+# and a login streak. The copy stays a login screen first and lore second.
+#
+# The wallpaper is example media in the bundle. Check its
+# provenance before redistributing it. Playing it needs ffmpeg on PATH.
+#
+# Plus Jakarta Sans gives the terminal a modern product interface voice. If it
+# is missing, dawn falls back to the embedded Inter face.
+
+[ui]
+font = "Plus Jakarta Sans"
+font_size = 17
+fullscreen = true
+
+[login]
+layout = "hero"
+anchor = "center"
+width = 1888
+height = 1048
+radius = 0
+padding = 0
+gap = 26
+surface = "none"
+show_shadow = false
+show_border = false
+draggable = false
+show_session = false
+show_hints = true
+show_picker = false
+tab = ""
+form_offset = [1430, 420]
+form_width = 370
+greeting = ""
+
+[login.hints]
+username = "ENTER  AUTHORIZE      TAB  NEXT FIELD      ESC  CLEAR"
+password = "ENTER  AUTHORIZE      TAB  NEXT FIELD      ESC  CLEAR"
+
+[login.field]
+height = 54
+radius = 0
+padding = 2
+font_size = 18
+background = "#00000000"
+border = "#00000000"
+underline = "#b83a2e"
+underline_size = 1.5
+text = "#1c1512"
+placeholder_color = "#8a6e60"
+focus = "#2f8f6b"
+caret = "#b83a2e"
+caret_width = 2
+label_color = "#2f8f6b"
+
+[login.username]
+label = "DIRECTOR NAME"
+placeholder = "Enter your name"
+
+[login.password]
+label = "PASSCODE"
+placeholder = "Enter passcode"
+mask = "•"
+
+[login.button]
+show = true
+text = "AUTHORIZE  →"
+gap = 34
+height = 54
+radius = 0
+font_size = 16
+bold = true
+tracking = 0.16
+background = "#b83a2e"
+background_end = "#8d2530"
+gradient_angle = 90
+text_color = "#fff4e2"
+hover_background = "#d14a37"
+hover_background_end = "#a32c35"
+hover_direction = "up"
+hover_ms = 180
+hover_scale = 1.01
+hover_lift = 3
+glow = "#ff8a5a"
+glow_size = 12
+effect = "corners"
+effect_color = "#f4e6cf"
+effect_ms = 1800
+effect_angle = 120
+effect_strength = 0.5
+
+# A very quiet HUD ring sits behind the type. It is the only large ornament and
+# it never competes with the form.
+[[login.decor]]
+kind = "image"
+image = "assets/ring.png"
+width = 520
+anchor = "top-left"
+offset = [1510, 70]
+opacity = 0.22
+[login.decor.motion]
+spin = 3.0
+fade = 0.12
+fade_ms = 9000
+phase = 0.0
+
+# The vertical rule anchors the form column without drawing a card around it.
+[[login.decor]]
+kind = "image"
+image = "assets/vline.png"
+width = 20
+anchor = "top-left"
+offset = [1396, 180]
+opacity = 0.9
+
+# Status dot and system crest are the small game signals.
+[[login.decor]]
+kind = "image"
+image = "assets/dot.png"
+width = 16
+anchor = "top-left"
+offset = [1446, 198]
+opacity = 0.95
+[login.decor.motion]
+pulse = 0.18
+pulse_ms = 2200
+fade = 0.35
+fade_ms = 2200
+phase = 0.0
+
+[[login.decor]]
+kind = "image"
+image = "assets/crest.png"
+width = 48
+anchor = "top-left"
+offset = [58, 44]
+opacity = 0.95
+
+[[login.decor]]
+kind = "text"
+text = "DAWN"
+size = 24
+bold = true
+tracking = 0.26
+color = "#1c1512"
+anchor = "top-left"
+offset = [120, 48]
+
+[[login.decor]]
+kind = "text"
+text = "WANGSHENG SYSTEM"
+size = 8
+tracking = 0.24
+color = "#6b4a3e"
+anchor = "top-left"
+offset = [122, 82]
+
+# Status row and heading.
+[[login.decor]]
+kind = "text"
+text = "SPIRIT LINK ONLINE   //   TERMINAL 77"
+size = 9
+tracking = 0.22
+color = "#2f8f6b"
+anchor = "top-left"
+offset = [1472, 196]
+
+[[login.decor]]
+kind = "text"
+text = "WANGSHENG FUNERAL PARLOR"
+size = 10
+tracking = 0.3
+color = "#6b4a3e"
+anchor = "top-left"
+offset = [1446, 224]
+
+[[login.decor]]
+kind = "text"
+text = "SIGN IN"
+size = 64
+bold = true
+tracking = 0.02
+color = "#1c1512"
+anchor = "top-left"
+offset = [1442, 244]
+
+[[login.decor]]
+kind = "image"
+image = "assets/rule.png"
+width = 300
+anchor = "top-left"
+offset = [1446, 332]
+
+[[login.decor]]
+kind = "text"
+text = "The 77th Director is expecting you."
+size = 15
+tracking = 0.01
+color = "#5a4238"
+anchor = "top-left"
+offset = [1446, 352]
+
+# Two petals only. They keep the frame alive without turning the terminal into
+# a character shrine. The wallpaper already carries the character.
+[[login.decor]]
+kind = "image"
+image = "assets/petal.png"
+width = 20
+anchor = "top-left"
+offset = [1382, 310]
+opacity = 0.7
+[login.decor.motion]
+float = [6, -14]
+float_ms = 6200
+fade = 0.55
+fade_ms = 5200
+spin = 9.0
+phase = 0.22
+
+[[login.decor]]
+kind = "image"
+image = "assets/petal.png"
+width = 16
+anchor = "top-left"
+offset = [1810, 560]
+opacity = 0.65
+[login.decor.motion]
+float = [-5, -12]
+float_ms = 7400
+fade = 0.6
+fade_ms = 6100
+spin = -7.0
+phase = 0.61
+
+# The game layer under the form: streak, commission, and season.
+[[login.decor]]
+kind = "image"
+image = "assets/rule.png"
+width = 380
+anchor = "top-left"
+offset = [1446, 790]
+
+[[login.decor]]
+kind = "image"
+image = "assets/streak.png"
+width = 190
+anchor = "top-left"
+offset = [1446, 814]
+opacity = 0.95
+[login.decor.motion]
+fade = 0.22
+fade_ms = 3600
+pulse = 0.03
+pulse_ms = 2400
+phase = 0.1
+
+[[login.decor]]
+kind = "text"
+text = "LOGIN STREAK  //  7 DAYS"
+size = 9
+tracking = 0.18
+color = "#2f8f6b"
+anchor = "top-left"
+offset = [1654, 816]
+
+[[login.decor]]
+kind = "text"
+text = "DAILY COMMISSION  //  FIRST LIGHT"
+size = 9
+tracking = 0.18
+color = "#6b4a3e"
+anchor = "top-left"
+offset = [1446, 854]
+
+[[login.decor]]
+kind = "text"
+text = "SEASON 07  ·  DAY 77  ·  MORA 7,777"
+size = 9
+tracking = 0.14
+color = "#6b4a3e"
+anchor = "top-left"
+offset = [1446, 880]
+
+[[login.decor]]
+kind = "image"
+image = "assets/seal.png"
+width = 56
+anchor = "top-left"
+offset = [1800, 820]
+rotation = -6
+opacity = 0.9
+[login.decor.motion]
+pulse = 0.02
+pulse_ms = 3800
+fade = 0.08
+fade_ms = 5200
+phase = 0.5
+
+[[login.decor]]
+kind = "image"
+image = "assets/ghost.png"
+width = 54
+anchor = "top-left"
+offset = [1740, 880]
+opacity = 0.9
+[login.decor.motion]
+float = [5, -10]
+float_ms = 5200
+pulse = 0.05
+pulse_ms = 2600
+fade = 0.25
+fade_ms = 4200
+phase = 0.3
+
+[[login.decor]]
+kind = "text"
+text = "LIYUE HARBOR  ·  SECURE TERMINAL"
+size = 9
+tracking = 0.2
+color = "#6b4a3e"
+anchor = "top-left"
+offset = [64, 948]
+
+[[login.decor]]
+kind = "text"
+text = "DAWN  ·  A NEW DAY"
+size = 9
+tracking = 0.2
+color = "#6b4a3e"
+anchor = "top-left"
+offset = [64, 970]
+
+[background]
+kind = "video"
+image = "wallpaper.mp4"
+fit = "cover"
+fps = 0
+memory_limit_mb = 1024
+idle_pause_secs = 0
+
+[theme]
+preset = "glass-dark"
+text = "#1c1512"
+muted = "#6b4a3e"
+accent = "#b83a2e"
+error = "#a32828"
+tint = "#f2e6d0cc"
+border = "#b83a2e33"
+shadow = "#2a1810aa"
+focus_ring = "#2f8f6b"
+corner_radius = 0
+spacing = 1.0
+noise = false
+min_contrast = 4.5
+
+[theme.blur]
+enabled = false
+
+[motion]
+enabled = true
+reduced = false
+boot_ms = 650
+focus_ms = 180
+shake_ms = 320
+drag_ms = 120
+decor_fps = 30
+
+[layout]
+save = false
+
+[clock]
+enabled = false
+
+[media]
+enabled = false
+
+[power]
+low_power = false
+
+[sessions]
+dirs = ["/usr/share/wayland-sessions", "/usr/share/xsessions"]
+
+[plugins]
+enabled = false
+
+[auth]
+timeout_secs = 120

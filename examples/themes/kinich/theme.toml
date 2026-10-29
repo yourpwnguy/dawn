@@ -1,0 +1,6 @@
+schema = 1
+id = "kinich"
+name = "Tactical HUD"
+version = "1.0.0"
+description = "An 8-bit jungle HUD with pixel brackets, leaves, and a status bar."
+preview = "preview.webp"

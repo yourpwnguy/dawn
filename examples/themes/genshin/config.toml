@@ -1,0 +1,308 @@
+# dawn showcase: a Genshin-inspired dawn login.
+#
+# The composition floats the form on the right side of the wallpaper with no
+# card at all: a soft navy mist, an open gold corner frame, a hydro sigil, and
+# a vertical rune line carry the theme instead of a panel. The copy leans into
+# the world rather than a generic account page, so the fields read as traveller
+# credentials and the submit button as the start of a journey.
+#
+# The wallpaper is example media in the bundle. It is not part of
+# the dawn artwork set; check its provenance before redistributing this example.
+# Playing it needs ffmpeg on PATH. Without ffmpeg the form still renders over
+# the gradient fallback.
+#
+# Noto Serif is used for the display type. It ships with most distributions;
+# if it is missing, dawn falls back to the embedded Inter face and the layout
+# still works.
+#
+# The measured layout targets 16:9. The hero panel scales as one unit on
+# smaller screens, so the form keeps its position relative to the artwork.
+
+[ui]
+font = "Noto Serif"
+font_size = 17
+fullscreen = true
+
+[login]
+layout = "hero"
+anchor = "center"
+width = 1888
+height = 1048
+radius = 0
+padding = 0
+gap = 18
+surface = "none"
+show_shadow = false
+show_border = false
+draggable = false
+show_session = false
+show_hints = false
+show_picker = false
+tab = ""
+form_offset = [1238, 500]
+form_width = 500
+greeting = ""
+
+[login.field]
+height = 62
+radius = 3
+padding = 26
+font_size = 17
+background = "#05162bdd"
+background_end = "#0c2b50dd"
+border = "#e9cf8a3d"
+bracket = "#f0d28fb0"
+bracket_gap = 8
+text = "#f4f9ff"
+placeholder_color = "#9fbedf"
+focus = "#9beaff"
+caret = "#f6dc9c"
+caret_width = 2
+icon_size = 19
+icon_gap = 13
+icon_color = "#f0d28f"
+
+[login.username]
+placeholder = "Traveler name"
+icon = "user"
+
+[login.password]
+placeholder = "Password"
+icon = "lock"
+mask = "•"
+
+[login.button]
+show = true
+text = "BEGIN JOURNEY"
+gap = 30
+height = 54
+radius = 3
+font_size = 18
+bold = true
+tracking = 0.14
+background = "#f4da92"
+background_end = "#c4943f"
+gradient_angle = 90
+text_color = "#12243d"
+bracket = "#f0d28f"
+bracket_gap = 9
+hover_background = "#fff0c2"
+hover_background_end = "#dfb25e"
+hover_direction = "center"
+hover_ms = 220
+hover_scale = 1.02
+hover_lift = 2
+glow = "#ffd98a"
+glow_size = 16
+effect = "sweep"
+effect_color = "#fffdf4"
+effect_ms = 2400
+effect_angle = 112
+effect_strength = 0.28
+
+# The mist goes first so it sits behind every other decor item. It is a soft
+# wash, not a panel: the left and top edges fade into the sky and the right
+# edge runs off screen, which keeps the artwork visible and the form legible.
+[[login.decor]]
+kind = "image"
+image = "assets/scrim.png"
+width = 920
+anchor = "top-left"
+offset = [1010, 100]
+
+[[login.decor]]
+kind = "image"
+image = "assets/rune-line.png"
+width = 26
+anchor = "top-left"
+offset = [1826, 300]
+opacity = 0.9
+
+# An open corner frame. Only the four corners are drawn, so the form reads as
+# framed by light rather than boxed into a card.
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 58
+anchor = "top-left"
+offset = [1180, 268]
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 58
+anchor = "top-left"
+offset = [1748, 268]
+rotation = 90
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 58
+anchor = "top-left"
+offset = [1748, 742]
+rotation = 180
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner.png"
+width = 58
+anchor = "top-left"
+offset = [1180, 742]
+rotation = 270
+
+# Brand lockup on the open sky, kept dark so it stays readable over the bright
+# blues without another scrim.
+[[login.decor]]
+kind = "image"
+image = "assets/sigil.png"
+width = 72
+anchor = "top-left"
+offset = [48, 44]
+
+[[login.decor]]
+kind = "text"
+text = "DAWN"
+size = 30
+bold = true
+tracking = 0.3
+color = "#10233d"
+anchor = "top-left"
+offset = [138, 50]
+
+[[login.decor]]
+kind = "text"
+text = "A TRAVELER'S GREETER"
+size = 10
+tracking = 0.26
+color = "#244b77"
+anchor = "top-left"
+offset = [140, 90]
+
+# The greeting block. The eyebrow, title and divider use the gold and hydro
+# palette; the subtitle stays pale blue so the hierarchy reads at a glance.
+[[login.decor]]
+kind = "text"
+text = "WELCOME BACK TO TEYVAT"
+size = 11
+tracking = 0.34
+color = "#f6db9c"
+anchor = "top-left"
+offset = [1240, 290]
+
+[[login.decor]]
+kind = "text"
+text = "TRAVELER"
+size = 66
+bold = true
+tracking = 0.12
+color = "#fff2cd"
+anchor = "top-left"
+offset = [1238, 310]
+
+[[login.decor]]
+kind = "image"
+image = "assets/divider.png"
+width = 380
+anchor = "top-left"
+offset = [1238, 412]
+
+[[login.decor]]
+kind = "text"
+text = "The stars have kept your seat."
+size = 16
+tracking = 0.02
+color = "#d8e9fa"
+anchor = "top-left"
+offset = [1238, 444]
+
+[[login.decor]]
+kind = "text"
+text = "TAB TO SWITCH FIELDS  ·  ENTER TO BEGIN"
+size = 10
+tracking = 0.24
+color = "#c4dcf4"
+anchor = "top-left"
+offset = [1240, 764]
+
+[[login.decor]]
+kind = "text"
+text = "FONTAINE  ·  MORNING TIDE"
+size = 11
+tracking = 0.2
+color = "#17395c"
+anchor = "top-left"
+offset = [64, 958]
+
+[[login.decor]]
+kind = "text"
+text = "PRESS ENTER TO CROSS THE THRESHOLD"
+size = 9
+tracking = 0.2
+color = "#2c5279"
+anchor = "top-left"
+offset = [64, 980]
+
+[[login.decor]]
+kind = "text"
+text = "DAWN  ·  A NEW DAY"
+size = 10
+tracking = 0.22
+color = "#ead7a6"
+anchor = "bottom-right"
+offset = [64, 38]
+
+[background]
+kind = "video"
+image = "wallpaper.mp4"
+fit = "cover"
+fps = 0
+memory_limit_mb = 1024
+idle_pause_secs = 0
+
+[theme]
+preset = "glass-dark"
+text = "#f2f7ff"
+muted = "#b9d3ee"
+accent = "#f5d98f"
+error = "#ff9ba8"
+tint = "#071a31cc"
+border = "#e9ce8a44"
+shadow = "#020a16aa"
+focus_ring = "#9beaff"
+corner_radius = 3
+spacing = 1.0
+noise = false
+min_contrast = 4.5
+
+[theme.blur]
+enabled = false
+
+[motion]
+enabled = true
+reduced = false
+boot_ms = 700
+focus_ms = 180
+shake_ms = 320
+drag_ms = 140
+
+[layout]
+save = false
+
+[clock]
+enabled = false
+
+[media]
+enabled = false
+
+[power]
+low_power = false
+
+[sessions]
+dirs = ["/usr/share/wayland-sessions", "/usr/share/xsessions"]
+
+[plugins]
+enabled = false
+
+[auth]
+timeout_secs = 120

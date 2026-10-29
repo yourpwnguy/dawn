@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3cf"/>
+      <stop offset="0.32" stop-color="#f0d492"/>
+      <stop offset="0.66" stop-color="#d8a84b"/>
+      <stop offset="1" stop-color="#8f5f22"/>
+    </linearGradient>
+    <radialGradient id="disc" cx="0.5" cy="0.46" r="0.56">
+      <stop offset="0" stop-color="#c01430"/>
+      <stop offset="0.4" stop-color="#8e0d22"/>
+      <stop offset="0.75" stop-color="#4d0814"/>
+      <stop offset="1" stop-color="#1d0409"/>
+    </radialGradient>
+    <linearGradient id="wing" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#ff3b52"/>
+      <stop offset="0.45" stop-color="#cf1230"/>
+      <stop offset="0.8" stop-color="#8e0d22"/>
+      <stop offset="1" stop-color="#4d0814"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#fffdf5"/>
+      <stop offset="0.28" stop-color="#ffe9b8"/>
+      <stop offset="0.62" stop-color="#ffc077"/>
+      <stop offset="0.86" stop-color="#ff8a4a"/>
+      <stop offset="1" stop-color="#ff5a2e"/>
+    </linearGradient>
+    <radialGradient id="bloom" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0.55" stop-color="#ffb45e" stop-opacity="0"/>
+      <stop offset="0.82" stop-color="#ffb45e" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#ffb45e" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Marquee bloom and the crimson crest disc. -->
+  <circle cx="256" cy="256" r="252" fill="url(#bloom)"/>
+  <circle cx="256" cy="256" r="206" fill="url(#disc)"/>
+  <circle cx="256" cy="256" r="206" fill="none" stroke="#d8a84b" stroke-width="2" opacity="0.85"/>
+  <circle cx="256" cy="256" r="194" fill="none" stroke="#ffb45e" stroke-width="0.9" opacity="0.3"/>
+
+  <!-- Butterfly wings, mirrored around the vertical axis. -->
+  <g fill="url(#wing)" stroke="#d8a84b" stroke-width="1.8" stroke-opacity="0.75">
+    <path d="M250 264 C224 232 196 184 164 158 C138 138 104 146 100 176 C96 210 136 252 194 274 C216 282 238 278 250 264 Z"/>
+    <path d="M262 264 C288 232 316 184 348 158 C374 138 408 146 412 176 C416 210 376 252 318 274 C296 282 274 278 262 264 Z"/>
+    <path d="M250 276 C222 292 190 322 180 350 C172 376 194 392 220 376 C244 360 258 320 258 292 Z"/>
+    <path d="M262 276 C290 292 322 322 332 350 C340 376 318 392 292 376 C268 360 254 320 254 292 Z"/>
+  </g>
+
+  <!-- Wing veins. They follow the membrane flow instead of crossing it. -->
+  <g fill="none" stroke="#f3e7d2" stroke-linecap="round" opacity="0.4">
+    <path d="M250 266 C216 238 178 198 146 168" stroke-width="1.5"/>
+    <path d="M248 270 C212 258 164 250 120 248" stroke-width="1.1"/>
+    <path d="M246 272 C220 284 190 300 166 312" stroke-width="0.9"/>
+    <path d="M262 266 C296 238 334 198 366 168" stroke-width="1.5"/>
+    <path d="M264 270 C300 258 348 250 392 248" stroke-width="1.1"/>
+    <path d="M266 272 C292 284 322 300 346 312" stroke-width="0.9"/>
+    <path d="M252 280 C234 304 208 332 192 356" stroke-width="1.1"/>
+    <path d="M260 280 C278 304 304 332 320 356" stroke-width="1.1"/>
+  </g>
+  <g fill="#ffd27a" opacity="0.65">
+    <circle cx="132" cy="176" r="4.5"/>
+    <circle cx="380" cy="176" r="4.5"/>
+    <circle cx="200" cy="354" r="3.4"/>
+    <circle cx="312" cy="354" r="3.4"/>
+  </g>
+
+  <!-- Wing eyespots. These are the classic butterfly marking and pull the
+       four membranes away from a flower silhouette. -->
+  <g fill="none" stroke="#ffd27a" stroke-width="1.4" opacity="0.7">
+    <circle cx="148" cy="206" r="11"/>
+    <circle cx="364" cy="206" r="11"/>
+    <circle cx="206" cy="344" r="7"/>
+    <circle cx="306" cy="344" r="7"/>
+  </g>
+  <g fill="#ff7a3c" opacity="0.85">
+    <circle cx="148" cy="206" r="4"/>
+    <circle cx="364" cy="206" r="4"/>
+    <circle cx="206" cy="344" r="2.8"/>
+    <circle cx="306" cy="344" r="2.8"/>
+  </g>
+
+  <!-- Antennae rise from behind the flame head, the strongest butterfly cue
+       in the crest. They sit above the wings and below the flame. -->
+  <g fill="none" stroke="#e8c87e" stroke-width="2" stroke-linecap="round" opacity="0.9">
+    <path d="M246 192 C232 170 216 150 204 130"/>
+    <path d="M266 192 C280 170 296 150 308 130"/>
+  </g>
+  <g fill="#ffd27a">
+    <circle cx="203" cy="128" r="3.4"/>
+    <circle cx="309" cy="128" r="3.4"/>
+  </g>
+
+  <!-- Ghost flame, sitting on the wing root. The body ends in its own wavy
+       flame edge, so the crest never grows a tongue. -->
+  <path d="M256 150 C292 186 310 216 304 246 C322 240 334 256 328 274 C322 292 300 298 292 316 C304 328 298 346 280 348 C274 362 238 362 232 348 C214 346 208 328 220 316 C212 298 190 292 184 274 C178 256 190 240 208 246 C202 216 220 186 256 150 Z" fill="url(#flame)" stroke="#fff3cf" stroke-width="1.6" stroke-opacity="0.75"/>
+  <path d="M256 202 C278 226 288 244 284 262 C276 286 236 286 228 262 C224 244 234 226 256 202 Z" fill="#fffdf5" opacity="0.35"/>
+
+  <!-- Face: two sure little eyes and a crooked grin. -->
+  <path d="M232 282 C236 276 246 276 250 282 C246 288 236 288 232 282 Z" fill="#241021"/>
+  <path d="M262 282 C266 276 276 276 280 282 C276 288 266 288 262 282 Z" fill="#241021"/>
+  <circle cx="245" cy="280" r="1.7" fill="#fffdf5"/>
+  <circle cx="275" cy="280" r="1.7" fill="#fffdf5"/>
+  <path d="M244 298 C251 306 261 306 268 298" fill="none" stroke="#5a1a24" stroke-width="2.2" stroke-linecap="round" opacity="0.8"/>
+  <path d="M256 222 L260 232 L256 242 L252 232 Z" fill="#d8a84b" opacity="0.9"/>
+
+  <!-- Thin collar rings tie the wings to the marquee. -->
+  <circle cx="256" cy="256" r="220" fill="none" stroke="#d8a84b" stroke-width="1.2" opacity="0.55"/>
+
+  <!-- 36 gold bulbs on r=240. The round dashed stroke draws them in one pass. -->
+  <circle cx="256" cy="256" r="240" fill="none" stroke="#ffb45e" stroke-width="16" opacity="0.13" stroke-linecap="round" stroke-dasharray="0.01 41.888"/>
+  <circle cx="256" cy="256" r="240" fill="none" stroke="url(#gold)" stroke-width="8.5" stroke-linecap="round" stroke-dasharray="0.01 41.888"/>
+  <circle cx="256" cy="256" r="240" fill="none" stroke="#fff3cf" stroke-width="3" stroke-linecap="round" stroke-dasharray="0.01 41.888" opacity="0.6"/>
+  <circle cx="256" cy="256" r="252" fill="none" stroke="#d8a84b" stroke-width="1.2" opacity="0.4"/>
+  <circle cx="256" cy="256" r="228" fill="none" stroke="#d8a84b" stroke-width="0.8" opacity="0.35"/>
+
+  <!-- Four deco finials at the cardinals, kept inside the 512 box. -->
+  <g fill="url(#gold)">
+    <path d="M256 6 L260 16 L256 24 L252 16 Z"/>
+    <path d="M256 488 L260 498 L256 506 L252 498 Z"/>
+    <path d="M6 256 L16 252 L24 256 L16 260 Z"/>
+    <path d="M488 256 L498 252 L506 256 L498 260 Z"/>
+  </g>
+</svg>

@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="560" viewBox="0 0 560 560">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6dfa8"/>
+      <stop offset="0.55" stop-color="#c9a24a"/>
+      <stop offset="1" stop-color="#8a5f26"/>
+    </linearGradient>
+    <linearGradient id="jade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9be3c4"/>
+      <stop offset="1" stop-color="#2f8f6b"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="none" stroke="url(#gold)">
+    <circle cx="280" cy="280" r="266" stroke-width="1.2" stroke-opacity="0.55"/>
+    <circle cx="280" cy="280" r="238" stroke-width="0.8" stroke-opacity="0.35" stroke-dasharray="2 12"/>
+    <circle cx="280" cy="280" r="176" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="280" cy="280" r="128" stroke="#b83a2e" stroke-width="0.9" stroke-opacity="0.35" stroke-dasharray="1 7"/>
+  </g>
+
+  <g stroke="url(#gold)" stroke-width="1" stroke-opacity="0.6">
+    <path d="M280 14 V42"/><path d="M280 518 V546"/>
+    <path d="M14 280 H42"/><path d="M518 280 H546"/>
+    <path d="M92 92 L112 112"/><path d="M468 92 L448 112"/>
+    <path d="M92 468 L112 448"/><path d="M468 468 L448 448"/>
+    <path d="M280 42 V54"/><path d="M280 506 V518"/>
+    <path d="M42 280 H54"/><path d="M506 280 H518"/>
+  </g>
+
+  <g stroke="#c9a24a" stroke-opacity="0.35" stroke-width="0.8">
+    <path d="M280 62 V86"/><path d="M280 474 V498"/>
+    <path d="M62 280 H86"/><path d="M474 280 H498"/>
+    <path d="M128 128 L146 146"/><path d="M432 128 L414 146"/>
+    <path d="M128 432 L146 414"/><path d="M432 432 L414 414"/>
+  </g>
+
+  <g fill="url(#gold)" opacity="0.65">
+    <path d="M280 58 L288 72 L280 86 L272 72 Z"/>
+    <path d="M280 474 L288 488 L280 502 L272 488 Z"/>
+    <path d="M58 280 L72 272 L86 280 L72 288 Z"/>
+    <path d="M474 280 L488 272 L502 280 L488 288 Z"/>
+  </g>
+
+  <g fill="url(#jade)" opacity="0.7">
+    <path d="M280 120 L288 136 L280 152 L272 136 Z"/>
+    <path d="M280 408 L288 424 L280 440 L272 424 Z"/>
+    <path d="M120 280 L136 272 L152 280 L136 288 Z"/>
+    <path d="M408 280 L424 272 L440 280 L424 288 Z"/>
+  </g>
+
+  <path d="M280 166 L394 280 L280 394 L166 280 Z" fill="none" stroke="#b83a2e" stroke-opacity="0.28" stroke-width="1"/>
+  <path d="M280 206 L354 280 L280 354 L206 280 Z" fill="none" stroke="url(#gold)" stroke-opacity="0.25" stroke-width="0.9"/>
+</svg>

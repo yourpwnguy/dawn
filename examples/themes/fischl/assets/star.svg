@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="72" height="72" viewBox="0 0 72 72">
+  <defs>
+    <radialGradient id="core" gradientUnits="userSpaceOnUse" cx="36" cy="36" r="36">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".3" stop-color="#f4efff"/>
+      <stop offset=".62" stop-color="#d9c4ff"/>
+      <stop offset="1" stop-color="#b48cff"/>
+    </radialGradient>
+    <radialGradient id="aura" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#b48cff" stop-opacity=".38"/>
+      <stop offset=".55" stop-color="#b48cff" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#b48cff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <circle cx="36" cy="36" r="34" fill="url(#aura)"/>
+  <path d="M36 2 C38.5 26 46 33.5 70 36 C46 38.5 38.5 46 36 70 C33.5 46 26 38.5 2 36 C26 33.5 33.5 26 36 2 Z"
+        fill="url(#core)"/>
+  <path d="M36 14 C37.4 29 43 34.6 58 36 C43 37.4 37.4 43 36 58 C34.6 43 29 37.4 14 36 C29 34.6 34.6 29 36 14 Z"
+        fill="#ffffff" opacity=".55"/>
+  <g fill="#f4efff">
+    <path d="M60 8 L61 13 L66 14 L61 15 L60 20 L59 15 L54 14 L59 13 Z" opacity=".9"/>
+    <path d="M14 54 L15 58 L19 59 L15 60 L14 64 L13 60 L9 59 L13 58 Z" opacity=".7"/>
+  </g>
+</svg>

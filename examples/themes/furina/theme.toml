@@ -1,0 +1,6 @@
+schema = 1
+id = "furina"
+name = "Opera Playbill"
+version = "1.0.0"
+description = "A velvet curtain, spotlight, droplets, and an applause meter."
+preview = "preview.webp"

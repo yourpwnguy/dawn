@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="980" viewBox="0 0 820 980">
+  <defs>
+    <linearGradient id="navy" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b2350"/>
+      <stop offset="0.42" stop-color="#071731"/>
+      <stop offset="0.75" stop-color="#06122b"/>
+      <stop offset="1" stop-color="#040d1f"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#fff3d0"/>
+      <stop offset="0.38" stop-color="#e8c987"/>
+      <stop offset="0.76" stop-color="#c1974c"/>
+      <stop offset="1" stop-color="#95672a"/>
+    </linearGradient>
+    <radialGradient id="topGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#46c8ee" stop-opacity="0.14"/>
+      <stop offset="0.6" stop-color="#46c8ee" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#46c8ee" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="centerDark" cx="0.5" cy="0.56" r="0.56">
+      <stop offset="0" stop-color="#03091a" stop-opacity="0.86"/>
+      <stop offset="0.42" stop-color="#03091a" stop-opacity="0.8"/>
+      <stop offset="0.78" stop-color="#03091a" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#03091a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="halo">
+      <stop offset="0" stop-color="#46c8ee" stop-opacity="0.11"/>
+      <stop offset="1" stop-color="#46c8ee" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="damask" width="72" height="72" patternUnits="userSpaceOnUse">
+      <path d="M36 10 C43 23 54 30 36 58 C18 30 29 23 36 10 Z" fill="none"
+            stroke="#8fe6ff" stroke-opacity="0.1" stroke-width="1"/>
+      <path d="M36 20 C40 28 46 33 36 48 C26 33 32 28 36 20 Z" fill="none"
+            stroke="#e8c987" stroke-opacity="0.08" stroke-width="0.9"/>
+      <circle cx="36" cy="36" r="1.7" fill="#8fe6ff" fill-opacity="0.14"/>
+      <path d="M0 36 H7 M65 36 H72" stroke="#e8c987" stroke-opacity="0.06" stroke-width="0.8"/>
+    </pattern>
+    <pattern id="tassels" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M16 0 V19" stroke="#e8c987" stroke-width="1" stroke-opacity="0.55"/>
+      <path d="M16 19 L19.5 25 L16 31 L12.5 25 Z" fill="#e8c987" fill-opacity="0.7"/>
+    </pattern>
+    <clipPath id="panelClip">
+      <path d="M64 244 C64 146 190 66 410 66 C630 66 756 146 756 244 L756 930
+               Q756 946 740 946 L80 946 Q64 946 64 930 Z"/>
+    </clipPath>
+
+    <g id="fl">
+      <path d="M0 0 C16 -4 36 -16 54 -32" fill="none" stroke="url(#gold)" stroke-width="1.5"
+            stroke-linecap="round"/>
+      <path d="M2 -13 C18 -17 34 -27 46 -41" fill="none" stroke="url(#gold)" stroke-width="1"
+            stroke-opacity="0.65" stroke-linecap="round"/>
+      <path d="M8 -30 C20 -30 30 -38 30 -48 C30 -55 25 -59 20 -57 C16 -55 15 -50 19 -47"
+            fill="none" stroke="url(#gold)" stroke-width="1.2" stroke-linecap="round"/>
+      <path d="M14 -6 C26 -2 38 -8 44 -18 C47 -23 45 -29 39 -29" fill="none"
+            stroke="url(#gold)" stroke-width="1" stroke-opacity="0.55" stroke-linecap="round"/>
+      <circle cx="54" cy="-32" r="2" fill="url(#gold)"/>
+      <path d="M54 -38 V-26 M48 -32 H60" stroke="#f3dda6" stroke-width="0.8" stroke-opacity="0.8"/>
+    </g>
+
+    <g id="wm" fill="none" stroke="#9feaff" stroke-opacity="0.12" stroke-width="1.4">
+      <circle cx="90" cy="78" r="76" stroke-dasharray="1 9" stroke-opacity="0.1"/>
+      <path d="M20 92 C50 86 130 86 160 92 L156 112 C126 118 54 118 24 112 Z"/>
+      <path d="M42 100 C36 86 30 70 22 52 C34 68 44 84 52 98 Z"/>
+      <path d="M138 100 C144 86 150 70 158 52 C146 68 136 84 128 98 Z"/>
+      <path d="M68 98 C62 82 60 62 56 44 C66 60 74 80 78 96 Z"/>
+      <path d="M112 98 C118 82 120 62 124 44 C114 60 106 80 102 96 Z"/>
+      <path d="M90 96 C82 74 82 48 90 22 C98 48 98 74 90 96 Z"/>
+      <path d="M90 116 C96 126 102 131 102 137 A12 12 0 0 1 78 137 C78 131 84 126 90 116 Z"
+            fill="#46c8ee" fill-opacity="0.05"/>
+      <path d="M54 132 C63 126 72 126 81 132"/>
+      <path d="M99 132 C108 126 117 126 126 132"/>
+    </g>
+  </defs>
+
+  <path d="M64 244 C64 146 190 66 410 66 C630 66 756 146 756 244 L756 930
+           Q756 946 740 946 L80 946 Q64 946 64 930 Z"
+        fill="url(#navy)" stroke="url(#gold)" stroke-width="2.4"/>
+
+  <g clip-path="url(#panelClip)">
+    <ellipse cx="410" cy="126" rx="360" ry="190" fill="url(#topGlow)"/>
+    <rect x="64" y="66" width="692" height="880" fill="url(#damask)"/>
+
+    <g stroke="#e8c987" stroke-width="1" stroke-opacity="0.05">
+      <path d="M410 110 L20 980"/>
+      <path d="M410 110 L90 980"/>
+      <path d="M410 110 L160 980"/>
+      <path d="M410 110 L230 980"/>
+      <path d="M410 110 L300 980"/>
+      <path d="M410 110 L370 980"/>
+      <path d="M410 110 V980"/>
+      <path d="M410 110 L450 980"/>
+      <path d="M410 110 L520 980"/>
+      <path d="M410 110 L590 980"/>
+      <path d="M410 110 L660 980"/>
+      <path d="M410 110 L730 980"/>
+      <path d="M410 110 L800 980"/>
+    </g>
+
+    <rect x="64" y="66" width="692" height="880" fill="url(#centerDark)"/>
+
+    <ellipse cx="410" cy="540" rx="210" ry="190" fill="url(#halo)"/>
+    <use href="#wm" transform="translate(410 540) scale(1.4) translate(-90 -78)"/>
+
+    <path d="M112 286 V840" stroke="#e8c987" stroke-width="1" stroke-opacity="0.16"/>
+    <path d="M708 286 V840" stroke="#e8c987" stroke-width="1" stroke-opacity="0.16"/>
+    <path d="M118 320 V820" stroke="#8fe6ff" stroke-width="1" stroke-opacity="0.08"/>
+    <path d="M702 320 V820" stroke="#8fe6ff" stroke-width="1" stroke-opacity="0.08"/>
+  </g>
+
+  <path d="M80 922 L80 246 C80 166 198 86 410 86 C622 86 740 166 740 246 L740 922
+           Q740 930 732 930 L88 930 Q80 930 80 922 Z"
+        fill="none" stroke="url(#gold)" stroke-width="2.2" stroke-opacity="0.95"/>
+  <path d="M96 908 L96 252 C96 178 208 104 410 104 C612 104 724 178 724 252 L724 908
+           Q724 916 716 916 L104 916 Q96 916 96 908 Z"
+        fill="none" stroke="url(#gold)" stroke-width="1.2" stroke-opacity="0.6"/>
+
+  <use href="#fl" transform="translate(104 900) scale(0.92)"/>
+  <use href="#fl" transform="translate(716 900) scale(-0.92 0.92)"/>
+  <use href="#fl" transform="translate(102 238) rotate(90) scale(0.82)"/>
+  <use href="#fl" transform="translate(718 238) scale(-0.82 0.82) rotate(90)"/>
+
+  <path d="M186 848 H634" stroke="url(#gold)" stroke-width="1.2" stroke-opacity="0.85"/>
+  <path d="M226 855 H594" stroke="#e8c987" stroke-width="0.9" stroke-opacity="0.35"/>
+  <path d="M410 842 L416 848 L410 854 L404 848 Z" fill="url(#gold)"/>
+  <path d="M392 845 L396 848 L392 851 L388 848 Z" fill="#e8c987" fill-opacity="0.8"/>
+  <path d="M428 845 L432 848 L428 851 L424 848 Z" fill="#e8c987" fill-opacity="0.8"/>
+  <rect x="202" y="860" width="416" height="32" fill="url(#tassels)"/>
+
+  <path d="M410 38 L430 66 L410 94 L390 66 Z" fill="#081a38" stroke="url(#gold)"
+        stroke-width="2"/>
+  <path d="M410 50 C414 58 419 62 419 70 A9 9 0 0 1 401 70 C401 62 406 58 410 50 Z"
+        fill="#46c8ee" fill-opacity="0.34" stroke="#8fe6ff" stroke-width="1.2"/>
+  <path d="M406 66 C405 70 405 73 407 76" fill="none" stroke="#e8fdff" stroke-width="1.6"
+        stroke-linecap="round" stroke-opacity="0.8"/>
+  <circle cx="380" cy="74" r="2.2" fill="#e8c987" fill-opacity="0.85"/>
+  <circle cx="440" cy="74" r="2.2" fill="#e8c987" fill-opacity="0.85"/>
+</svg>
