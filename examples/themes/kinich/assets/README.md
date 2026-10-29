@@ -1,51 +1,69 @@
-# Kinich Dawn Login Art Pack
+# Kinich: Contract Terminal Art Pack
 
-A small decor set for a Genshin-inspired dawn login greeter. The mood is a calm
-jungle hunter's quest screen: hi-vis lime light, charcoal gear, hot coral
-accents, angular HUD geometry, and one deliberately 8-bit dragon companion.
+A small decor pack for a Genshin-inspired dawn login theme. The mood is a
+contract terminal on an acid-yellow field: ink chrome in the corners, a mission
+bar along the bottom, a few levitating chips, and one deliberately 8-bit dragon
+companion.
 
-This is original vector art. It contains no HoYoverse artwork, logos, sprites,
-or traced material. The motifs are inspired by Kinich's palette and story only.
+This is original vector art made for this theme. It contains no official
+HoYoverse artwork, logos, character renders, or traced material. Everything here
+is drawn from simple geometry, and the SVG sources keep no text elements. The
+references are thematic only: the Scions of the Canopy, the Huitztlan jungle,
+and Kinich's palette.
 
 ## Palette
 
-- charcoal `#0a0f0c`
-- panel green `#111a12`
-- hi-vis lime `#b8f34a`
-- jungle teal `#2ad3a8`
-- hot coral `#ff6a3d`
-- signal yellow `#f2e14c`
-- bone white `#e9eadf`
+| Role | Hex |
+| --- | --- |
+| Ink | `#17191C` |
+| Muted ink | `#4E5148` |
+| Acid yellow | `#E7DA19` |
+| Citrus | `#C6D62B` |
+| Coral | `#E2734F` |
+| Sky | `#2E6FB2` |
+| Bone | `#F7F3E9` |
 
 ## Assets
 
-- `hud.svg` / `hud.png` - 800x940 tactical panel with stepped corners, faint grid, scanlines, coral bars, and a quiet dark centre for the login form.
-- `sigil.svg` / `sigil.png` - 512x512 octagonal clan crest with an original pixel dragon head, lime ring, coral tabs, and teal inner line.
-- `divider.svg` / `divider.png` - 620x24 pixel-stepped divider with a lime centre diamond, coral side diamonds, and small teal ticks.
-- `corner.svg` / `corner.png` - 200x200 top-left lime bracket with a coral notch. Rotate it for the other three corners.
-- `ajaw.svg` / `ajaw.png` - 180x180 original 8-bit dragon sprite with blocky wings, curled tail, horns, coral eyes, and teal highlights.
-- `leaf.svg` / `leaf.png` - 80x80 pixel jungle leaf in lime and teal.
-- `gauge.svg` / `gauge.png` - 360x28 unlabelled status frame with a dark track, lime fill, and stepped ends.
-- `spark.svg` / `spark.png` - 64x64 8-bit plus spark in lime with a signal yellow core.
+| File | Size | Description |
+| --- | --- | --- |
+| `metabar.svg` / `metabar.png` | 1920x48 | Opaque ink mission bar with a yellow top rule, ten tick notches, and a diamond tail on the right. It is meant to sit flush along the bottom edge. |
+| `corner-bracket.svg` / `corner-bracket.png` | 224x224 | One ink viewport bracket, drawn for the top left and rotated for the other three corners. |
+| `chip-ink.svg` / `chip-ink.png` | 96x96 | Outlined ink diamond that spins beside the wordmark. |
+| `chip-coral.svg` / `chip-coral.png` | 96x96 | Filled coral bolt chip, the first of the floating echoes. |
+| `chip-sky.svg` / `chip-sky.png` | 96x96 | Filled sky-blue bolt chip, the second floating echo. |
+| `chip-citrus.svg` / `chip-citrus.png` | 96x96 | Filled citrus bolt chip, the third floating echo. |
+| `rule-coral.svg` / `rule-coral.png` | 672x8 | Thin coral rule under the console heading. |
+| `cursorbar.svg` / `cursorbar.png` | 40x104 | Solid ink block cursor for the end of the typing boot log. |
+| `ajaw.svg` / `ajaw.png` | 180x180 | Original 8-bit dragon sprite with blocky wings, curled tail, horns, coral eyes, and teal highlights. Kept from the first version of the pack. |
 
-Every SVG has a transparent background and no text elements. The HUD keeps a
-clean centre by design, so the form and its labels remain readable.
+The PNGs were rendered with librsvg 2.63.4. The bar and cursor are solid ink
+plates with no transparency; the brackets, chips, and rule keep an alpha
+channel.
 
 ## Render
 
-Run from this directory:
+From this directory:
 
 ```sh
-rsvg-convert -o name.png name.svg
+rsvg-convert -o metabar.png metabar.svg
 ```
 
-For the whole pack:
+To rebuild the pack at the shipped scale:
 
 ```sh
-for name in hud sigil divider corner ajaw leaf gauge spark; do
-  rsvg-convert -o "$name.png" "$name.svg"
-done
+rsvg-convert -w 1920 -h 48 -o metabar.png metabar.svg
+rsvg-convert -w 224 -h 224 -o corner-bracket.png corner-bracket.svg
+rsvg-convert -w 96 -h 96 -o chip-ink.png chip-ink.svg
+rsvg-convert -w 96 -o chip-coral.png chip-coral.svg
+rsvg-convert -w 96 -o chip-sky.png chip-sky.svg
+rsvg-convert -w 96 -o chip-citrus.png chip-citrus.svg
+rsvg-convert -w 672 -h 8 -o rule-coral.png rule-coral.svg
+rsvg-convert -w 40 -o cursorbar.png cursorbar.svg
 ```
 
-All assets are drawn with simple geometry and gradients that librsvg renders
-without CSS filters or external fonts.
+## Wallpaper
+
+`wallpaper.mp4` and `preview.webp` are example media for this bundle. They are
+not covered by the project licence; check their provenance before
+redistributing them. Playing the video needs ffmpeg on `PATH`.

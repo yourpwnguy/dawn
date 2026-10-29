@@ -1,392 +1,12 @@
-# dawn showcase: Kinich, Huitztlan Saurian Hunter of the Scions of the
-# Canopy, partner of the ancient pixel dragon K'uhul Ajaw.
-#
-# Kinich is calm, direct, and efficient, and he believes everything has a
-# price. Ajaw is a smug 8-bit relic who never stops complaining. The login is
-# a tactical quest screen in the jungle: charcoal HUD, hi-vis lime, hot coral,
-# pixel brackets, a status bar, and Ajaw hovering nearby. His constellation is
-# Chimaera Alebriius and his signature dish is "Saurian Hunter's Reward".
-#
-# The wallpaper is example media in the bundle. Check its
-# provenance before redistributing it. Playing it needs ffmpeg on PATH.
-#
-# GeistMono carries the HUD voice. If it is missing, dawn falls back to the
-# embedded Inter face.
+# Kinich: contract terminal.
+# A full-bleed HUD over the acid-yellow video field. The interface frames the
+# subject instead of covering it: chrome in the corners, the console on the
+# right, the boot log on the left, and a live mission feed along the bottom.
 
 [ui]
-font = "GeistMono Nerd Font"
-font_size = 16
+font = "Inter"
+font_size = 15
 fullscreen = true
-
-[login]
-layout = "hero"
-anchor = "center"
-width = 1888
-height = 1048
-radius = 0
-padding = 0
-gap = 20
-surface = "none"
-show_shadow = false
-show_border = false
-draggable = false
-show_session = false
-show_hints = true
-show_picker = false
-tab = ""
-form_offset = [1210, 416]
-form_width = 470
-greeting = ""
-
-[login.field]
-height = 60
-radius = 0
-padding = 26
-font_size = 16
-background = "#0d1710ee"
-background_end = "#111a12ee"
-border = "#b8f34a55"
-bracket = "#ff6a3d"
-bracket_gap = 10
-text = "#e9eadf"
-placeholder_color = "#8aa08c"
-focus = "#b8f34a"
-caret = "#b8f34a"
-caret_width = 2
-icon_size = 18
-icon_gap = 14
-icon_color = "#b8f34a"
-
-[login.username]
-label = "HUNTER ID"
-placeholder = "Traveler name"
-icon = "user"
-
-[login.password]
-label = "ACCESS CODE"
-placeholder = "Password"
-icon = "lock"
-mask = "•"
-
-[login.button]
-show = true
-text = "ACCEPT QUEST"
-gap = 26
-height = 56
-radius = 0
-font_size = 16
-bold = true
-tracking = 0.14
-background = "#b8f34a"
-background_end = "#2ad3a8"
-gradient_angle = 90
-text_color = "#0a0f0c"
-bracket = "#ff6a3d"
-bracket_gap = 8
-hover_background = "#d7ff82"
-hover_background_end = "#5af0c0"
-hover_direction = "center"
-hover_ms = 180
-hover_scale = 1.02
-hover_lift = 2
-glow = "#b8f34a"
-glow_size = 14
-effect = "corners"
-effect_color = "#0a0f0c"
-effect_ms = 1600
-effect_angle = 120
-effect_strength = 0.5
-
-# The HUD is the stage. It has a dark face and a lime frame, so the form reads
-# as a terminal embedded in the jungle.
-[[login.decor]]
-kind = "image"
-image = "assets/hud.png"
-width = 800
-anchor = "top-left"
-offset = [1070, 110]
-
-[[login.decor]]
-kind = "image"
-image = "assets/corner.png"
-width = 72
-anchor = "top-left"
-offset = [1100, 140]
-
-[[login.decor]]
-kind = "image"
-image = "assets/corner.png"
-width = 72
-anchor = "top-left"
-offset = [1776, 140]
-rotation = 90
-
-[[login.decor]]
-kind = "image"
-image = "assets/corner.png"
-width = 72
-anchor = "top-left"
-offset = [1776, 872]
-rotation = 180
-
-[[login.decor]]
-kind = "image"
-image = "assets/corner.png"
-width = 72
-anchor = "top-left"
-offset = [1100, 872]
-rotation = 270
-
-# Ajaw hovers at the top right. The leaves drift on independent phases.
-[[login.decor]]
-kind = "image"
-image = "assets/ajaw.png"
-width = 110
-anchor = "top-left"
-offset = [1692, 148]
-opacity = 0.98
-[login.decor.motion]
-float = [7, -14]
-float_ms = 4200
-sway = 4.0
-sway_ms = 3600
-pulse = 0.04
-pulse_ms = 2200
-fade = 0.1
-fade_ms = 5000
-phase = 0.0
-
-[[login.decor]]
-kind = "image"
-image = "assets/leaf.png"
-width = 40
-anchor = "top-left"
-offset = [1132, 682]
-opacity = 0.9
-[login.decor.motion]
-float = [8, -18]
-float_ms = 5400
-fade = 0.45
-fade_ms = 4200
-spin = 12.0
-phase = 0.12
-
-[[login.decor]]
-kind = "image"
-image = "assets/leaf.png"
-width = 32
-anchor = "top-left"
-offset = [1810, 500]
-opacity = 0.8
-[login.decor.motion]
-float = [-7, -14]
-float_ms = 6200
-fade = 0.5
-fade_ms = 5200
-spin = -15.0
-phase = 0.34
-
-[[login.decor]]
-kind = "image"
-image = "assets/leaf.png"
-width = 44
-anchor = "top-left"
-offset = [1148, 902]
-opacity = 0.85
-[login.decor.motion]
-float = [10, -22]
-float_ms = 6800
-fade = 0.45
-fade_ms = 4800
-spin = 9.0
-phase = 0.56
-
-[[login.decor]]
-kind = "image"
-image = "assets/leaf.png"
-width = 28
-anchor = "top-left"
-offset = [1782, 902]
-opacity = 0.75
-[login.decor.motion]
-float = [-6, -16]
-float_ms = 5800
-fade = 0.5
-fade_ms = 5600
-spin = -10.0
-phase = 0.78
-
-[[login.decor]]
-kind = "image"
-image = "assets/spark.png"
-width = 22
-anchor = "top-left"
-offset = [1660, 320]
-opacity = 0.9
-[login.decor.motion]
-fade = 0.8
-fade_ms = 2600
-pulse = 0.14
-pulse_ms = 2600
-phase = 0.2
-
-[[login.decor]]
-kind = "image"
-image = "assets/spark.png"
-width = 16
-anchor = "top-left"
-offset = [1150, 400]
-opacity = 0.8
-[login.decor.motion]
-fade = 0.8
-fade_ms = 3200
-pulse = 0.12
-pulse_ms = 3000
-phase = 0.62
-
-# Brand lockup on the yellow wallpaper: charcoal type, lime sigil.
-[[login.decor]]
-kind = "image"
-image = "assets/sigil.png"
-width = 64
-anchor = "top-left"
-offset = [58, 46]
-
-[[login.decor]]
-kind = "text"
-text = "DAWN"
-size = 30
-bold = true
-tracking = 0.28
-color = "#0a0f0c"
-anchor = "top-left"
-offset = [132, 52]
-
-[[login.decor]]
-kind = "text"
-text = "A QUEST AT FIRST LIGHT"
-size = 10
-tracking = 0.22
-color = "#2a3a2d"
-anchor = "top-left"
-offset = [134, 92]
-
-# Quest heading.
-[[login.decor]]
-kind = "text"
-text = "SCIONS OF THE CANOPY // UPLINK"
-size = 10
-tracking = 0.22
-color = "#b8f34a"
-anchor = "top-left"
-offset = [1226, 218]
-
-[[login.decor]]
-kind = "text"
-text = "KINICH"
-size = 76
-bold = true
-tracking = 0.1
-color = "#e9eadf"
-anchor = "top-left"
-offset = [1220, 238]
-
-[[login.decor]]
-kind = "image"
-image = "assets/divider.png"
-width = 380
-anchor = "top-left"
-offset = [1226, 344]
-
-[[login.decor]]
-kind = "text"
-text = "Turnfire Hunt. Every login has a price."
-size = 15
-tracking = 0.02
-color = "#cfe0cf"
-anchor = "top-left"
-offset = [1226, 368]
-
-[[login.decor]]
-kind = "text"
-text = "CHIMAERA ALEBRIIUS  ·  LV. 90  ·  HUITZTLAN"
-size = 9
-tracking = 0.18
-color = "#2ad3a8"
-anchor = "top-left"
-offset = [1226, 398]
-
-# Gamified footer: health, stamina, combo, and the achievement pop.
-[[login.decor]]
-kind = "text"
-text = "HP 12,800 / 12,800"
-size = 9
-tracking = 0.14
-color = "#e9eadf"
-anchor = "top-left"
-offset = [1226, 780]
-
-[[login.decor]]
-kind = "image"
-image = "assets/gauge.png"
-width = 300
-anchor = "top-left"
-offset = [1226, 800]
-opacity = 0.95
-
-[[login.decor]]
-kind = "text"
-text = "STAMINA 240 / 240"
-size = 9
-tracking = 0.14
-color = "#2ad3a8"
-anchor = "top-left"
-offset = [1434, 780]
-
-[[login.decor]]
-kind = "text"
-text = "COMBO x77    PING 12 MS    AJAW ONLINE"
-size = 9
-tracking = 0.12
-color = "#b8f34a"
-anchor = "top-left"
-offset = [1226, 846]
-
-[[login.decor]]
-kind = "text"
-text = "ACHIEVEMENT UNLOCKED: FIRST LIGHT"
-size = 9
-tracking = 0.16
-color = "#ff6a3d"
-anchor = "top-left"
-offset = [1226, 876]
-
-[[login.decor]]
-kind = "text"
-text = "HUITZTLAN  ·  NIGHT WARDEN PATROL"
-size = 10
-tracking = 0.2
-color = "#b8f34a"
-anchor = "top-left"
-offset = [64, 948]
-
-[[login.decor]]
-kind = "text"
-text = "NO COMMISSION TOO SMALL. NO PRICE TOO HIGH."
-size = 9
-tracking = 0.16
-color = "#2ad3a8"
-anchor = "top-left"
-offset = [64, 970]
-
-[[login.decor]]
-kind = "text"
-text = "DAWN  ·  A NEW DAY"
-size = 10
-tracking = 0.22
-color = "#b8f34a"
-anchor = "top-left"
-offset = [64, 1022]
 
 [background]
 kind = "video"
@@ -397,15 +17,15 @@ memory_limit_mb = 1024
 idle_pause_secs = 0
 
 [theme]
-preset = "glass-dark"
-text = "#e9eadf"
-muted = "#a8b8a8"
-accent = "#b8f34a"
-error = "#ff8a70"
-tint = "#0a0f0ccc"
-border = "#b8f34a44"
-shadow = "#020503aa"
-focus_ring = "#b8f34a"
+preset = "minimal"
+text = "#17191C"
+muted = "#4E5148"
+accent = "#E2734F"
+error = "#D64A32"
+tint = "#17191CB3"
+border = "#E7DA1980"
+shadow = "#00000055"
+focus_ring = "#E2734F"
 corner_radius = 0
 spacing = 1.0
 noise = false
@@ -414,6 +34,362 @@ min_contrast = 4.5
 [theme.blur]
 enabled = false
 
+[login]
+layout = "hero"
+anchor = "center"
+offset = [0, 0]
+width = 1920
+height = 1080
+padding = 0
+gap = 20
+radius = 0
+surface = "none"
+show_shadow = false
+show_border = false
+form_offset = [1568, 380]
+form_width = 336
+draggable = false
+show_session = true
+show_hints = true
+busy_text = "SIGNING // HOLD THE LINE."
+no_sessions = "NO DEPLOY TARGETS ONLINE"
+
+[login.field]
+height = 46
+padding = 12
+background = "#17191CE6"
+underline = "#E7DA19A6"
+underline_size = 2
+label_color = "#4E5148"
+placeholder_color = "#F7F3E9A6"
+text = "#F7F3E9"
+caret = "#F7F3E9"
+caret_style = "block"
+icon_color = "#E7DA19"
+
+[login.username]
+label = "OPERATOR"
+placeholder = "call sign"
+icon = "user"
+
+[login.password]
+label = "KEYCODE"
+placeholder = "access key"
+icon = "lock"
+
+[login.button]
+show = true
+text = "ENGAGE"
+gap = 24
+height = 54
+radius = 2
+font_size = 17
+background = "#E7DA19"
+background_end = "#C6D62B"
+gradient_angle = 90
+text_color = "#17191C"
+bracket = "#17191C"
+bracket_gap = 10
+bold = true
+tracking = 0.2
+hover_background = "#E2734F"
+hover_direction = "left"
+hover_ms = 240
+glow = "#E2734F"
+glow_size = 14
+effect = "sweep"
+effect_color = "#F7F3E9"
+effect_ms = 3200
+effect_strength = 0.35
+
+[login.session]
+label = "DEPLOY TARGET"
+change_hint = "TAB TO SWAP"
+empty = "NO DEPLOY TARGETS ONLINE"
+
+[login.hints]
+picker = "UP/DOWN  SELECT      ENTER  DEPLOY      ESC  CLOSE"
+
+# ---- full-screen card is the fabric; everything below pins to its edges ----
+
+# Bottom mission bar: ink plate first, then the feed text over it.
+[[login.decor]]
+kind = "image"
+image = "assets/metabar.png"
+width = 1920
+anchor = "bottom-left"
+offset = [0, 0]
+
+[[login.decor]]
+kind = "text"
+text = "MISSION FEED"
+size = 10
+tracking = 0.3
+bold = true
+color = "#E7DA19"
+anchor = "bottom-left"
+offset = [36, 15]
+
+[[login.decor]]
+kind = "text"
+text = "NO COMMISSION TOO SMALL · NO PRICE TOO HIGH · SCIONS OF THE CANOPY · HUITZTLAN UPLINK STABLE · SEASON 7 NIGHT WARDEN PATROL · AJAW CONTRACTING OPEN FOR BUSINESS · DAWN TERMINAL v0.2"
+size = 12
+tracking = 0.18
+color = "#E7DA19"
+anchor = "bottom-left"
+offset = [248, 16]
+
+[login.decor.motion]
+ticker_ms = 22000
+ticker_width = 1400
+ticker_gap = 96
+
+# Viewport target marks: one bracket, four corners, no new art needed.
+[[login.decor]]
+kind = "image"
+image = "assets/corner-bracket.png"
+width = 52
+anchor = "top-left"
+offset = [44, 44]
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner-bracket.png"
+width = 52
+anchor = "top-right"
+offset = [44, 44]
+rotation = 90
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner-bracket.png"
+width = 52
+anchor = "bottom-right"
+offset = [44, 56]
+rotation = 180
+
+[[login.decor]]
+kind = "image"
+image = "assets/corner-bracket.png"
+width = 52
+anchor = "bottom-left"
+offset = [44, 56]
+rotation = 270
+
+# Top-left mission cluster replaces the old wordmark block.
+[[login.decor]]
+kind = "image"
+image = "assets/chip-ink.png"
+width = 17
+anchor = "top-left"
+offset = [60, 58]
+
+[login.decor.motion]
+spin = 24
+
+[[login.decor]]
+kind = "text"
+text = "SCIONS OF THE CANOPY"
+size = 11
+tracking = 0.2
+bold = true
+color = "#17191C"
+anchor = "top-left"
+offset = [96, 62]
+
+[[login.decor]]
+kind = "text"
+text = "CONTRACT 077 · TURNFIRE HUNT"
+size = 10
+tracking = 0.18
+color = "#4E5148"
+anchor = "top-left"
+offset = [96, 86]
+
+# Ajaw, the pixel buddy, hovering by the console.
+[[login.decor]]
+kind = "image"
+image = "assets/ajaw.png"
+width = 44
+anchor = "top-right"
+offset = [56, 140]
+
+[login.decor.motion]
+float = [0, -10]
+float_ms = 4000
+
+[[login.decor]]
+kind = "text"
+text = "AJAW // ON WATCH"
+size = 8
+tracking = 0.3
+color = "#4E5148"
+anchor = "top-right"
+offset = [58, 196]
+
+# Bolt echoes: the video's chips, a beacon row under the left boot log.
+[[login.decor]]
+kind = "image"
+image = "assets/chip-coral.png"
+width = 14
+anchor = "top-left"
+offset = [64, 642]
+
+[login.decor.motion]
+float = [8, -6]
+float_ms = 5200
+
+[[login.decor]]
+kind = "image"
+image = "assets/chip-sky.png"
+width = 12
+anchor = "top-left"
+offset = [100, 654]
+
+[login.decor.motion]
+float = [0, -8]
+float_ms = 6400
+phase = 0.33
+
+[[login.decor]]
+kind = "image"
+image = "assets/chip-citrus.png"
+width = 11
+anchor = "top-left"
+offset = [136, 646]
+
+[login.decor.motion]
+float = [-8, -4]
+float_ms = 7600
+phase = 0.66
+
+# Right console heading (sits on the yellow field, ink on yellow).
+[[login.decor]]
+kind = "text"
+text = "CONTRACT CONFIRMATION"
+size = 11
+tracking = 0.3
+color = "#17191C"
+anchor = "top-left"
+offset = [1568, 244]
+
+[[login.decor]]
+kind = "text"
+text = "TURNFIRE HUNT"
+size = 30
+bold = true
+tracking = 0.12
+color = "#17191C"
+anchor = "top-left"
+offset = [1564, 268]
+
+[[login.decor]]
+kind = "text"
+text = "AUTHORIZE UPLINK"
+size = 30
+bold = true
+tracking = 0.12
+color = "#17191C"
+anchor = "top-left"
+offset = [1564, 312]
+
+[[login.decor]]
+kind = "image"
+image = "assets/rule-coral.png"
+width = 336
+anchor = "top-left"
+offset = [1548, 362]
+
+[[login.decor]]
+kind = "text"
+text = "THE HUNT SETS ITS OWN PRICE."
+size = 9
+tracking = 0.18
+color = "#4E5148"
+anchor = "top-left"
+offset = [1568, 736]
+
+# Left rail: service log types itself in on boot.
+[[login.decor]]
+kind = "text"
+text = "SERVICE LOG"
+size = 11
+tracking = 0.3
+bold = true
+color = "#17191C"
+anchor = "top-left"
+offset = [56, 430]
+
+[[login.decor]]
+kind = "text"
+text = "> BOOT // SCIONS OF THE CANOPY TS 0.1"
+size = 11
+tracking = 0.08
+color = "#17191C"
+anchor = "top-left"
+offset = [56, 462]
+
+[login.decor.motion]
+typer_ms = 700
+
+[[login.decor]]
+kind = "text"
+text = "> LINK STABLE // HUITZTLAN NET ONLINE."
+size = 11
+tracking = 0.08
+color = "#17191C"
+anchor = "top-left"
+offset = [56, 484]
+
+[login.decor.motion]
+typer_ms = 1800
+
+[[login.decor]]
+kind = "text"
+text = "> CONTRACT 077 REGISTERED."
+size = 11
+tracking = 0.08
+color = "#17191C"
+anchor = "top-left"
+offset = [56, 506]
+
+[login.decor.motion]
+typer_ms = 3000
+
+[[login.decor]]
+kind = "text"
+text = "> FEE SCHEDULE SYNCED."
+size = 11
+tracking = 0.08
+color = "#17191C"
+anchor = "top-left"
+offset = [56, 528]
+
+[login.decor.motion]
+typer_ms = 4300
+
+[[login.decor]]
+kind = "text"
+text = "> AWAITING OPERATOR CONFIRMATION."
+size = 11
+tracking = 0.08
+color = "#17191C"
+anchor = "top-left"
+offset = [56, 550]
+
+[login.decor.motion]
+typer_ms = 5600
+
+[[login.decor]]
+kind = "image"
+image = "assets/cursorbar.png"
+width = 8
+anchor = "top-left"
+offset = [300, 552]
+
+[login.decor.motion]
+blink_ms = 900
+
 [motion]
 enabled = true
 reduced = false
@@ -421,12 +397,21 @@ boot_ms = 600
 focus_ms = 160
 shake_ms = 300
 drag_ms = 100
+decor_fps = 60
 
 [layout]
 save = false
 
 [clock]
-enabled = false
+enabled = true
+layer = "front"
+style = "digital"
+time_format = "%H:%M"
+date_format = ""
+size = 15
+anchor = "bottom-right"
+offset = [48, 12]
+color = "#F7F3E9"
 
 [media]
 enabled = false
@@ -436,6 +421,7 @@ low_power = false
 
 [sessions]
 dirs = ["/usr/share/wayland-sessions", "/usr/share/xsessions"]
+default = "hyprland"
 
 [plugins]
 enabled = false
