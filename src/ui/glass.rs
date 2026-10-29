@@ -306,7 +306,7 @@ fn prepare(source: &Pixmap, contrast: f32, brightness: f32) -> Pixmap {
   let mut output = source.clone();
   let contrast = contrast.max(0.0);
   let brighten = brightness.max(1.0);
-  for pixel in output.data_mut().chunks_exact_mut(4) {
+  for pixel in output.data_mut().as_chunks_mut::<4>().0 {
     if pixel[3] == 0 {
       continue;
     }
@@ -421,7 +421,8 @@ fn finish(source: &mut Pixmap, noise: f32, brightness: f32) {
   let width = pixel_width as f32;
   let height = source.height() as f32;
   let brightness = brightness.min(1.0);
-  for (index, pixel) in source.data_mut().chunks_exact_mut(4).enumerate() {
+  let (pixels, _) = source.data_mut().as_chunks_mut::<4>();
+  for (index, pixel) in pixels.iter_mut().enumerate() {
     let x = (index as u32 % pixel_width) as f32 / width;
     let y = (index as u32 / pixel_width) as f32 / height;
     let amount = (hash(x, y) - 0.5) * noise * (f32::from(pixel[3]) / 255.0);
@@ -605,7 +606,7 @@ fn hsl_to_rgb(color: [f32; 3]) -> [f32; 3] {
 fn make_noise() -> Option<Pixmap> {
   let mut pixmap = Pixmap::new(NOISE_SIZE, NOISE_SIZE)?;
   let mut state = 0x9e37_79b9_7f4a_7c15u64;
-  for pixel in pixmap.data_mut().chunks_exact_mut(4) {
+  for pixel in pixmap.data_mut().as_chunks_mut::<4>().0 {
     state ^= state << 13;
     state ^= state >> 7;
     state ^= state << 17;
