@@ -627,7 +627,7 @@ impl Canvas {
   /// Converts to softbuffer's `0x00RRGGBB` layout. The background is opaque, so
   /// dropping the premultiplied alpha channel is safe here.
   pub fn to_argb(&self, out: &mut [u32]) {
-    for (pixel, source) in out.iter_mut().zip(self.pixmap.data().chunks_exact(4)) {
+    for (pixel, source) in out.iter_mut().zip(self.pixmap.data().as_chunks::<4>().0) {
       *pixel = (u32::from(source[0]) << 16) | (u32::from(source[1]) << 8) | u32::from(source[2]);
     }
   }

@@ -262,7 +262,7 @@ pub fn fit_image(image: RgbaImage, target: (u32, u32), fit: Fit, background: Rgb
 pub(crate) fn to_pixmap(image: RgbaImage) -> Option<Pixmap> {
   let (width, height) = image.dimensions();
   let mut data = image.into_raw();
-  for pixel in data.chunks_exact_mut(4) {
+  for pixel in data.as_chunks_mut::<4>().0 {
     let alpha = u32::from(pixel[3]);
     pixel[0] = ((u32::from(pixel[0]) * alpha) / 255) as u8;
     pixel[1] = ((u32::from(pixel[1]) * alpha) / 255) as u8;
