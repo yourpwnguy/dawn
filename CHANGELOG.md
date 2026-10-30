@@ -2,6 +2,16 @@
 
 All notable changes to dawn are recorded here.
 
+## 0.2.6 - 2026-10-30
+
+### Fixed
+
+- Live glass blur stayed on the placeholder: an image background kept the same
+  frame id before and after loading, so the GPU blur of the empty placeholder
+  was never refreshed once the wallpaper arrived. Unloaded backgrounds now use
+  a sentinel id, so the blur refreshes on the first frame after the wallpaper
+  lands.
+
 ## 0.2.5 - 2026-10-30
 
 ### Added
