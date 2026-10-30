@@ -222,6 +222,8 @@ pub struct RawDecor {
   #[serde(default)]
   pub border: Option<Field>,
   #[serde(default)]
+  pub glass: Option<Field>,
+  #[serde(default)]
   pub bold: Option<Field>,
   #[serde(default)]
   pub tracking: Option<Field>,

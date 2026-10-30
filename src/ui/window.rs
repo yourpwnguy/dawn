@@ -621,13 +621,17 @@ impl Handler {
         }
       }
       if let Some(canvas) = self.blur_canvas.as_ref() {
-        let changed = self.glass.prepare(
+        // The GPU renderer owns the blur pipeline, so the cache asks it first.
+        // A failure returns `None` and the cache falls back to the CPU worker
+        // exactly as before.
+        let changed = self.glass.prepare_with(
           canvas,
           snapshot.frame_id,
           state.frame_now,
           theme,
           state.scale,
           snapshot.animated,
+          |source, blur, scale| renderer.blur(source, blur, scale).ok(),
         );
         ui_dirty |= changed;
       }

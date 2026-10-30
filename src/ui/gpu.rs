@@ -24,6 +24,7 @@
 //! on the next redraw instead of exiting.
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use tiny_skia::Pixmap;
 use tracing::{debug, info, warn};
@@ -31,7 +32,7 @@ use winit::event_loop::OwnedDisplayHandle;
 use winit::window::Window;
 
 use crate::color::Rgb;
-use crate::config::{GpuBackend, GpuConfig, GpuDevice, GpuPower, GpuPresent};
+use crate::config::{BlurConfig, GpuBackend, GpuConfig, GpuDevice, GpuPower, GpuPresent};
 use crate::ui::background::{BackgroundSnapshot, SnapshotKind};
 
 /// Uniform data shared with `gpu.wgsl`. Keep this layout in sync with the WGSL
@@ -66,6 +67,23 @@ struct TextureSlot {
 
 impl TextureSlot {
   fn new(device: &wgpu::Device, size: (u32, u32), label: &str) -> Self {
+    Self::with_usage(
+      device,
+      size,
+      label,
+      wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+    )
+  }
+
+  /// Same slot with an explicit usage mask. The blur chain needs a render
+  /// target and, on the last texture, a copy source; a slot built for the
+  /// composite path must keep the original mask so its validation stays put.
+  fn with_usage(
+    device: &wgpu::Device,
+    size: (u32, u32),
+    label: &str,
+    usage: wgpu::TextureUsages,
+  ) -> Self {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
       label: Some(label),
       size: wgpu::Extent3d {
@@ -76,10 +94,10 @@ impl TextureSlot {
       mip_level_count: 1,
       sample_count: 1,
       dimension: wgpu::TextureDimension::D2,
-      // Non-sRGB on purpose. The pixels are already sRGB-encoded and we blend
-      // them in that space, just like the CPU canvas.
+      // Non-sRGB on purpose, same as the composite textures: the pixels are
+      // already sRGB-encoded and we filter them in that space.
       format: wgpu::TextureFormat::Rgba8Unorm,
-      usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+      usage,
       view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -89,6 +107,36 @@ impl TextureSlot {
       size,
     }
   }
+}
+
+/// Uniform shared with `blur.wgsl`. Three `vec4`s keep the layout at exactly
+/// 48 bytes and 16-byte aligned, so the Rust and WGSL structs cannot drift.
+/// The fields are named after the WGSL members, not their individual values.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct BlurParams {
+  /// dir.x, dir.y, radius, contrast
+  dir_radius: [f32; 4],
+  /// vibrancy, vibrancy_darkness, noise, brightness
+  color: [f32; 4],
+  /// finish (0 horizontal, 1 vertical), passes, unused, unused
+  flags: [f32; 4],
+}
+
+/// Everything the blur chain owns for one source size. A size change means a
+/// new input, temp, output, staging buffer, and two fresh bind groups, because
+/// none of those can be resized in place.
+struct BlurTargets {
+  size: (u32, u32),
+  input: TextureSlot,
+  temp: TextureSlot,
+  output: TextureSlot,
+  staging: wgpu::Buffer,
+  padded_row: u32,
+  horizontal_params: wgpu::Buffer,
+  vertical_params: wgpu::Buffer,
+  horizontal: wgpu::BindGroup,
+  vertical: wgpu::BindGroup,
 }
 
 /// The two wallpaper frames plus the kind of background currently bound.
@@ -140,6 +188,16 @@ pub struct GpuRenderer {
   ui_uploaded: bool,
   max_dimension: u32,
   reconfigure: bool,
+  /// Separable Gaussian used by [`Self::blur`]. Built once; the textures and
+  /// bind groups live in `blur_targets` and are rebuilt only on a size change.
+  blur_pipeline: wgpu::RenderPipeline,
+  blur_layout: wgpu::BindGroupLayout,
+  blur_sampler: wgpu::Sampler,
+  blur_targets: Option<BlurTargets>,
+  /// Warn at most once per run while the GPU blur keeps failing. The CPU
+  /// fallback is expected to recover visually, so a warning every refresh
+  /// would just flood the journal.
+  blur_failed_logged: bool,
 }
 
 impl GpuRenderer {
@@ -321,6 +379,77 @@ impl GpuRenderer {
       mipmap_filter: wgpu::MipmapFilterMode::Nearest,
       ..wgpu::SamplerDescriptor::default()
     });
+
+    // The blur is a second, independent pipeline. It always renders into
+    // Rgba8Unorm regardless of the surface format, because its output is read
+    // back into a tiny-skia pixmap rather than presented.
+    let blur_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+      label: Some("dawn-blur-shader"),
+      source: wgpu::ShaderSource::Wgsl(include_str!("blur.wgsl").into()),
+    });
+    let blur_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+      label: Some("dawn-blur-layout"),
+      entries: &[
+        texture_entry(0),
+        wgpu::BindGroupLayoutEntry {
+          binding: 1,
+          visibility: wgpu::ShaderStages::FRAGMENT,
+          ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+          count: None,
+        },
+        wgpu::BindGroupLayoutEntry {
+          binding: 2,
+          visibility: wgpu::ShaderStages::FRAGMENT,
+          ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+          },
+          count: None,
+        },
+      ],
+    });
+    let blur_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+      label: Some("dawn-blur-pipeline-layout"),
+      bind_group_layouts: &[Some(&blur_layout)],
+      immediate_size: 0,
+    });
+    let blur_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+      label: Some("dawn-blur-pipeline"),
+      layout: Some(&blur_pipeline_layout),
+      vertex: wgpu::VertexState {
+        module: &blur_shader,
+        entry_point: Some("vs_main"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        buffers: &[],
+      },
+      primitive: wgpu::PrimitiveState::default(),
+      depth_stencil: None,
+      multisample: wgpu::MultisampleState::default(),
+      fragment: Some(wgpu::FragmentState {
+        module: &blur_shader,
+        entry_point: Some("fs_main"),
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        targets: &[Some(wgpu::ColorTargetState {
+          format: wgpu::TextureFormat::Rgba8Unorm,
+          blend: None,
+          write_mask: wgpu::ColorWrites::ALL,
+        })],
+      }),
+      multiview_mask: None,
+      cache: None,
+    });
+    let blur_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+      label: Some("dawn-blur-sampler"),
+      address_mode_u: wgpu::AddressMode::ClampToEdge,
+      address_mode_v: wgpu::AddressMode::ClampToEdge,
+      address_mode_w: wgpu::AddressMode::ClampToEdge,
+      mag_filter: wgpu::FilterMode::Linear,
+      min_filter: wgpu::FilterMode::Linear,
+      mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+      ..wgpu::SamplerDescriptor::default()
+    });
+
     let globals_buffer = device.create_buffer(&wgpu::BufferDescriptor {
       label: Some("dawn-composite-globals"),
       size: std::mem::size_of::<Globals>() as u64,
@@ -380,6 +509,11 @@ impl GpuRenderer {
       ui_uploaded: false,
       max_dimension,
       reconfigure: false,
+      blur_pipeline,
+      blur_layout,
+      blur_sampler,
+      blur_targets: None,
+      blur_failed_logged: false,
     })
   }
 
@@ -493,6 +627,277 @@ impl GpuRenderer {
       // allocation address still gets a fresh upload.
       self.prev_key = None;
     }
+    Ok(())
+  }
+
+  /// Renders a full-resolution separable Gaussian on the GPU and reads the
+  /// result back into a pixmap.
+  ///
+  /// The whole colour pipeline lives in `blur.wgsl`: the horizontal pass does
+  /// Hyprland's contrast/brightness prepare and vibrancy, the vertical pass adds
+  /// grain and the final brightness. The CPU only uploads the raw source and
+  /// copies the finished rows back, which is what keeps a 1080p refresh fast.
+  /// The CPU pyramid remains the fallback and the `--screenshot` path.
+  ///
+  /// The first call for a given size builds the texture chain. Every later
+  /// call with the same size reuses it. Any failure is returned to the caller
+  /// once and logged once; the glass cache then falls back to the CPU path.
+  pub fn blur(&mut self, source: &Pixmap, blur: &BlurConfig, scale: f32) -> Result<Pixmap, String> {
+    let result = self.blur_inner(source, blur, scale);
+    match &result {
+      Ok(_) => self.blur_failed_logged = false,
+      Err(error) => {
+        if !self.blur_failed_logged {
+          warn!(%error, "GPU backdrop blur failed; using the CPU blur");
+          self.blur_failed_logged = true;
+        }
+      }
+    }
+    result
+  }
+
+  fn blur_inner(
+    &mut self,
+    source: &Pixmap,
+    blur: &BlurConfig,
+    scale: f32,
+  ) -> Result<Pixmap, String> {
+    let size = (source.width(), source.height());
+    if size.0 == 0 || size.1 == 0 {
+      return Err("cannot blur an empty pixmap".to_string());
+    }
+    if size.0 > self.max_dimension || size.1 > self.max_dimension {
+      return Err(format!(
+        "blur source {}x{} exceeds the GPU texture limit of {}",
+        size.0, size.1, self.max_dimension
+      ));
+    }
+    if self
+      .blur_targets
+      .as_ref()
+      .is_none_or(|targets| targets.size != size)
+    {
+      self.create_blur_targets(size)?;
+    }
+    let started = Instant::now();
+
+    // Upload the raw source. Every colour operation after this point runs in
+    // the shader, so the CPU never touches the 1080p buffer.
+    let Some(targets) = self.blur_targets.as_ref() else {
+      return Err("blur targets disappeared after creation".to_string());
+    };
+    self.upload(&targets.input.texture, source);
+
+    let radius = (blur.size.max(0.0) * scale).max(0.0);
+    let contrast = blur.contrast.max(0.0);
+    let color = [
+      blur.vibrancy,
+      blur.vibrancy_darkness,
+      blur.noise,
+      blur.brightness,
+    ];
+    let passes = blur.passes as f32;
+    self.queue.write_buffer(
+      &targets.horizontal_params,
+      0,
+      bytemuck::bytes_of(&BlurParams {
+        dir_radius: [1.0, 0.0, radius, contrast],
+        color,
+        flags: [0.0, passes, 0.0, 0.0],
+      }),
+    );
+    self.queue.write_buffer(
+      &targets.vertical_params,
+      0,
+      bytemuck::bytes_of(&BlurParams {
+        dir_radius: [0.0, 1.0, radius, contrast],
+        color,
+        flags: [1.0, passes, 0.0, 0.0],
+      }),
+    );
+
+    let mut encoder = self
+      .device
+      .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("dawn-blur"),
+      });
+    // Horizontal pass: input -> temp.
+    {
+      let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("dawn-blur-horizontal"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+          view: &targets.temp.view,
+          depth_slice: None,
+          resolve_target: None,
+          ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+            store: wgpu::StoreOp::Store,
+          },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+      });
+      pass.set_pipeline(&self.blur_pipeline);
+      pass.set_bind_group(0, &targets.horizontal, &[]);
+      pass.draw(0..3, 0..1);
+    }
+    // Vertical pass: temp -> output.
+    {
+      let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("dawn-blur-vertical"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+          view: &targets.output.view,
+          depth_slice: None,
+          resolve_target: None,
+          ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+            store: wgpu::StoreOp::Store,
+          },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+      });
+      pass.set_pipeline(&self.blur_pipeline);
+      pass.set_bind_group(0, &targets.vertical, &[]);
+      pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+      wgpu::TexelCopyTextureInfo {
+        texture: &targets.output.texture,
+        mip_level: 0,
+        origin: wgpu::Origin3d::ZERO,
+        aspect: wgpu::TextureAspect::All,
+      },
+      wgpu::TexelCopyBufferInfo {
+        buffer: &targets.staging,
+        layout: wgpu::TexelCopyBufferLayout {
+          offset: 0,
+          bytes_per_row: Some(targets.padded_row),
+          rows_per_image: Some(size.1),
+        },
+      },
+      wgpu::Extent3d {
+        width: size.0,
+        height: size.1,
+        depth_or_array_layers: 1,
+      },
+    );
+    self.queue.submit(Some(encoder.finish()));
+
+    targets
+      .staging
+      .slice(..)
+      .map_async(wgpu::MapMode::Read, |_| {});
+    if let Err(error) = self.device.poll(wgpu::PollType::Wait {
+      submission_index: None,
+      timeout: None,
+    }) {
+      // Cancel the pending map so the next attempt starts from a clean buffer.
+      targets.staging.unmap();
+      return Err(format!("GPU blur readback poll failed: {error}"));
+    }
+
+    let readback = (|| -> Result<Pixmap, String> {
+      let mapped = targets
+        .staging
+        .slice(..)
+        .get_mapped_range()
+        .map_err(|error| format!("GPU blur readback did not map: {error}"))?;
+      let mut output = Pixmap::new(size.0, size.1)
+        .ok_or_else(|| "cannot allocate the blur output pixmap".to_string())?;
+      let row_bytes = (size.0 * 4) as usize;
+      let padded = targets.padded_row as usize;
+      for y in 0..size.1 as usize {
+        let source_start = y * padded;
+        let source_row = &mapped[source_start..source_start + row_bytes];
+        let target_start = y * row_bytes;
+        output.data_mut()[target_start..target_start + row_bytes].copy_from_slice(source_row);
+      }
+      Ok(output)
+    })();
+    // The buffer must be unmapped before it can be a copy destination again,
+    // whether or not the row copy above succeeded.
+    targets.staging.unmap();
+    let output = readback?;
+
+    debug!(
+      elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
+      width = size.0,
+      height = size.1,
+      "GPU backdrop blur"
+    );
+    Ok(output)
+  }
+
+  fn create_blur_targets(&mut self, size: (u32, u32)) -> Result<(), String> {
+    let input = TextureSlot::with_usage(
+      &self.device,
+      size,
+      "dawn-blur-input",
+      wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+    );
+    let temp = TextureSlot::with_usage(
+      &self.device,
+      size,
+      "dawn-blur-temp",
+      wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+    );
+    let output = TextureSlot::with_usage(
+      &self.device,
+      size,
+      "dawn-blur-output",
+      wgpu::TextureUsages::RENDER_ATTACHMENT
+        | wgpu::TextureUsages::TEXTURE_BINDING
+        | wgpu::TextureUsages::COPY_SRC,
+    );
+    let padded_row = padded_row(size.0);
+    let staging_size = u64::from(padded_row) * u64::from(size.1);
+    let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+      label: Some("dawn-blur-readback"),
+      size: staging_size,
+      usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+      mapped_at_creation: false,
+    });
+    let uniform = |label: &str| {
+      self.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: std::mem::size_of::<BlurParams>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+      })
+    };
+    let horizontal_params = uniform("dawn-blur-horizontal-params");
+    let vertical_params = uniform("dawn-blur-vertical-params");
+    let horizontal = make_blur_bind_group(
+      &self.device,
+      &self.blur_layout,
+      &self.blur_sampler,
+      &input,
+      &horizontal_params,
+    );
+    let vertical = make_blur_bind_group(
+      &self.device,
+      &self.blur_layout,
+      &self.blur_sampler,
+      &temp,
+      &vertical_params,
+    );
+    self.blur_targets = Some(BlurTargets {
+      size,
+      input,
+      temp,
+      output,
+      staging,
+      padded_row,
+      horizontal_params,
+      vertical_params,
+      horizontal,
+      vertical,
+    });
     Ok(())
   }
 
@@ -914,6 +1319,42 @@ fn make_bind_group(
   })
 }
 
+fn make_blur_bind_group(
+  device: &wgpu::Device,
+  layout: &wgpu::BindGroupLayout,
+  sampler: &wgpu::Sampler,
+  source: &TextureSlot,
+  params: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+  device.create_bind_group(&wgpu::BindGroupDescriptor {
+    label: Some("dawn-blur-bind-group"),
+    layout,
+    entries: &[
+      wgpu::BindGroupEntry {
+        binding: 0,
+        resource: wgpu::BindingResource::TextureView(&source.view),
+      },
+      wgpu::BindGroupEntry {
+        binding: 1,
+        resource: wgpu::BindingResource::Sampler(sampler),
+      },
+      wgpu::BindGroupEntry {
+        binding: 2,
+        resource: params.as_entire_binding(),
+      },
+    ],
+  })
+}
+
+/// Rounds a row of RGBA pixels up to the 256-byte alignment required by
+/// `copy_texture_to_buffer`. Without this, a width whose row is not a multiple
+/// of 256 is a validation error on every backend, not just a slow path.
+fn padded_row(width: u32) -> u32 {
+  let row = width.saturating_mul(4);
+  let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+  row.saturating_add(align - 1) & !(align - 1)
+}
+
 /// Chooses a standard 8-bit non-sRGB format. The whole pipeline assumes the
 /// swapchain stores the exact sRGB bytes that tiny-skia produced; formats such
 /// as `Rgba16Float` are usually HDR surfaces and would change the interpretation
@@ -950,7 +1391,7 @@ fn shade(color: Rgb, factor: f32) -> Rgb {
 
 #[cfg(test)]
 mod tests {
-  use super::{Globals, MODE_IMAGE, choose_format};
+  use super::{BlurParams, Globals, MODE_IMAGE, choose_format, padded_row};
   use wgpu::TextureFormat;
 
   #[test]
@@ -960,6 +1401,15 @@ mod tests {
     assert_eq!(std::mem::size_of::<Globals>(), 80);
     assert_eq!(std::mem::align_of::<Globals>(), 4);
     assert_eq!(MODE_IMAGE, 0);
+  }
+
+  #[test]
+  fn blur_uniform_is_three_vec4s() {
+    // The shader declares three vec4<f32> fields. If this ever changes, the
+    // uniform write and the WGSL struct have drifted and the colours will be
+    // read from the wrong offsets.
+    assert_eq!(std::mem::size_of::<BlurParams>(), 48);
+    assert_eq!(std::mem::align_of::<BlurParams>(), 4);
   }
 
   #[test]
@@ -976,5 +1426,17 @@ mod tests {
       None,
       "an sRGB-only or HDR-only surface must fall back to the CPU renderer"
     );
+  }
+
+  #[test]
+  fn readback_rows_are_aligned_to_256_bytes() {
+    // A 1920-wide RGBA row is already 7680 bytes, which is 256-aligned, while
+    // the odd widths between the multiples need real padding. Getting this
+    // wrong makes `copy_texture_to_buffer` a validation error on every frame.
+    assert_eq!(padded_row(1), 256);
+    assert_eq!(padded_row(64), 256);
+    assert_eq!(padded_row(65), 512);
+    assert_eq!(padded_row(1920), 7680);
+    assert_eq!(padded_row(1921), 7936);
   }
 }

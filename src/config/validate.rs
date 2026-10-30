@@ -1679,7 +1679,7 @@ impl<'a> Validator<'a> {
           self.issue(
             key("style"),
             Some(field),
-            format!("unknown plate style {text:?}; use none, tint, solid, or gradient"),
+            format!("unknown plate style {text:?}; use none, tint, solid, gradient, or glass"),
           );
           default.style
         }),
@@ -2288,6 +2288,7 @@ impl<'a> Validator<'a> {
               64.0,
             ) as f32,
             border: self.optional_color(item.border.as_ref(), &format!("{prefix}.border")),
+            glass: self.boolean(item.glass.as_ref(), &format!("{prefix}.glass"), false),
             opacity: self.range(
               item.opacity.as_ref(),
               &format!("{prefix}.opacity"),

@@ -48,6 +48,9 @@ pub struct Decor {
   /// a small circle before the fill pass.
   pub stroke: Option<Rgb>,
   pub stroke_width: f32,
+  /// True for a panel that asked for the shared blurred backdrop. Only
+  /// `kind = "panel"` sets it; text and image items never do.
+  pub glass: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -260,6 +263,7 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       border: None,
       stroke: *stroke,
       stroke_width: *stroke_width,
+      glass: false,
     }),
     DecorSpec::Image {
       path,
@@ -292,6 +296,7 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
         border: None,
         stroke: None,
         stroke_width: 0.0,
+        glass: false,
       })
     }
     DecorSpec::Panel {
@@ -303,6 +308,7 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       radius,
       border,
       opacity,
+      glass,
       anchor,
       offset,
       rotation,
@@ -330,6 +336,7 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       border: *border,
       stroke: None,
       stroke_width: 0.0,
+      glass: *glass,
     }),
   }
 }
