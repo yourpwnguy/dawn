@@ -64,6 +64,11 @@ pub struct View {
   /// Caret position in the password field, as a char index.
   pub password_cursor: usize,
   pub focus: Focus,
+  /// When the focused field last received a typed character. `None` means no
+  /// pop is active. The renderer only uses this for the keystroke animation.
+  pub typed_at: Option<std::time::Instant>,
+  /// When the selected session last changed. Drives the ticker flash beat.
+  pub session_changed_at: Option<std::time::Instant>,
   /// PAM's question, shown just above the password field.
   pub prompt: Option<String>,
   pub status: Option<Line>,

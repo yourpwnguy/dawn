@@ -12,8 +12,8 @@ use tracing::warn;
 
 use crate::color::Rgb;
 use crate::config::{
-  BlurConfig, ClockStyle, Config, DecorSpec, LoginConfig, MotionConfig, SecondHand, WidgetLayer,
-  WidgetLook,
+  BlurConfig, ClockStyle, Config, DecorSpec, LoginConfig, MotionConfig, ParticlesConfig,
+  SecondHand, TickerConfig, WidgetLayer, WidgetLook,
 };
 use crate::layout::Anchor;
 use crate::ui::image::{DecodeLimits, load_native};
@@ -102,6 +102,10 @@ pub struct Theme {
   /// the once-per-second clock tick, otherwise the effect looks like a
   /// slideshow.
   pub clock_face_animating: bool,
+  /// Resolved kinetic marquee.
+  pub ticker: TickerConfig,
+  /// Resolved ambient emitters.
+  pub particles: ParticlesConfig,
 }
 
 impl Theme {
@@ -168,7 +172,9 @@ impl Theme {
         || self.clock_look.motion.active()
         || self.media_look.motion.active()
         || self.clock_face_animating
-        || self.scanlines > 0.0)
+        || self.scanlines > 0.0
+        || (self.ticker.enabled && self.ticker.speed > 0.0 && !self.ticker.items.is_empty())
+        || (self.particles.enabled && self.particles.count > 0))
   }
 }
 
@@ -212,6 +218,8 @@ impl From<&Config> for Theme {
         && (config.clock.colon_blink_ms > 0.0
           || (config.clock.style == ClockStyle::Analog
             && config.clock.second_hand == SecondHand::Sweep)),
+      ticker: config.ticker.clone(),
+      particles: config.particles.clone(),
     }
   }
 }

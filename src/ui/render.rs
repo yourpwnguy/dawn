@@ -14,13 +14,13 @@
 use std::f32::consts::TAU;
 use std::time::{Duration, Instant};
 
-use cosmic_text::Align;
+use cosmic_text::{Align, Weight};
 
 use crate::color::Rgb;
 use crate::config::{
-  ButtonConfig, ButtonEffect, CaretStyle, DecorSample, HoverReveal, LoginLayout, MediaArt,
-  MediaLayout, MediaLook, MediaProgress, PlateStyle, SurfaceStyle, WidgetLayer, WidgetLook,
-  WidgetPlate, WidgetState,
+  ButtonConfig, ButtonEffect, CaretStyle, DecorSample, HoverReveal, MediaArt, MediaLayout,
+  MediaLook, MediaProgress, ParticleLayer, PlateStyle, SurfaceStyle, TickerAnchor, WidgetLayer,
+  WidgetLook, WidgetPlate, WidgetState,
 };
 use crate::plugin::{Plugin, Widget};
 use crate::ui::anim::{cycle, ease_out_cubic};
@@ -29,8 +29,10 @@ use crate::ui::canvas::{Canvas, Rect, rotated_bounds};
 use crate::ui::clock;
 use crate::ui::drag::{Drag, HitRegion};
 use crate::ui::glass::GlassCache;
+use crate::ui::hud::{self, Hud};
 use crate::ui::media::MediaSnapshot;
 use crate::ui::motion::MotionFrame;
+use crate::ui::particles;
 use crate::ui::text::{Area, Style, TextEngine};
 use crate::ui::theme::Theme;
 use crate::ui::view::{Tone, View};
@@ -63,6 +65,13 @@ pub struct Scene<'a> {
   /// Window size in physical pixels. Parallax normalises the pointer against
   /// this so the effect is the same on every display size.
   pub screen: (f32, f32),
+  /// When the success particle burst was fired, if one is running. Screenshots
+  /// and idle frames leave this `None`; the particle module turns the age into
+  /// a closed-form field, so nothing mutates per frame.
+  pub burst_at: Option<Instant>,
+  /// The dev studio's corner HUD. `None` in normal runs and screenshots, which
+  /// is the whole reason the HUD cannot leak into either.
+  pub hud: Option<&'a Hud>,
 }
 
 /// Draws one complete frame and returns the hit regions it produced. The
@@ -165,6 +174,22 @@ pub fn paint_overlay(
   let focus = scene.theme.focus_on(scene.background_color);
 
   let mut regions = Vec::new();
+  // Ambient emitters and the marquee are part of the overlay so the GPU and
+  // CPU paths, and therefore `--screenshot`, all agree on the same pixels.
+  // The behind layer sits over the wallpaper and under every login control.
+  let ambient = ambient_elapsed(scene);
+  let burst_age = scene
+    .burst_at
+    .map(|at| scene.frame_now.saturating_duration_since(at).as_secs_f32());
+  particles::draw(
+    canvas,
+    &scene.theme.particles,
+    screen,
+    ambient,
+    ParticleLayer::Behind,
+    burst_age,
+  );
+  draw_ticker(canvas, text, glass, scene, WidgetLayer::Behind);
   draw_plugins(
     canvas,
     text,
@@ -200,7 +225,35 @@ pub fn paint_overlay(
     draw_badge(canvas, text, glass, scene, scale, accent);
   }
   draw_warnings(canvas, text, scene, screen, scale, error);
+  // The front ticker stays on top of the form, then the front particles are
+  // the true topmost layer. Both are opt-in, so a default theme is unchanged.
+  draw_ticker(canvas, text, glass, scene, WidgetLayer::Front);
+  particles::draw(
+    canvas,
+    &scene.theme.particles,
+    screen,
+    ambient,
+    ParticleLayer::Front,
+    burst_age,
+  );
+  if let Some(hud) = scene.hud {
+    hud::draw(canvas, text, hud, screen, scale);
+  }
   regions
+}
+
+/// Seconds since the UI started, frozen at zero when motion is reduced or the
+/// greeter is in low-power mode. Ambient features use this instead of reading
+/// the wall clock directly so they pause together.
+fn ambient_elapsed(scene: &Scene<'_>) -> f32 {
+  if scene.theme.motion.reduced || scene.theme.low_power {
+    return 0.0;
+  }
+  scene
+    .frame_now
+    .saturating_duration_since(scene.started)
+    .as_secs_f32()
+    .max(0.0)
 }
 
 /// The window and screenshot paths both accept a caller-provided scale, but a
@@ -211,6 +264,26 @@ fn normalized_scale(scale: f32) -> f32 {
     scale
   } else {
     1.0
+  }
+}
+
+/// Splits a run into everything before the final character and the final
+/// character itself. `char_indices` is the only safe way to do this: a byte
+/// slice at `len - 1` would panic on a multibyte glyph or split it in half.
+fn split_last_char(text: &str) -> Option<(&str, &str)> {
+  let (index, _) = text.char_indices().next_back()?;
+  Some((&text[..index], &text[index..]))
+}
+
+/// Expo out: fast first frame, long settle. Used by the keystroke pop, where
+/// the new character should overshoot immediately and then calm down rather
+/// than glide up from its resting size.
+fn ease_out_expo(t: f32) -> f32 {
+  let t = t.clamp(0.0, 1.0);
+  if t >= 1.0 {
+    1.0
+  } else {
+    1.0 - 2.0_f32.powf(-10.0 * t)
   }
 }
 
@@ -310,11 +383,23 @@ fn field_height(theme: &Theme, field: &crate::config::FieldConfig, scale: f32) -
 }
 
 /// Height of an optional label above a field.
-fn label_height(text: &mut TextEngine, label: &str, size: f32, width: f32) -> f32 {
+fn label_height(text: &mut TextEngine, label: &str, size: f32, width: f32, tracking: f32) -> f32 {
   if label.is_empty() {
     0.0
   } else {
-    text.measure(label, size, width, false).1
+    text
+      .measure_with(label, size, width, false, Weight::NORMAL, tracking)
+      .1
+  }
+}
+
+/// Size of a field's label. Zero keeps the historical 80 percent of the field
+/// size; a theme that wants a micro label sets an absolute value instead.
+fn label_size(theme: &Theme, field: &crate::config::FieldConfig, scale: f32) -> f32 {
+  if field.label_size > 0.0 {
+    field.label_size * scale
+  } else {
+    field_size(theme, field, scale) * 0.8
   }
 }
 
@@ -323,7 +408,7 @@ fn label_height(text: &mut TextEngine, label: &str, size: f32, width: f32) -> f3
 /// matching step in `draw_card`; if you change one, change both.
 fn card_height(text: &mut TextEngine, view: &View, theme: &Theme, m: &Metrics, scale: f32) -> f32 {
   let login = &theme.login;
-  if login.layout == LoginLayout::Hero && login.height > 0.0 {
+  if login.layout.is_full_bleed() && login.height > 0.0 {
     return login.height * scale;
   }
   let mut height = m.pad * 2.0;
@@ -368,8 +453,9 @@ fn field_block_height(
   let label = label_height(
     text,
     &field.label,
-    field_size(theme, field, scale) * 0.8,
+    label_size(theme, field, scale),
     m.inner_w,
+    field.label_tracking,
   );
   let label_gap = if label > 0.0 { m.gap * 0.35 } else { 0.0 };
   label + label_gap + field_height(theme, field, scale)
@@ -406,7 +492,7 @@ fn draw_card(
 ) {
   let view = scene.view;
   let login = &scene.theme.login;
-  let hero = login.layout == LoginLayout::Hero;
+  let hero = login.layout.is_full_bleed();
   // A fixed hero card is a website clone, but it still has to fit a smaller
   // display. Scale the whole card uniformly instead of letting the form run
   // off the edge; 16 px of breathing room is enough for the shadow.
@@ -554,7 +640,7 @@ fn draw_card_chrome(
   regions: &mut Vec<HitRegion>,
 ) {
   let login = &scene.theme.login;
-  let hero = login.layout == LoginLayout::Hero;
+  let hero = login.layout.is_full_bleed();
   let card = paint.card;
   let card_scale = paint.card_scale;
   let m = paint.metrics;
@@ -620,7 +706,7 @@ fn draw_card_form(
 ) {
   let view = scene.view;
   let login = &scene.theme.login;
-  let hero = login.layout == LoginLayout::Hero;
+  let hero = login.layout.is_full_bleed();
   let card = paint.card;
   let card_scale = paint.card_scale;
   let m = paint.metrics;
@@ -682,6 +768,11 @@ fn draw_card_form(
     view.focus == crate::ui::view::Focus::Username && !view.busy,
     view.username_cursor,
     !view.busy,
+    key_pop_age(
+      scene,
+      &login.username,
+      view.focus == crate::ui::view::Focus::Username,
+    ),
     primary,
     muted,
     accent,
@@ -722,6 +813,11 @@ fn draw_card_form(
     view.focus == crate::ui::view::Focus::Password && !view.busy,
     view.password_cursor,
     !view.busy,
+    key_pop_age(
+      scene,
+      &login.password,
+      view.focus == crate::ui::view::Focus::Password,
+    ),
     primary,
     muted,
     accent,
@@ -807,7 +903,9 @@ fn draw_card_form(
     );
   }
 
-  draw_drag_highlight(canvas, card, "login", scene, accent, card_scale);
+  if login.draggable {
+    draw_drag_highlight(canvas, card, "login", scene, accent, card_scale);
+  }
 }
 
 /// Paints the wide hero panel. The panel fades in from the artwork side so the
@@ -1049,14 +1147,7 @@ fn draw_login_decor(
   card_scale: f32,
 ) {
   let animate = !scene.theme.motion.reduced && !scene.theme.low_power;
-  let elapsed = if animate {
-    scene
-      .frame_now
-      .saturating_duration_since(scene.started)
-      .as_secs_f32()
-  } else {
-    0.0
-  };
+  let elapsed = if animate { ambient_elapsed(scene) } else { 0.0 };
   for item in &scene.theme.decor {
     let sample = item.motion.sample(elapsed);
     let opacity = item.opacity * sample.opacity;
@@ -1777,6 +1868,23 @@ fn draw_drag_highlight(
 /// Paints an optional label and one input field. Returns the vertical space
 /// consumed and the field rectangle, which the window uses for hit testing.
 #[allow(clippy::too_many_arguments)]
+/// Age of the keystroke pop in milliseconds, or `None` when it is off or has
+/// already settled. Keeping the split here means the field painter only has to
+/// deal with a time value and never with `Instant`.
+fn key_pop_age(
+  scene: &Scene<'_>,
+  field: &crate::config::FieldConfig,
+  focused: bool,
+) -> Option<f32> {
+  if !focused || field.key_pop_ms <= 0.0 {
+    return None;
+  }
+  let at = scene.view.typed_at?;
+  let age = scene.frame_now.saturating_duration_since(at).as_secs_f32() * 1000.0;
+  (age < field.key_pop_ms).then_some(age)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn draw_field_block(
   canvas: &mut Canvas,
   text: &mut TextEngine,
@@ -1790,14 +1898,20 @@ fn draw_field_block(
   focused: bool,
   cursor: usize,
   caret_visible: bool,
+  key_pop_age: Option<f32>,
   primary: Rgb,
   muted: Rgb,
   accent: Rgb,
   focus: Rgb,
   clip: Rect,
 ) -> (f32, Rect) {
-  let size = field_size(scene.theme, config, scale);
-  let label = label_height(text, &config.label, size * 0.8, width);
+  let label = label_height(
+    text,
+    &config.label,
+    label_size(scene.theme, config, scale),
+    width,
+    config.label_tracking,
+  );
   let label_gap = if label > 0.0 {
     scene.theme.login.gap * scale * 0.35
   } else {
@@ -1827,6 +1941,7 @@ fn draw_field_block(
         focused,
         cursor,
         caret_visible,
+        key_pop_age,
         primary,
         muted,
         accent,
@@ -1852,21 +1967,28 @@ fn draw_field_block_inner(
   focused: bool,
   cursor: usize,
   caret_visible: bool,
+  key_pop_age: Option<f32>,
   primary: Rgb,
   muted: Rgb,
   accent: Rgb,
   focus: Rgb,
   clip: Rect,
 ) {
-  let size = field_size(scene.theme, config, scale);
   let mut y = top;
   if !config.label.is_empty() {
-    let label_size = size * 0.8;
-    let (_, label_h) = text.measure(&config.label, label_size, width, false);
+    let label_size = label_size(scene.theme, config, scale);
+    let (_, label_h) = text.measure_with(
+      &config.label,
+      label_size,
+      width,
+      false,
+      Weight::NORMAL,
+      config.label_tracking,
+    );
     text.draw_line(
       canvas,
       &config.label,
-      Style::new(label_size, config.label_color.unwrap_or(muted)),
+      Style::new(label_size, config.label_color.unwrap_or(muted)).tracking(config.label_tracking),
       Area::new(left, y, width).clip(clip),
     );
     y += label_h + scene.theme.login.gap * scale * 0.35;
@@ -1884,6 +2006,7 @@ fn draw_field_block_inner(
       focused,
       cursor,
       caret_visible,
+      key_pop_age,
       focus_t: scene.motion.focus_t,
       primary,
       muted,
@@ -1902,6 +2025,8 @@ struct Field<'a> {
   focused: bool,
   cursor: usize,
   caret_visible: bool,
+  /// Milliseconds since the last character landed, when the pop is active.
+  key_pop_age: Option<f32>,
   focus_t: f32,
   primary: Rgb,
   muted: Rgb,
@@ -2059,12 +2184,42 @@ fn draw_field(
   // icon share one optical centre for any family.
   let (ink_top, ink_bottom) = text.ink_bounds(shown, base, cosmic_text::Weight::NORMAL, 0.0);
   let text_y = rect.center().1 - (ink_top + ink_bottom) / 2.0;
-  text.draw_line(
-    canvas,
-    shown,
-    Style::new(base, color),
-    Area::new(text_x, text_y, (rect.right() - inset - text_x).max(1.0)).clip(rect.inset(2.0)),
-  );
+  let text_area =
+    Area::new(text_x, text_y, (rect.right() - inset - text_x).max(1.0)).clip(rect.inset(2.0));
+  if let Some(age) = field.key_pop_age.filter(|_| !empty) {
+    // The pop draws the prefix as its own run and the newest character with a
+    // larger, warmer style. Splitting on a char boundary is what keeps a
+    // multibyte glyph intact; slicing by bytes would panic on the wrong input.
+    if let Some((prefix, last)) = split_last_char(shown) {
+      if !prefix.is_empty() {
+        text.draw_line(canvas, prefix, Style::new(base, color), text_area);
+      }
+      let t = (age / field.config.key_pop_ms).clamp(0.0, 1.0);
+      let settle = ease_out_expo(t);
+      let scale = 1.0 + (field.config.key_pop_scale - 1.0) * (1.0 - settle);
+      let pop_color = field
+        .config
+        .key_pop_color
+        .unwrap_or(field.accent)
+        .mix(color, settle);
+      // Advance keeps the popped glyph in the same cell it would occupy at
+      // rest, so the caret does not jump while the character grows and
+      // settles.
+      let advance = text.line_width(prefix, base);
+      let pop_y = text_y - (base * (scale - 1.0)) * 0.32;
+      let pop_area = Area::new(
+        text_x + advance,
+        pop_y,
+        (rect.right() - text_x - advance).max(1.0),
+      )
+      .clip(rect.inset(2.0));
+      text.draw_line(canvas, last, Style::new(base * scale, pop_color), pop_area);
+    } else {
+      text.draw_line(canvas, shown, Style::new(base, color), text_area);
+    }
+  } else {
+    text.draw_line(canvas, shown, Style::new(base, color), text_area);
+  }
 
   if field.focused && field.caret_visible {
     let prefix: String = shown.chars().take(field.cursor).collect();
@@ -3529,6 +3684,127 @@ fn alpha(color: Rgb, opacity: f32) -> Rgb {
   color.with_alpha(value)
 }
 
+/// Distance a marquee has travelled at `elapsed`, wrapped at one full run.
+///
+/// Keeping this tiny function pure is what makes the loop testable: the draw
+/// path measures the run, asks for this offset, and paints two copies one run
+/// width apart. There is no accumulated position that could drift after a long
+/// session or a resize.
+fn ticker_offset(run_width: f32, speed: f32, elapsed: f32) -> f32 {
+  if !run_width.is_finite() || run_width <= 0.0 {
+    return 0.0;
+  }
+  let travelled = speed.max(0.0) * elapsed.max(0.0);
+  if !travelled.is_finite() {
+    return 0.0;
+  }
+  travelled % run_width
+}
+
+/// True for the short beat after the selected session changes. It is a pure
+/// time window so the ticker can tint its run without any mutable flash state,
+/// and so the window's frame scheduler can decide to keep waking up.
+fn ticker_flash(now: Instant, changed_at: Option<Instant>) -> bool {
+  changed_at.is_some_and(|at| {
+    now.saturating_duration_since(at).as_secs_f32() * 1000.0 < crate::config::SESSION_FLASH_MS
+  })
+}
+
+/// Paints the `[ticker]` marquee for one layer.
+///
+/// The run is the configured items joined by the separator, with a trailing
+/// separator at the seam. We measure it with the exact weight and tracking it
+/// will be painted with, then draw two copies so the wrap has no visible gap.
+/// The plate is the same one the clock uses, so a translucent glass strip is
+/// free and the form still paints over a `behind` ticker.
+fn draw_ticker(
+  canvas: &mut Canvas,
+  text: &mut TextEngine,
+  glass: &GlassCache,
+  scene: &Scene<'_>,
+  layer: WidgetLayer,
+) {
+  let ticker = &scene.theme.ticker;
+  if !ticker.enabled || ticker.layer != layer || (ticker.items.is_empty() && !ticker.session_first)
+  {
+    return;
+  }
+  let run = if ticker.session_first {
+    ticker.run_with(Some(&scene.view.session))
+  } else {
+    ticker.run()
+  };
+  if run.is_empty() {
+    return;
+  }
+  let scale = normalized_scale(scene.scale);
+  let size = ticker.size * scale;
+  if !size.is_finite() || size <= 0.0 {
+    return;
+  }
+  let weight = if ticker.bold {
+    Weight::BOLD
+  } else {
+    Weight::NORMAL
+  };
+  let (run_width, line_height) =
+    text.measure_with(&run, size, 65_536.0, false, weight, ticker.tracking);
+  if run_width <= 0.0 || line_height <= 0.0 {
+    return;
+  }
+  let screen = (canvas.width() as f32, canvas.height() as f32);
+  let margin_x = (ticker.offset.0 as f32 * scale).max(0.0);
+  let margin_y = (ticker.offset.1 as f32 * scale).max(0.0);
+  let strip_width = (screen.0 - margin_x * 2.0).max(1.0);
+  let y = match ticker.anchor {
+    TickerAnchor::Top => margin_y,
+    TickerAnchor::Bottom => screen.1 - margin_y - line_height,
+  }
+  .clamp(0.0, (screen.1 - line_height).max(0.0));
+  let strip = Rect::new(margin_x, y, strip_width, line_height);
+
+  draw_widget_plate(
+    canvas,
+    strip,
+    &ticker.plate,
+    scene.theme,
+    scale,
+    ticker.plate.opacity,
+    glass,
+  );
+
+  let opacity = ticker.plate.opacity.clamp(0.0, 1.0);
+  if opacity <= 0.0 {
+    return;
+  }
+  let flash = ticker_flash(scene.frame_now, scene.view.session_changed_at);
+  let base_color = if flash {
+    scene.theme.accent
+  } else {
+    ticker.color
+  };
+  let color = base_color.with_alpha((f32::from(base_color.a) * opacity).round() as u8);
+  let style = if ticker.bold {
+    Style::new(size, color).bold().tracking(ticker.tracking)
+  } else {
+    Style::new(size, color).tracking(ticker.tracking)
+  };
+  let shift = ticker_offset(run_width, ticker.speed * scale, ambient_elapsed(scene));
+  let clip = Rect::new(strip.x, 0.0, strip.w, screen.1);
+  let start = strip.x - shift;
+  // Two copies are enough: the second one enters from the right exactly as the
+  // first one leaves on the left, and the clip drops the rest.
+  for copy in 0..2 {
+    let x = start + run_width * copy as f32;
+    text.draw_line(
+      canvas,
+      &run,
+      style,
+      Area::new(x, strip.y, run_width.max(1.0)).clip(clip),
+    );
+  }
+}
+
 /// Paints the backdrop for one widget. Built-in widgets pass their resolved
 /// plate; plugin widgets have no look yet and keep the fixed scrim. Keeping the
 /// choice in one place is what stops the two paths from drifting.
@@ -3688,8 +3964,9 @@ mod tests {
   use std::time::{Duration, Instant};
 
   use super::{
-    Scene, WidgetFrame, draw_media, glitch_window, parallax_offset, scanline_rows, scramble_run,
-    scramble_text, widget_offset, widget_visible,
+    Scene, WidgetFrame, draw_media, ease_out_expo, glitch_window, parallax_offset, scanline_rows,
+    scramble_run, scramble_text, split_last_char, ticker_flash, ticker_offset, widget_offset,
+    widget_visible,
   };
   use crate::color::Rgb;
   use crate::config::{Config, MediaLayout, MediaLook};
@@ -3739,6 +4016,8 @@ mod tests {
       drag: &drag,
       cursor: None,
       screen: (480.0, 160.0),
+      burst_at: None,
+      hud: None,
     };
     let snapshot = MediaSnapshot {
       available: true,
@@ -3800,6 +4079,8 @@ mod tests {
       drag: &drag,
       cursor: None,
       screen: (480.0, 220.0),
+      burst_at: None,
+      hud: None,
     };
     let snapshot = MediaSnapshot {
       available,
@@ -3912,6 +4193,8 @@ mod tests {
       drag: &drag,
       cursor: None,
       screen: (1280.0, 720.0),
+      burst_at: None,
+      hud: None,
     };
     let mut canvas = Canvas::new(1280, 720).unwrap();
     let mut text = TextEngine::new(&config.ui.font);
@@ -4145,6 +4428,8 @@ mod tests {
       drag: &drag,
       cursor: None,
       screen: (100.0, 100.0),
+      burst_at: None,
+      hud: None,
     };
     // No pointer means no offset, which is what a screenshot needs.
     assert_eq!(parallax_offset(&scene, 1.0, 1.0), (0.0, 0.0));
@@ -4156,5 +4441,62 @@ mod tests {
     assert!(right.0 < 0.0);
     // Depth zero removes the strength even while the pointer is inside.
     assert_eq!(parallax_offset(&scene, 0.0, 1.0), (0.0, 0.0));
+  }
+
+  #[test]
+  fn key_pop_splits_runs_at_character_boundaries() {
+    assert_eq!(split_last_char(""), None);
+    assert_eq!(split_last_char("a"), Some(("", "a")));
+    assert_eq!(split_last_char("ada"), Some(("ad", "a")));
+    // Multibyte glyphs must come back whole, never as a broken byte slice.
+    assert_eq!(split_last_char("café"), Some(("caf", "é")));
+    assert_eq!(split_last_char("✦✦"), Some(("✦", "✦")));
+    assert_eq!(split_last_char("◆"), Some(("", "◆")));
+  }
+
+  #[test]
+  fn the_key_pop_eases_from_overshoot_to_rest() {
+    assert_eq!(ease_out_expo(0.0), 0.0);
+    assert_eq!(ease_out_expo(1.0), 1.0);
+    // The overshoot decays monotonically and is nearly settled by half time.
+    let early = ease_out_expo(0.1);
+    let middle = ease_out_expo(0.5);
+    assert!(early < middle);
+    assert!(middle > 0.9);
+    // At t = 0 the scale is the configured peak, at t = 1 it is exactly 1.
+    let peak = 1.0 + (1.18_f32 - 1.0) * (1.0 - ease_out_expo(0.0));
+    let rest = 1.0 + (1.18_f32 - 1.0) * (1.0 - ease_out_expo(1.0));
+    assert!((peak - 1.18).abs() < 0.0001);
+    assert!((rest - 1.0).abs() < 0.0001);
+  }
+
+  #[test]
+  fn ticker_flash_is_one_short_beat() {
+    let now = Instant::now();
+    assert!(!ticker_flash(now, None));
+    assert!(ticker_flash(now, Some(now)));
+    // 80 ms is the whole beat. A later frame goes back to the configured
+    // crimson, which is what makes it a beat rather than a highlight.
+    assert!(ticker_flash(now + Duration::from_millis(79), Some(now)));
+    assert!(!ticker_flash(now + Duration::from_millis(80), Some(now)));
+  }
+
+  #[test]
+  fn ticker_offsets_wrap_at_the_measured_run_width() {
+    // At rest the first copy starts at the strip origin.
+    assert_eq!(ticker_offset(300.0, 60.0, 0.0), 0.0);
+    // One second at 60 px/s advances 60 px.
+    assert!((ticker_offset(300.0, 60.0, 1.0) - 60.0).abs() < 0.001);
+    // At exactly one run width the offset wraps back to zero, so the seam is
+    // invisible: the second copy is now where the first one started.
+    assert!((ticker_offset(300.0, 60.0, 5.0)).abs() < 0.001);
+    // A fractional number of loops keeps the remainder.
+    assert!((ticker_offset(300.0, 60.0, 6.0) - 60.0).abs() < 0.001);
+    // Degenerate measurements cannot divide by zero.
+    assert_eq!(ticker_offset(0.0, 60.0, 1.0), 0.0);
+    assert_eq!(ticker_offset(f32::INFINITY, 60.0, 1.0), 0.0);
+    // A stopped or negative speed never scrolls backwards.
+    assert_eq!(ticker_offset(300.0, 0.0, 10.0), 0.0);
+    assert_eq!(ticker_offset(300.0, -60.0, 1.0), 0.0);
   }
 }

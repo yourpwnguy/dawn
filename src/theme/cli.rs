@@ -1,4 +1,4 @@
-//! `dawn list`, `dawn add`, and `dawn remove`.
+//! `dawn list`, `dawn add`, `dawn check`, `dawn new`, and `dawn remove`.
 //!
 //! The CLI is intentionally small. It prints paths and next commands instead of
 //! hiding them behind a "wizard", because the people who need this are admins
@@ -15,11 +15,14 @@ use super::{Origin, ThemeEntry};
 pub fn run(command: ThemeCommand) -> ExitCode {
   match command {
     ThemeCommand::List => list(),
+    ThemeCommand::Check { path } => check(&path),
+    ThemeCommand::New { parent, id } => new(&parent, &id),
     ThemeCommand::Add {
       paths,
       force,
       system,
-    } => add(&paths, force, system),
+      migrate,
+    } => add(&paths, force, system, migrate),
     ThemeCommand::Remove { id, system } => remove(&id, system),
   }
 }
@@ -38,8 +41,8 @@ fn list() -> ExitCode {
   ExitCode::SUCCESS
 }
 
-fn add(paths: &[PathBuf], force: bool, system: bool) -> ExitCode {
-  match super::add(paths, force, system) {
+fn add(paths: &[PathBuf], force: bool, system: bool, migrate: bool) -> ExitCode {
+  match super::add_with_migration(paths, force, system, migrate) {
     Ok(added) => {
       for theme in &added {
         let action = if theme.replaced {
@@ -56,19 +59,57 @@ fn add(paths: &[PathBuf], force: bool, system: bool) -> ExitCode {
       }
       if let Some(last) = added.last() {
         println!();
-        println!("use it for one run:");
-        println!("  dawn --theme {}", last.entry.id);
-        println!();
-        println!("or make it persistent in /etc/dawn/config.toml:");
-        println!("  [theme]");
-        println!("  package = \"{}\"", last.entry.id);
-        if added.len() > 1 {
-          println!();
-          println!("more than one theme was added; replace the id with any of:");
-          for theme in &added {
-            println!("  {}", theme.entry.id);
-          }
-        }
+        println!("{}", next_step(&last.entry.id));
+      }
+      ExitCode::SUCCESS
+    }
+    Err(error) => {
+      eprintln!("dawn: {error}");
+      ExitCode::FAILURE
+    }
+  }
+}
+
+/// The one-line hint printed after a successful install. It always names the
+/// system config because that is the only file the greeter reads, no matter
+/// which store the bundle came from.
+fn next_step(id: &str) -> String {
+  format!(
+    "next: select it with `dawn --theme {id}` or set [theme] package = \"{id}\" in /etc/dawn/config.toml"
+  )
+}
+
+/// Full DSB-2 validation of an uninstalled tree.
+///
+/// The report shape is normative: one line per problem, `rule <n>: <file>:
+/// <what>`. A revision 1 tree still passes, with one warning that names the
+/// migration command.
+fn check(path: &std::path::Path) -> ExitCode {
+  let report = super::check_tree(path);
+  match report.revision {
+    Some(revision) => println!("revision {revision}"),
+    None => println!("revision unknown"),
+  }
+  for warning in &report.warnings {
+    println!("warning: {warning}");
+  }
+  for issue in &report.issues {
+    println!("{issue}");
+  }
+  if report.ok() {
+    println!("result: ok");
+    ExitCode::SUCCESS
+  } else {
+    println!("result: {} issue(s)", report.issues.len());
+    ExitCode::FAILURE
+  }
+}
+
+fn new(parent: &std::path::Path, id: &str) -> ExitCode {
+  match super::new_bundle(parent, id) {
+    Ok(path) => {
+      for step in super::new_next_steps(&path, id) {
+        println!("{step}");
       }
       ExitCode::SUCCESS
     }
@@ -124,5 +165,19 @@ fn origin_label(origin: Origin) -> &'static str {
   match origin {
     Origin::User => "user",
     Origin::System => "system",
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::next_step;
+
+  #[test]
+  fn install_hint_is_one_line_and_names_both_choices() {
+    let hint = next_step("midnight");
+    assert!(!hint.contains('\n'), "{hint}");
+    assert!(hint.contains("dawn --theme midnight"), "{hint}");
+    assert!(hint.contains("[theme] package = \"midnight\""), "{hint}");
+    assert!(hint.contains("/etc/dawn/config.toml"), "{hint}");
   }
 }

@@ -17,7 +17,8 @@ use std::path::{Path, PathBuf};
 use tempfile::Builder;
 use walkdir::WalkDir;
 
-use super::manifest::{Manifest, validate_relative_asset};
+use super::manifest::Manifest;
+use super::spec;
 use super::{Origin, ThemeEntry};
 
 /// A theme can carry a video, so the total cap is generous. It still exists so
@@ -62,7 +63,7 @@ pub fn add(
 /// children contain `theme.toml` is a collection. We deliberately do not walk
 /// the whole tree: a typo should not install every theme under a home
 /// directory.
-fn discover(path: &Path) -> Result<Vec<PathBuf>, String> {
+pub(crate) fn discover(path: &Path) -> Result<Vec<PathBuf>, String> {
   if !path.exists() {
     return Err(format!("{}: no such file or directory", path.display()));
   }
@@ -96,17 +97,24 @@ fn discover(path: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 fn add_one(root: &Path, origin: Origin, bundle: &Path, force: bool) -> Result<AddedTheme, String> {
-  let manifest = Manifest::load(bundle)?;
-  if manifest
-    .preview_path(bundle)
-    .is_some_and(|preview| !preview.is_file())
-  {
+  // Validate before anything is copied. `dawn check` calls the same function,
+  // so a tree that passes there cannot fail for a different reason here.
+  let check = spec::check_tree(bundle);
+  if !check.ok() {
     return Err(format!(
-      "{}: preview {:?} does not exist",
+      "{}: bundle does not satisfy DSB-{}\n{}",
       bundle.display(),
-      manifest.preview.as_deref().unwrap_or_default()
+      check.revision.unwrap_or(1),
+      check.report()
     ));
   }
+  for warning in &check.warnings {
+    eprintln!("warning: {warning}");
+  }
+  let manifest = check
+    .manifest
+    .clone()
+    .ok_or_else(|| format!("{}: theme.toml could not be read", bundle.display()))?;
   let target = root.join(&manifest.id);
   let replaced = match fs::symlink_metadata(&target) {
     Ok(metadata) => {
@@ -118,9 +126,8 @@ fn add_one(root: &Path, origin: Origin, bundle: &Path, force: bool) -> Result<Ad
       }
       if !force {
         return Err(format!(
-          "theme {:?} is already installed at {}; pass --force to replace it",
-          manifest.id,
-          target.display()
+          "rule 6: {}/: theme id {:?} is already installed in this store; pass --force to replace it",
+          manifest.id, manifest.id
         ));
       }
       true
@@ -141,10 +148,17 @@ fn add_one(root: &Path, origin: Origin, bundle: &Path, force: bool) -> Result<Ad
       )
     })?;
   set_dir_mode(staging.path())?;
+  // The tree itself carries the id so the staged copy is validated exactly as
+  // it will appear in the store. DSB-2 rule 1 compares the directory name with
+  // bundle.id, and a temp-named root would fail that check for every bundle.
+  let staged = staging.path().join(&manifest.id);
+  fs::create_dir(&staged)
+    .map_err(|error| format!("cannot create {}: {error}", staged.display()))?;
+  set_dir_mode(&staged)?;
 
   let mut total = 0;
-  copy_tree(bundle, staging.path(), &mut total)?;
-  validate_staged(staging.path(), &manifest)?;
+  copy_tree(bundle, &staged, &mut total)?;
+  validate_staged(&staged, &manifest)?;
 
   if replaced {
     let backup = Builder::new()
@@ -161,8 +175,7 @@ fn add_one(root: &Path, origin: Origin, bundle: &Path, force: bool) -> Result<Ad
       let _ = fs::remove_dir_all(&backup);
       return Err(format!("cannot move the old theme aside: {error}"));
     }
-    let staging = staging.keep();
-    match fs::rename(&staging, &target) {
+    match fs::rename(&staged, &target) {
       Ok(()) => {
         if let Err(error) = fs::remove_dir_all(&backup) {
           eprintln!(
@@ -173,16 +186,11 @@ fn add_one(root: &Path, origin: Origin, bundle: &Path, force: bool) -> Result<Ad
       }
       Err(error) => {
         let _ = fs::rename(&backup, &target);
-        let _ = fs::remove_dir_all(&staging);
         return Err(format!("cannot move the new theme into place: {error}"));
       }
     }
-  } else {
-    let staging = staging.keep();
-    if let Err(error) = fs::rename(&staging, &target) {
-      let _ = fs::remove_dir_all(&staging);
-      return Err(format!("cannot move the theme into place: {error}"));
-    }
+  } else if let Err(error) = fs::rename(&staged, &target) {
+    return Err(format!("cannot move the theme into place: {error}"));
   }
 
   let preview = manifest.preview_path(&target);
@@ -201,89 +209,32 @@ fn add_one(root: &Path, origin: Origin, bundle: &Path, force: bool) -> Result<Ad
 }
 
 fn validate_staged(staging: &Path, expected: &Manifest) -> Result<(), String> {
-  let manifest = Manifest::load(staging)?;
-  if manifest.id != expected.id {
+  // Re-run the same validator after the copy. This is the assertion behind rule
+  // 8: the tree that gets renamed into the store is the tree we validated, not
+  // just the tree we read from the source directory.
+  let check = spec::check_tree(staging);
+  if !check.ok() {
+    return Err(format!(
+      "{}: staged bundle does not satisfy DSB-{}\n{}",
+      staging.display(),
+      check.revision.unwrap_or(1),
+      check.report()
+    ));
+  }
+  if check
+    .manifest
+    .as_ref()
+    .is_none_or(|manifest| manifest.id != expected.id)
+  {
     return Err(format!(
       "{}: theme.toml changed while copying",
       staging.display()
     ));
   }
-
-  let config_path = staging.join("config.toml");
-  let loaded = crate::config::load_theme(&config_path);
-  if !loaded.issues.is_empty() {
-    let mut message = format!("{}: config validation failed", config_path.display());
-    for issue in loaded.issues.iter().take(8) {
-      message.push_str(&format!("\n  {issue}"));
-    }
-    if loaded.issues.len() > 8 {
-      message.push_str(&format!("\n  ... and {} more", loaded.issues.len() - 8));
-    }
-    return Err(message);
-  }
-
-  let source = fs::read_to_string(&config_path)
-    .map_err(|error| format!("cannot read {}: {error}", config_path.display()))?;
-  let value: toml::Value =
-    toml::from_str(&source).map_err(|error| format!("{}: {error}", config_path.display()))?;
-  validate_config_paths(&value, &[], staging)
+  Ok(())
 }
 
-/// Walks the parsed config and rejects values that would break portability or
-/// try to write into a read-only theme store.
-fn validate_config_paths(value: &toml::Value, path: &[&str], root: &Path) -> Result<(), String> {
-  match value {
-    toml::Value::Table(table) => {
-      for (key, child) in table {
-        let mut next = path.to_vec();
-        next.push(key.as_str());
-        if key == "package" && path == ["theme"] {
-          return Err("config.toml must not select another theme with [theme].package".to_string());
-        }
-        if key == "save" && path == ["layout"] && child.as_bool() == Some(true) {
-          return Err(
-            "config.toml must set layout.save = false; theme bundles are read-only".to_string(),
-          );
-        }
-        if key == "image"
-          && let Some(value) = child.as_str()
-        {
-          validate_relative_asset(value)?;
-          let asset = root.join(value);
-          if !asset.is_file() {
-            return Err(format!("image {value:?} does not exist in the bundle"));
-          }
-        }
-        if key == "dirs"
-          && path == ["plugins"]
-          && let Some(values) = child.as_array()
-        {
-          for value in values {
-            let Some(value) = value.as_str() else {
-              continue;
-            };
-            validate_relative_asset(value)?;
-            let dir = root.join(value);
-            if !dir.is_dir() {
-              return Err(format!("plugin directory {value:?} does not exist"));
-            }
-          }
-        }
-        validate_config_paths(child, &next, root)?;
-      }
-      Ok(())
-    }
-    toml::Value::Array(values) => {
-      for value in values {
-        validate_config_paths(value, path, root)?;
-      }
-      Ok(())
-    }
-    _ => Ok(()),
-  }
-}
-
-fn copy_tree(source: &Path, target: &Path, total: &mut u64) -> Result<(), String> {
+pub(crate) fn copy_tree(source: &Path, target: &Path, total: &mut u64) -> Result<(), String> {
   for entry in WalkDir::new(source).follow_links(false).sort_by_file_name() {
     let entry = entry.map_err(|error| format!("cannot walk {}: {error}", source.display()))?;
     let from = entry.path();
@@ -434,7 +385,8 @@ mod tests {
     let store = temp_dir("dupe-store");
     let dir = bundle(&source, "sample");
     add(&store, Origin::User, std::slice::from_ref(&dir), false).expect("first add");
-    assert!(add(&store, Origin::User, std::slice::from_ref(&dir), false).is_err());
+    let error = add(&store, Origin::User, std::slice::from_ref(&dir), false).unwrap_err();
+    assert!(error.contains("rule 6"), "{error}");
     assert!(add(&store, Origin::User, &[dir], true).is_ok());
   }
 
@@ -460,6 +412,6 @@ mod tests {
     let dir = bundle(&source, "sample");
     std::os::unix::fs::symlink("/etc/passwd", dir.join("assets").join("passwd")).expect("symlink");
     let error = add(&store, Origin::User, &[dir], false).unwrap_err();
-    assert!(error.contains("symlinks"), "{error}");
+    assert!(error.contains("symbolic links"), "{error}");
   }
 }

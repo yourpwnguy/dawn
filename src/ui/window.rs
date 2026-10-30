@@ -39,7 +39,8 @@ use winit::window::{CursorIcon, Fullscreen, Window, WindowId};
 use crate::app::{App, Finish, Key};
 use crate::auth::worker::{self, Event, Mode};
 use crate::color::Rgb;
-use crate::config::{Config, GpuBackend, GpuConfig, GpuDevice, GpuFallback};
+use crate::config::{Config, GpuBackend, GpuConfig, GpuDevice, GpuFallback, TransitionTrigger};
+use crate::dev::{self, ReloadState, Source};
 use crate::plugin::Plugin;
 use crate::session::Session;
 use crate::ui::background::{BackgroundView, LoadedBackground};
@@ -47,10 +48,12 @@ use crate::ui::canvas::Canvas;
 use crate::ui::drag::{Drag, HitRegion};
 use crate::ui::glass::GlassCache;
 use crate::ui::gpu;
+use crate::ui::hud::Hud;
 use crate::ui::media::{self, MediaControl, MediaHandle};
 use crate::ui::motion::MotionFrame;
 use crate::ui::render::{self, Scene};
 use crate::ui::text::TextEngine;
+use crate::ui::transition::{self, Transition};
 use crate::ui::view::{Focus, View};
 
 const DEFAULT_WIDTH: u32 = 1280;
@@ -59,6 +62,11 @@ const DEFAULT_HEIGHT: u32 = 800;
 /// need more, and a software renderer pays for every extra frame.
 const MOTION_FRAME: Duration = Duration::from_millis(16);
 const CLOCK_TICK: Duration = Duration::from_secs(1);
+/// Hard ceiling on how long a successful auth may hold the window open just to
+/// finish the cut sequence. Auth is already done at that point; this only
+/// delays the process exit, and a pathological `slam_ms` must not turn a login
+/// into a two-minute show. Anything past this exits immediately.
+const MAX_SUCCESS_HOLD: Duration = Duration::from_millis(2000);
 
 #[derive(Debug, thiserror::Error)]
 pub enum WindowError {
@@ -83,6 +91,9 @@ enum UserEvent {
   /// A live wallpaper published a frame. The window paints immediately instead
   /// of polling for the stream sequence.
   Frame,
+  /// The dev watcher settled a burst. The handler re-reads the config on the
+  /// event loop; the watcher thread itself never parses anything.
+  DevReload,
 }
 
 /// Creates the window, runs the event loop, and returns why it stopped.
@@ -94,16 +105,95 @@ pub fn run(
   dry_run: bool,
   fullscreen: bool,
 ) -> Result<Finish, WindowError> {
-  let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
-  let proxy = event_loop.create_proxy();
-  let auth_proxy = proxy.clone();
-  let mode = if dry_run {
-    Mode::DryRun
+  let auth = if dry_run {
+    AuthMode::DryRun
   } else {
-    Mode::Greetd {
+    AuthMode::Greetd {
       socket: config.auth.socket.clone(),
       timeout: config.auth.timeout,
     }
+  };
+  run_with(
+    config,
+    sessions,
+    plugins,
+    warning,
+    auth,
+    fullscreen,
+    (DEFAULT_WIDTH, DEFAULT_HEIGHT),
+    None,
+  )
+}
+
+/// The dev studio's window entry point.
+///
+/// There is no `dry_run` parameter: the auth mode is built here as
+/// [`AuthMode::DryRun`], and [`run_with`] never derives it from the config.
+/// The window is always windowed and always uses the requested size.
+pub fn run_dev(
+  config: Config,
+  sessions: Vec<Session>,
+  plugins: Vec<Plugin>,
+  warning: Option<String>,
+  size: (u32, u32),
+  source: Source,
+  hud_enabled: bool,
+) -> Result<Finish, WindowError> {
+  run_with(
+    config,
+    sessions,
+    plugins,
+    warning,
+    dev_auth_mode(),
+    false,
+    size,
+    Some(DevStart {
+      source,
+      hud_enabled,
+    }),
+  )
+}
+
+/// Kept as a named function so the window test can assert that dev mode never
+/// constructs a greetd auth mode.
+fn dev_auth_mode() -> AuthMode {
+  AuthMode::DryRun
+}
+
+/// The only two ways this window may authenticate. Dev passes `DryRun`
+/// directly; a normal run chooses once from its `--dry-run` flag.
+enum AuthMode {
+  Greetd {
+    socket: Option<std::path::PathBuf>,
+    timeout: Duration,
+  },
+  DryRun,
+}
+
+/// What the dev window needs before the event loop creates its proxy.
+struct DevStart {
+  source: Source,
+  hud_enabled: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_with(
+  config: Config,
+  sessions: Vec<Session>,
+  plugins: Vec<Plugin>,
+  warning: Option<String>,
+  auth: AuthMode,
+  fullscreen: bool,
+  initial_size: (u32, u32),
+  dev_start: Option<DevStart>,
+) -> Result<Finish, WindowError> {
+  let event_loop = EventLoop::<UserEvent>::with_user_event().build()?;
+  let proxy = event_loop.create_proxy();
+  let auth_proxy = proxy.clone();
+  let dry_run = matches!(&auth, AuthMode::DryRun);
+  let mode = match auth {
+    AuthMode::DryRun => Mode::DryRun,
+    AuthMode::Greetd { socket, timeout } => Mode::Greetd { socket, timeout },
   };
   let worker = worker::spawn(mode, move |event| {
     // If the loop is already gone, the event is meaningless, so ignoring the
@@ -124,6 +214,7 @@ pub fn run(
   // config is moved into App. The main entry point has already applied
   // DAWN_GPU to this value.
   let gpu = config.gpu.clone();
+  let dev = dev_start.map(|start| DevRuntime::new(start, &config, proxy.clone()));
   let app = App::new(config, sessions, plugins, Some(worker), warning, dry_run);
 
   let mut media = Vec::new();
@@ -141,6 +232,7 @@ pub fn run(
     text,
     gpu,
     fullscreen,
+    initial_size,
     window: None,
     presenter: None,
     frame_canvas: None,
@@ -165,6 +257,9 @@ pub fn run(
     cursor: (0.0, 0.0),
     pointer_inside: false,
     frame_pending,
+    transition: None,
+    burst_at: None,
+    dev,
   };
   event_loop.run_app(&mut handler)?;
 
@@ -172,6 +267,58 @@ pub fn run(
     return Err(error);
   }
   handler.finish.ok_or(WindowError::Closed)
+}
+
+/// Live dev-studio state owned by the window.
+struct DevRuntime {
+  source: Source,
+  hud_enabled: bool,
+  hud_visible: bool,
+  state: ReloadState,
+  /// The adapter and fallback policy the studio booted with. A theme edit must
+  /// not switch renderers underneath the live surface.
+  host_gpu: GpuConfig,
+  fps: dev::FpsMeter,
+  _watcher: Option<dev::Watcher>,
+  _poller: Option<dev::Poller>,
+}
+
+impl DevRuntime {
+  fn new(start: DevStart, config: &Config, proxy: EventLoopProxy<UserEvent>) -> Self {
+    let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+      let _ = proxy.send_event(UserEvent::DevReload);
+    });
+    let (watcher, poller) = match start.source.watch.clone() {
+      Some(spec) => match dev::watch(&spec, Arc::clone(&wake)) {
+        Ok(watcher) => (Some(watcher), None),
+        Err(_) => (None, Some(dev::poll(&spec, wake))),
+      },
+      None => (None, None),
+    };
+    Self {
+      source: start.source,
+      hud_enabled: start.hud_enabled,
+      hud_visible: start.hud_enabled,
+      state: ReloadState::new(config.clone()),
+      host_gpu: config.gpu.clone(),
+      fps: dev::FpsMeter::default(),
+      _watcher: watcher,
+      _poller: poller,
+    }
+  }
+
+  fn hud(&self) -> Option<Hud> {
+    if !self.hud_enabled || !self.hud_visible {
+      return None;
+    }
+    Some(Hud {
+      visible: true,
+      source: self.source.label.clone(),
+      last_ms: self.state.last_ms,
+      fps: self.fps.estimate(),
+      error: self.state.error.clone(),
+    })
+  }
 }
 
 /// Which presentation path the window ended up with. GPU construction can fail
@@ -198,6 +345,10 @@ struct FrameState {
   cursor: Option<(f32, f32)>,
   /// Window size in physical pixels, used to normalise parallax.
   screen: (f32, f32),
+  /// Start of the one-shot success particle burst, if one is running.
+  burst_at: Option<Instant>,
+  /// Dev HUD for this frame, built only when the studio is visible.
+  hud: Option<Hud>,
 }
 
 impl FrameState {
@@ -217,6 +368,8 @@ impl FrameState {
       drag,
       cursor: self.cursor,
       screen: self.screen,
+      burst_at: self.burst_at,
+      hud: self.hud.as_ref(),
     }
   }
 }
@@ -230,6 +383,9 @@ struct Handler {
   /// this; they always use the CPU renderer.
   gpu: GpuConfig,
   fullscreen: bool,
+  /// Initial window size in logical pixels. Normal runs use the historical
+  /// 1280x800; the studio can override it with `--size`.
+  initial_size: (u32, u32),
   window: Option<Arc<Window>>,
   presenter: Option<Presenter>,
   /// Reused between CPU frames. Allocating a full-screen pixmap at 30 fps was
@@ -277,6 +433,15 @@ struct Handler {
   /// Coalesces wallpaper wakeups. Without it a slow paint can queue one event
   /// per decoded frame and fall further behind the video.
   frame_pending: Arc<AtomicBool>,
+  /// The optional cut sequence. `None` is both "never started" and "finished",
+  /// so the normal paint path is the default at every point in time.
+  transition: Option<Transition>,
+  /// Start of the one-shot success particle burst. Cleared implicitly by age;
+  /// keeping the instant rather than a spawn table is what makes the burst
+  /// spawn exactly once per success transition.
+  burst_at: Option<Instant>,
+  /// Present only in `dawn dev`.
+  dev: Option<DevRuntime>,
 }
 
 /// Parses a media button hit region id.
@@ -305,9 +470,10 @@ fn media_control_id(id: &str) -> Option<(usize, MediaControl)> {
 
 impl Handler {
   fn init_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), WindowError> {
+    let (width, height) = self.initial_size;
     let mut attributes = Window::default_attributes()
-      .with_title("dawn")
-      .with_inner_size(LogicalSize::new(DEFAULT_WIDTH, DEFAULT_HEIGHT));
+      .with_title(self.window_title())
+      .with_inner_size(LogicalSize::new(width, height));
     if self.fullscreen {
       attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
     }
@@ -429,11 +595,79 @@ impl Handler {
     }
   }
 
-  fn maybe_finish(&mut self, event_loop: &ActiveEventLoop) {
-    if let Some(finish) = self.app.finished() {
-      self.finish = Some(finish);
-      event_loop.exit();
+  /// Normal runs keep the short historical title. The studio names its source
+  /// so two dev windows are distinguishable in a task switcher.
+  fn window_title(&self) -> String {
+    match &self.dev {
+      Some(dev) => format!("dawn dev {}", dev.source.label),
+      None => "dawn".to_string(),
     }
+  }
+
+  fn maybe_finish(&mut self, event_loop: &ActiveEventLoop) {
+    let Some(finish) = self.app.finished() else {
+      return;
+    };
+    // A `success` transition is the only reason a finished login waits. Auth
+    // and the session launch are already committed by this point; this hold
+    // only delays the process exit, and only for the capped duration. The
+    // default `enter` trigger never reaches this branch.
+    if finish == Finish::Started && self.transition_holds(Instant::now()) {
+      self.request_redraw();
+      return;
+    }
+    self.finish = Some(finish);
+    event_loop.exit();
+  }
+
+  /// True while a success-triggered sequence is still worth painting. The
+  /// `MAX_SUCCESS_HOLD` clamp is the lockout guard: even if a config asks for a
+  /// ten-second slam, the greeter leaves for the session after two seconds.
+  fn transition_holds(&self, now: Instant) -> bool {
+    self.transition.as_ref().is_some_and(|transition| {
+      transition.trigger().accepts(TransitionTrigger::Success)
+        && !transition.finished(now)
+        && transition.elapsed(now) < MAX_SUCCESS_HOLD
+    })
+  }
+
+  /// Starts the configured sequence for `moment`, if this table accepts that
+  /// moment and nothing is already running. The auth request has already left
+  /// the UI thread when this is called; nothing here talks to the worker.
+  fn start_transition(&mut self, moment: TransitionTrigger, now: Instant) {
+    let config = self.app.theme().login.transition.clone();
+    let Some(started) = Transition::start(&config, now) else {
+      return;
+    };
+    if !started.trigger().accepts(moment) {
+      return;
+    }
+    if self
+      .transition
+      .as_ref()
+      .is_some_and(|active| !active.finished(now))
+    {
+      return;
+    }
+    self.transition = Some(started);
+    self.ui_dirty = true;
+    self.request_redraw();
+  }
+
+  /// Drops a finished sequence and asks for a normal frame. Returns true when
+  /// something changed, so the caller can re-check a pending finish.
+  fn retire_transition(&mut self, now: Instant) -> bool {
+    if self
+      .transition
+      .as_ref()
+      .is_some_and(|transition| transition.finished(now))
+    {
+      self.transition = None;
+      self.ui_dirty = true;
+      self.request_redraw();
+      return true;
+    }
+    false
   }
 
   fn fail(&mut self, event_loop: &ActiveEventLoop, error: WindowError) {
@@ -505,6 +739,13 @@ impl Handler {
   fn frame_state(&mut self, window: &Window) -> FrameState {
     let scale = window.scale_factor() as f32;
     let frame_now = Instant::now();
+    let hud = match self.dev.as_mut() {
+      Some(dev) => {
+        dev.fps.tick(frame_now);
+        dev.hud()
+      }
+      None => None,
+    };
     let reduced = self.app.theme().motion.reduced || self.app.theme().low_power;
     self.drag.advance(frame_now, reduced);
     let motion = self.app.motion_frame(frame_now, scale);
@@ -527,6 +768,8 @@ impl Handler {
       background_color,
       cursor: self.pointer_inside.then_some(self.cursor),
       screen: (size.width as f32, size.height as f32),
+      burst_at: self.burst_at,
+      hud,
     }
   }
 
@@ -550,6 +793,10 @@ impl Handler {
     }
     let state = self.frame_state(window);
     let scene = state.scene(&self.app, self.monitor.as_deref(), &self.drag);
+    let transition_frame = self
+      .transition
+      .as_ref()
+      .and_then(|transition| transition.frame(state.frame_now));
     let Some(canvas) = self.frame_canvas.as_mut() else {
       return Err("cannot allocate the frame canvas".to_string());
     };
@@ -560,6 +807,12 @@ impl Handler {
       &mut self.glass,
       &scene,
     );
+    // The cut sequence is a post-pass over the finished frame: opaque during
+    // the cuts, translucent during the release. The CPU path has nowhere else
+    // to put a wallpaper-covering flash.
+    if let Some(frame) = &transition_frame {
+      transition::paint(canvas, &mut self.text, frame, state.scale);
+    }
     self.last_overlay_at = Some(Instant::now());
     self.last_frame_id = self.background.frame_id(state.frame_now);
     // A rebuilt region list can put a different widget under a stationary
@@ -591,8 +844,20 @@ impl Handler {
     let resized = renderer.resize(size)?;
     let state = self.frame_state(window);
     let scene = state.scene(&self.app, self.monitor.as_deref(), &self.drag);
+    let transition_frame = self
+      .transition
+      .as_ref()
+      .and_then(|transition| transition.frame(state.frame_now));
+    // An opaque transition frame is a full-screen flash. There is no reason to
+    // rasterise the login overlay underneath it, so skip that work and keep
+    // the hit regions empty for the duration. Translucent release frames need
+    // the real UI because they reveal it.
+    let transition_covers = transition_frame
+      .as_ref()
+      .is_some_and(|frame| frame.fill.a == 255);
     let snapshot = self.background.snapshot(state.frame_now);
-    let mut ui_dirty = self.ui_dirty || resized;
+    let mut ui_dirty =
+      self.ui_dirty || resized || transition_frame.is_some() || self.burst_active(state.frame_now);
     let theme = self.app.theme();
 
     // Glass panels are the one thing that still needs CPU background pixels.
@@ -649,12 +914,22 @@ impl Handler {
         return Err("cannot allocate the UI overlay".to_string());
       };
       canvas.clear_transparent();
-      // The GPU path keeps the wallpaper in its own texture, so the CRT
-      // overlay goes on the transparent UI layer first. The form then paints
-      // over it, which keeps the same wallpaper-under-text ordering as the
-      // CPU path.
-      render::draw_scanlines(canvas, &scene);
-      self.regions = render::paint_overlay(canvas, &mut self.text, &self.glass, &scene);
+      if transition_covers {
+        // The cut covers every pixel, so the overlay is complete without the
+        // scanlines or the form. Clearing the regions also makes a stray click
+        // during the flash harmless.
+        self.regions.clear();
+      } else {
+        // The GPU path keeps the wallpaper in its own texture, so the CRT
+        // overlay goes on the transparent UI layer first. The form then paints
+        // over it, which keeps the same wallpaper-under-text ordering as the
+        // CPU path.
+        render::draw_scanlines(canvas, &scene);
+        self.regions = render::paint_overlay(canvas, &mut self.text, &self.glass, &scene);
+      }
+      if let Some(frame) = &transition_frame {
+        transition::paint(canvas, &mut self.text, frame, state.scale);
+      }
       self.last_overlay_at = Some(Instant::now());
       renderer.set_ui(canvas.pixmap())?;
       if self.pointer_inside {
@@ -669,7 +944,105 @@ impl Handler {
     Ok(())
   }
 
+  /// Re-reads the source and swaps the scene, or keeps the last good one.
+  ///
+  /// This runs on the event loop, but the expensive decode, blur, and video
+  /// work does not: [`dev::prepare_reload`] only parses and compares, and a
+  /// changed wallpaper is handed to the existing background loader thread.
+  fn dev_reload(&mut self) {
+    let Some(dev) = self.dev.as_ref() else {
+      return;
+    };
+    let source = dev.source.clone();
+    let host_gpu = dev.host_gpu.clone();
+    let previous = dev.state.last_good.clone();
+
+    match dev::prepare_reload(&source, &host_gpu, &previous) {
+      Ok(reload) => {
+        let dev::Reload {
+          config,
+          plugins,
+          warning,
+          background,
+          rebuild_text,
+          cost_ms,
+        } = reload;
+        let swap_started = Instant::now();
+        if rebuild_text {
+          self.text = TextEngine::new(&config.ui.font);
+        }
+        if background.is_reload() {
+          // `!decode` means the image path is unchanged, so the loaded frame
+          // set stays in place and only the cheap background fields change.
+          self.background.reconfigure(&config, !background.decode());
+        }
+        self.app.reload(config.clone(), plugins, warning);
+        let total_ms = cost_ms + swap_started.elapsed().as_secs_f32() * 1000.0;
+        if let Some(dev) = self.dev.as_mut() {
+          dev.state.success(config, total_ms);
+        }
+        if background.is_reload() {
+          self.start_background_load();
+        }
+        self.ui_dirty = true;
+        self.blur_source_at = None;
+        self.request_redraw();
+        tracing::info!(cost_ms = total_ms, "dev reload");
+      }
+      Err(error) => {
+        let logged = self
+          .dev
+          .as_mut()
+          .is_some_and(|dev| dev.state.failure(error.clone()));
+        if logged {
+          tracing::warn!(
+            error = %error,
+            "dev reload failed, keeping the last good theme"
+          );
+        }
+        // A failed reload still changes the HUD error line, so repaint.
+        self.ui_dirty = true;
+        self.request_redraw();
+      }
+    }
+  }
+
   fn handle_key(&mut self, event_loop: &ActiveEventLoop, event: KeyEvent) {
+    // Once a login has been committed, the window may still be painting a
+    // success transition. Ignore input during that hold so an Escape can never
+    // cancel a session that greetd has already accepted.
+    if self.app.finished().is_some() {
+      return;
+    }
+    // Studio shortcuts are intercepted before the login key map. Escape is
+    // deliberately absent: it stays the normal "clear the field" key.
+    if self.dev.is_some() && event.state == ElementState::Pressed {
+      match &event.logical_key {
+        WinitKey::Named(NamedKey::F1) => {
+          if let Some(dev) = self.dev.as_mut()
+            && dev.hud_enabled
+          {
+            dev.hud_visible = !dev.hud_visible;
+            self.ui_dirty = true;
+            self.request_redraw();
+          }
+          return;
+        }
+        WinitKey::Named(NamedKey::F5) => {
+          self.dev_reload();
+          return;
+        }
+        WinitKey::Character(value)
+          if self.modifiers.control_key() && value.as_str().eq_ignore_ascii_case("q") =>
+        {
+          self.app.quit();
+          self.finish = Some(Finish::Quit);
+          event_loop.exit();
+          return;
+        }
+        _ => {}
+      }
+    }
     let Some(key) = translate_key(&event, self.modifiers) else {
       return;
     };
@@ -678,7 +1051,11 @@ impl Handler {
       self.paused = false;
       self.background.set_paused(false);
     }
+    let submit_before = self.app.submit_epoch();
     self.app.key(key);
+    if self.app.submit_epoch() != submit_before {
+      self.start_transition(TransitionTrigger::Enter, Instant::now());
+    }
     self.ui_dirty = true;
     self.request_redraw();
     self.maybe_finish(event_loop);
@@ -732,6 +1109,9 @@ impl Handler {
     let Some(window) = &self.window else {
       return;
     };
+    if self.app.finished().is_some() {
+      return;
+    }
     let scale = window.scale_factor() as f32;
     self.last_input = Instant::now();
     self.ui_dirty = true;
@@ -751,7 +1131,11 @@ impl Handler {
     // goes through the same key policy, so an empty username still moves focus
     // to the first field instead of starting an auth request.
     if id == Some("login.button") {
+      let submit_before = self.app.submit_epoch();
       self.app.key(Key::Enter);
+      if self.app.submit_epoch() != submit_before {
+        self.start_transition(TransitionTrigger::Enter, Instant::now());
+      }
       self.request_redraw();
       self.maybe_finish(event_loop);
       return;
@@ -820,6 +1204,15 @@ impl Handler {
         .hover_transition_active("login.button", now, duration)
   }
 
+  /// True while the success burst is still painting. The burst has no mutable
+  /// particles: it is a pure function of age, so "active" is just a time
+  /// window.
+  fn burst_active(&self, now: Instant) -> bool {
+    self.burst_at.is_some_and(|at| {
+      now.saturating_duration_since(at).as_secs_f32() < crate::config::BURST_LIFETIME
+    })
+  }
+
   /// Chooses the next wake-up: the earliest of the clock tick, a wallpaper
   /// frame, and a motion frame. When everything is static this is a plain
   /// one-second wait.
@@ -833,6 +1226,18 @@ impl Handler {
       next = next.min(now + MOTION_FRAME);
     }
     if (self.drag.is_animating() || self.button_hover_animating(now)) && !self.paused {
+      next = next.min(now + MOTION_FRAME);
+    }
+    // The cut sequence is one-shot and short. It drives frames even when the
+    // window is unfocused so a success hold cannot depend on input to finish.
+    if self
+      .transition
+      .as_ref()
+      .is_some_and(|transition| !transition.finished(now))
+    {
+      next = next.min(now + MOTION_FRAME);
+    }
+    if self.burst_active(now) {
       next = next.min(now + MOTION_FRAME);
     }
     if self.app.theme().decor_motion_active() && !self.paused {
@@ -856,6 +1261,11 @@ impl ApplicationHandler<UserEvent> for Handler {
     match self.init_window(event_loop) {
       Ok(()) => {
         self.start_background_load();
+        // The boot cut is a one-shot montage intro. It is not tied to auth and
+        // cannot hold the process open, because only a success trigger is
+        // allowed to delay exit. `resumed` returns early once a window exists,
+        // so this fires exactly once.
+        self.start_transition(TransitionTrigger::Boot, Instant::now());
         self.request_redraw();
       }
       Err(error) => self.fail(event_loop, error),
@@ -865,7 +1275,22 @@ impl ApplicationHandler<UserEvent> for Handler {
   fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
     match event {
       UserEvent::Auth(event) => {
+        let failed = matches!(event, Event::Failed(_));
+        let was_authenticated = self.app.authenticated();
         self.app.handle_auth(event);
+        let now = Instant::now();
+        if failed {
+          // A rejection gets its own optional cut. The form is already back in
+          // its typing state; this is decoration on the same frame, never a
+          // hold on the auth path.
+          self.start_transition(TransitionTrigger::Failure, now);
+        }
+        if !was_authenticated && self.app.authenticated() {
+          if self.app.theme().particles.burst_on == crate::config::BurstTrigger::Success {
+            self.burst_at = Some(now);
+          }
+          self.start_transition(TransitionTrigger::Success, now);
+        }
         self.ui_dirty = true;
         self.request_redraw();
         self.maybe_finish(event_loop);
@@ -894,6 +1319,7 @@ impl ApplicationHandler<UserEvent> for Handler {
         self.frame_pending.store(false, Ordering::Release);
         self.request_redraw();
       }
+      UserEvent::DevReload => self.dev_reload(),
     }
   }
 
@@ -981,13 +1407,31 @@ impl ApplicationHandler<UserEvent> for Handler {
       event_loop.exit();
       return;
     }
-    if let Some(finish) = self.app.finished() {
-      self.finish = Some(finish);
-      event_loop.exit();
-      return;
+    if self.app.finished().is_some() {
+      self.maybe_finish(event_loop);
+      if self.finish.is_some() {
+        return;
+      }
     }
 
     let now = Instant::now();
+    // Advance or retire the cut sequence before scheduling. A finished
+    // sequence requests one normal frame so the form, not the last
+    // translucent slam, is what stays on screen.
+    if self
+      .transition
+      .as_ref()
+      .is_some_and(|transition| !transition.finished(now))
+    {
+      self.ui_dirty = true;
+      self.request_redraw();
+    }
+    if self.retire_transition(now) {
+      self.maybe_finish(event_loop);
+      if self.finish.is_some() {
+        return;
+      }
+    }
     if !self.paused
       && !self.idle_pause.is_zero()
       && now.duration_since(self.last_input) >= self.idle_pause
@@ -1071,8 +1515,13 @@ fn translate_key(event: &KeyEvent, modifiers: ModifiersState) -> Option<Key> {
 
 #[cfg(test)]
 mod tests {
-  use super::media_control_id;
+  use super::{AuthMode, dev_auth_mode, media_control_id};
   use crate::ui::media::MediaControl;
+
+  #[test]
+  fn dev_mode_never_constructs_a_greetd_auth_mode() {
+    assert!(matches!(dev_auth_mode(), AuthMode::DryRun));
+  }
 
   #[test]
   fn media_control_ids_map_to_the_right_action() {

@@ -8,7 +8,7 @@
 
 use std::f32::consts::TAU;
 
-use cosmic_text::Align;
+use cosmic_text::{Align, Weight};
 use jiff::Zoned;
 use jiff::fmt::strtime::{BrokenDownTime, Config as StrftimeConfig, PosixCustom};
 use jiff::tz::TimeZone;
@@ -33,6 +33,12 @@ pub struct ClockSpec {
   pub date_size: f32,
   pub color: Option<Rgb>,
   pub date_color: Option<Rgb>,
+  /// Small label above the time face. Empty hides it.
+  pub label: String,
+  pub label_color: Option<Rgb>,
+  /// Zero derives a size from the clock face.
+  pub label_size: f32,
+  pub label_tracking: f32,
   /// Ghost the unused segments of a seven-segment face.
   pub ghost: bool,
   /// Halo colour for a seven-segment face.
@@ -62,6 +68,10 @@ impl std::fmt::Debug for ClockSpec {
       .field("date_size", &self.date_size)
       .field("color", &self.color)
       .field("date_color", &self.date_color)
+      .field("label", &self.label)
+      .field("label_color", &self.label_color)
+      .field("label_size", &self.label_size)
+      .field("label_tracking", &self.label_tracking)
       .field("ghost", &self.ghost)
       .field("glow", &self.glow)
       .field("glow_size", &self.glow_size)
@@ -89,6 +99,10 @@ impl ClockSpec {
       date_size: config.date_size,
       color: config.color,
       date_color: config.date_color,
+      label: config.label.clone(),
+      label_color: config.label_color,
+      label_size: config.label_size,
+      label_tracking: config.label_tracking,
       ghost: config.ghost,
       glow: config.glow,
       glow_size: config.glow_size,
@@ -239,6 +253,28 @@ pub fn face_size(text: &mut TextEngine, spec: &ClockSpec, time: &str, size: f32)
   }
 }
 
+/// Measured label box. A zero `label_size` derives 0.22 of the face size,
+/// which keeps a micro caps label proportional on a small clock. The returned
+/// height is zero when the label is empty, so the old geometry is untouched.
+fn label_measure(text: &mut TextEngine, spec: &ClockSpec, size: f32, max_width: f32) -> (f32, f32) {
+  if spec.label.is_empty() {
+    return (0.0, 0.0);
+  }
+  let label_size = if spec.label_size > 0.0 {
+    spec.label_size
+  } else {
+    size * 0.22
+  };
+  text.measure_with(
+    &spec.label,
+    label_size,
+    max_width,
+    false,
+    Weight::NORMAL,
+    spec.label_tracking,
+  )
+}
+
 /// The bounding box the clock will occupy, including its date line. The
 /// renderer uses this to paint a contrast scrim before the text lands: a white
 /// clock over a bright photo is unreadable otherwise, and the adaptive contrast
@@ -258,7 +294,28 @@ pub fn bounds(
   let date_size = spec.date_size * scale;
   let screen = (viewport.w, viewport.h);
   match spec.style {
-    ClockStyle::Digital | ClockStyle::Flip | ClockStyle::Segment => {
+    ClockStyle::Digital => {
+      if time.is_empty() {
+        return None;
+      }
+      let (width, time_height) = face_size(text, spec, &time, size);
+      let (date_width, date_height) = if date.is_empty() {
+        (0.0, 0.0)
+      } else {
+        text.measure(&date, date_size, screen.0 - 40.0, false)
+      };
+      let (label_width, label_height) = label_measure(text, spec, size, screen.0 - 40.0);
+      let total_width = width.max(date_width).max(label_width);
+      let total_height = label_height + time_height + date_height + date_size * 0.15;
+      let (x, y) = anchor.place(screen, (total_width, total_height), offset);
+      Some(Rect::new(
+        viewport.x + x,
+        viewport.y + y,
+        total_width,
+        total_height,
+      ))
+    }
+    ClockStyle::Flip | ClockStyle::Segment => {
       if time.is_empty() {
         return None;
       }
@@ -325,7 +382,8 @@ pub fn draw(
   let date_size = spec.date_size * scale;
   match spec.style {
     ClockStyle::Digital => draw_digital(
-      canvas, text, &time, &date, anchor, offset, viewport, size, date_size, color, date_color,
+      canvas, text, spec, &time, &date, anchor, offset, viewport, size, date_size, color,
+      date_color,
     ),
     ClockStyle::Flip => draw_flip(
       canvas, text, spec, &time, &date, anchor, offset, viewport, size, date_size, color,
@@ -345,6 +403,7 @@ pub fn draw(
 fn draw_digital(
   canvas: &mut Canvas,
   text: &mut TextEngine,
+  spec: &ClockSpec,
   time: &str,
   date: &str,
   anchor: Anchor,
@@ -365,26 +424,49 @@ fn draw_digital(
   } else {
     text.measure(date, date_size, screen.0 - 40.0, false)
   };
+  let (label_width, label_height) = label_measure(text, spec, size, screen.0 - 40.0);
   // Both lines share the widget's full width. Using the time width for the
   // date was a real bug: a long weekday name wrapped to two lines under a
   // short time, which looked like the clock had fallen apart.
-  let total_width = width.max(date_width);
-  let total = (total_width, time_height + date_height + date_size * 0.15);
+  let total_width = width.max(date_width).max(label_width);
+  let total = (
+    total_width,
+    label_height + time_height + date_height + date_size * 0.15,
+  );
   let (x, y) = anchor.place(screen, total, offset);
   let (x, y) = (x + viewport.x, y + viewport.y);
 
+  if !spec.label.is_empty() {
+    let label_size = if spec.label_size > 0.0 {
+      spec.label_size
+    } else {
+      size * 0.22
+    };
+    let label_color = spec.label_color.unwrap_or(color);
+    text.draw(
+      canvas,
+      &spec.label,
+      Style::new(label_size, label_color).tracking(spec.label_tracking),
+      Area::new(x, y, total_width.max(1.0)).align(Align::Center),
+    );
+  }
   text.draw(
     canvas,
     time,
     Style::new(size, color),
-    Area::new(x, y, total_width.max(1.0)).align(Align::Center),
+    Area::new(x, y + label_height, total_width.max(1.0)).align(Align::Center),
   );
   if !date.is_empty() {
     text.draw(
       canvas,
       date,
       Style::new(date_size, date_color),
-      Area::new(x, y + time_height + date_size * 0.15, total_width.max(1.0)).align(Align::Center),
+      Area::new(
+        x,
+        y + label_height + time_height + date_size * 0.15,
+        total_width.max(1.0),
+      )
+      .align(Align::Center),
     );
   }
 }
@@ -933,6 +1015,10 @@ mod tests {
       date_size: 18.0,
       color: None,
       date_color: None,
+      label: String::new(),
+      label_color: None,
+      label_size: 0.0,
+      label_tracking: 0.0,
       ghost: false,
       glow: None,
       glow_size: 0.0,
@@ -993,6 +1079,10 @@ mod tests {
       date_size: 16.0,
       color: None,
       date_color: None,
+      label: String::new(),
+      label_color: None,
+      label_size: 0.0,
+      label_tracking: 0.0,
       ghost: true,
       glow: Some(crate::color::Rgb::solid(1, 2, 3)),
       glow_size: 6.0,

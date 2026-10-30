@@ -5,7 +5,7 @@
 //! to its default. The UI shows a short summary and the log has the details;
 //! `dawn --check-config` turns the same data into an admin-friendly report.
 //!
-//! Precedence: `--config PATH`, then `$XDG_CONFIG_HOME/dawn/config.toml`, then
+//! Precedence: `--config PATH`, then `DAWN_CONFIG`, then
 //! `/etc/dawn/config.toml`, then built-in defaults. Relative paths inside the
 //! file are resolved against the config file's directory, and `~/` is expanded.
 
@@ -13,6 +13,7 @@ mod raw;
 mod validate;
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -21,6 +22,25 @@ use crate::color::Rgb;
 use crate::layout::{Anchor, Fit, Placement};
 use raw::RawConfig;
 use validate::Validator;
+
+/// The machine config a real greeter reads. There is exactly one default path:
+/// a greeter runs as the `greeter` user with no useful `HOME`, so a per-user
+/// XDG file would be invisible at boot anyway.
+pub const SYSTEM_CONFIG: &str = "/etc/dawn/config.toml";
+
+/// Environment variable that names a config file explicitly.
+pub const ENV_CONFIG: &str = "DAWN_CONFIG";
+
+/// Printed once when no config file was found. The wording is stable because
+/// it is the only instruction an admin sees before the login prompt.
+pub const MISSING_CONFIG_HINT: &str = "no machine config; create it: sudo dawn init";
+
+/// Returns the one-line hint for a run that found no config, and `None` when a
+/// file was loaded. Kept pure so the "exactly once" behaviour is testable.
+#[must_use]
+pub fn missing_config_hint(path: Option<&Path>) -> Option<&'static str> {
+  path.is_none().then_some(MISSING_CONFIG_HINT)
+}
 
 /// A problem with the config file. Field-level problems are recoverable: the
 /// field uses its default and every other setting still applies.
@@ -98,6 +118,10 @@ pub struct Config {
   pub battery: BatteryConfig,
   /// Local system monitor. Disabled by default.
   pub system: SystemConfig,
+  /// Ambient procedural emitters. Disabled by default.
+  pub particles: ParticlesConfig,
+  /// The kinetic marquee. Disabled by default.
+  pub ticker: TickerConfig,
   pub background: BackgroundConfig,
   pub theme: ThemeConfig,
   pub motion: MotionConfig,
@@ -139,6 +163,20 @@ pub enum LoginLayout {
   /// can fade into the wallpaper, and the form sits at `form_offset` instead
   /// of the card's padding. This is what a website-style clone needs.
   Hero,
+  /// A full-bleed, fixed frame with no implied surface. It shares the hero
+  /// geometry (content-derived position is off, `form_offset` is on) but the
+  /// name says what an author wants: a poster with the form placed directly
+  /// on it. A theme pairs it with `surface = "none"`.
+  Poster,
+}
+
+impl LoginLayout {
+  /// True for the two fixed-frame layouts. Both place decor and the form in
+  /// screen space and scale the whole frame to fit a smaller output.
+  #[must_use]
+  pub fn is_full_bleed(self) -> bool {
+    matches!(self, Self::Hero | Self::Poster)
+  }
 }
 
 /// How the login card meets the wallpaper.
@@ -285,6 +323,9 @@ pub struct LoginConfig {
   /// Cosmetic images and text placed inside the card. The host draws these
   /// after the panel and before the form, so they never cover an input.
   pub decor: Vec<DecorSpec>,
+  /// The optional login cut sequence. Disabled by default and never part of
+  /// the auth path: it only changes what the window paints while auth runs.
+  pub transition: TransitionConfig,
 }
 
 /// The submit button. Off by default so the classic card stays keyboard-only.
@@ -785,6 +826,11 @@ pub struct FieldConfig {
   pub label: String,
   /// Label colour. `None` falls back to the theme muted token.
   pub label_color: Option<Rgb>,
+  /// Label size in logical pixels. Zero derives 80 percent of the field size,
+  /// which is the historical look. A micro label sets a small fixed value.
+  pub label_size: f32,
+  /// Label letter spacing in em. Zero keeps the font's natural tracking.
+  pub label_tracking: f32,
   pub placeholder: String,
   pub font_size: f32,
   pub height: f32,
@@ -824,6 +870,13 @@ pub struct FieldConfig {
   pub rotation: f32,
   /// Password masking glyphs. One glyph per typed character is drawn.
   pub mask: String,
+  /// Duration of the one-shot keystroke pop in milliseconds. Zero disables it,
+  /// which is the default and keeps every existing field pixel-identical.
+  pub key_pop_ms: f32,
+  /// Peak scale of the popping character. It settles back to 1.0.
+  pub key_pop_scale: f32,
+  /// Colour of the popping character. `None` follows the theme accent.
+  pub key_pop_color: Option<Rgb>,
 }
 
 impl FieldConfig {
@@ -831,6 +884,8 @@ impl FieldConfig {
     Self {
       label: String::new(),
       label_color: None,
+      label_size: 0.0,
+      label_tracking: 0.0,
       placeholder: "Username".to_string(),
       font_size: 0.0,
       height: 0.0,
@@ -855,6 +910,9 @@ impl FieldConfig {
       icon_color: None,
       rotation: 0.0,
       mask: String::new(),
+      key_pop_ms: 0.0,
+      key_pop_scale: 1.18,
+      key_pop_color: None,
     }
   }
 
@@ -1341,6 +1399,14 @@ pub struct ClockConfig {
   /// Optional colour override. `None` follows the theme.
   pub color: Option<Rgb>,
   pub date_color: Option<Rgb>,
+  /// Small label above the time. Empty hides it, which is the default.
+  pub label: String,
+  /// Label colour. `None` uses the configured `color`.
+  pub label_color: Option<Rgb>,
+  /// Label size in logical pixels. Zero derives 22 percent of `size`.
+  pub label_size: f32,
+  /// Label letter spacing in em. The small caps look wants a wide value.
+  pub label_tracking: f32,
   /// Draw the unused segments on a seven-segment face at low alpha. The
   /// digital, analog, and flip faces ignore it.
   pub ghost: bool,
@@ -1566,7 +1632,7 @@ impl BackgroundConfig {
   }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BackgroundOverride {
   pub kind: Option<BackgroundKind>,
   pub color: Option<Rgb>,
@@ -1808,6 +1874,401 @@ impl Default for MotionConfig {
       decor_fps: 30,
       parallax: 0.0,
     }
+  }
+}
+
+/// When the login cut sequence is allowed to play.
+///
+/// `Enter` is the safe default: the sequence starts the moment an auth request
+/// is actually sent, so it never delays or replaces anything the auth worker
+/// does. `Success` waits for greetd to accept the start, which means the window
+/// briefly holds its exit so the slam can be seen. `Both` plays at whichever
+/// moment comes first and never starts a second sequence while one is running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TransitionTrigger {
+  #[default]
+  Enter,
+  Success,
+  Both,
+  /// Play once when the window first comes up, before the idle screen.
+  /// Authentication never starts or extends this sequence.
+  Boot,
+  /// Play on a rejected auth attempt. The window keeps the normal form and
+  /// schedules the next frame; a failure must never hold the process open.
+  Failure,
+}
+
+impl TransitionTrigger {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "enter" => Some(Self::Enter),
+      "success" => Some(Self::Success),
+      "both" => Some(Self::Both),
+      "boot" => Some(Self::Boot),
+      "failure" => Some(Self::Failure),
+      _ => None,
+    }
+  }
+
+  /// True when an event of `kind` should start the sequence.
+  ///
+  /// `Both` deliberately keeps its historical meaning of enter plus success.
+  /// Letting it also accept boot or failure would make an existing config
+  /// play a cut the administrator never asked for, which breaks the rule that
+  /// new triggers are opt-in.
+  #[must_use]
+  pub fn accepts(self, kind: Self) -> bool {
+    match kind {
+      Self::Enter | Self::Success => self == kind || self == Self::Both,
+      Self::Boot | Self::Failure | Self::Both => self == kind,
+    }
+  }
+}
+
+/// A short montage of full-screen colour cuts followed by one slammed line.
+///
+/// This is purely decorative. The auth request is already on its way when the
+/// sequence starts, and the window only ever holds its own exit for a bounded
+/// moment on the `Success` trigger. A broken or zero-length sequence therefore
+/// degrades to the normal screen instead of ever blocking a login.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransitionConfig {
+  pub enabled: bool,
+  pub trigger: TransitionTrigger,
+  /// Full-screen flash colours, one per cut. Capped at eight at load time.
+  pub cuts: Vec<Rgb>,
+  /// How long each cut stays on screen.
+  pub cut_ms: f32,
+  /// Peak shake amplitude in logical pixels. Decays to zero over the slam.
+  pub shake: f32,
+  /// Extra scale punch at the start of the slam, 0 to 0.5.
+  pub zoom: f32,
+  /// The big centred line shown after the cuts.
+  pub slam: String,
+  /// How long the slam stays on screen, including its fade out.
+  pub slam_ms: f32,
+  pub slam_color: Rgb,
+  pub slam_size: f32,
+}
+
+impl Default for TransitionConfig {
+  fn default() -> Self {
+    Self {
+      enabled: false,
+      trigger: TransitionTrigger::Enter,
+      cuts: vec![
+        Rgb::solid(0xFF, 0xFF, 0xFF),
+        Rgb::solid(0xD4, 0x18, 0x30),
+        Rgb::solid(0x0E, 0x0B, 0x10),
+      ],
+      cut_ms: 55.0,
+      shake: 14.0,
+      zoom: 0.06,
+      slam: "WELCOME".to_string(),
+      slam_ms: 900.0,
+      slam_color: Rgb::solid(0xF3, 0xE7, 0xD2),
+      slam_size: 92.0,
+    }
+  }
+}
+
+impl TransitionConfig {
+  /// Total time the sequence can run. Cuts that are all zero still leave the
+  /// slam, and a zero slam collapses the whole thing to nothing.
+  #[must_use]
+  pub fn total(&self) -> Duration {
+    let cut_ms = if self.cut_ms.is_finite() {
+      self.cut_ms.max(0.0)
+    } else {
+      0.0
+    };
+    let slam_ms = if self.slam_ms.is_finite() {
+      self.slam_ms.max(0.0)
+    } else {
+      0.0
+    };
+    let millis = self.cuts.len() as f32 * cut_ms + slam_ms;
+    if !millis.is_finite() {
+      return Duration::ZERO;
+    }
+    Duration::from_secs_f32(millis / 1000.0)
+  }
+}
+
+/// The procedural sprite an ambient particle uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ParticleSprite {
+  /// A radial ember blob with a flickering hot core.
+  #[default]
+  Flame,
+  /// Two mirrored triangle wings that flap.
+  Butterfly,
+  /// A plain soft circle.
+  Dot,
+  /// A thin vertical light streak. Ambient use reads as a stage spotlight
+  /// falling through the frame; burst use gives the success moment a diving,
+  /// rain-like energy without another sprite atlas.
+  Streak,
+}
+
+impl ParticleSprite {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "flame" | "ember" => Some(Self::Flame),
+      "butterfly" | "moth" => Some(Self::Butterfly),
+      "dot" | "sphere" => Some(Self::Dot),
+      "streak" | "ray" => Some(Self::Streak),
+      _ => None,
+    }
+  }
+}
+
+/// What starts the one-shot particle burst.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BurstTrigger {
+  /// No burst. This is the default and leaves the ambient emitter alone.
+  #[default]
+  None,
+  /// Fire once when the success transition starts.
+  Success,
+}
+
+impl BurstTrigger {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "none" | "off" => Some(Self::None),
+      "success" => Some(Self::Success),
+      _ => None,
+    }
+  }
+}
+
+/// Which way the particles travel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ParticleDrift {
+  #[default]
+  Up,
+  Down,
+  /// A gentle sine wander with no net travel.
+  Float,
+}
+
+impl ParticleDrift {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "up" => Some(Self::Up),
+      "down" => Some(Self::Down),
+      "float" => Some(Self::Float),
+      _ => None,
+    }
+  }
+}
+
+/// Whether the emitter paints under the UI or over everything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ParticleLayer {
+  /// Over the wallpaper, under the login form and widgets.
+  #[default]
+  Behind,
+  /// Topmost, after the form and warnings.
+  Front,
+}
+
+impl ParticleLayer {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "behind" => Some(Self::Behind),
+      "front" => Some(Self::Front),
+      _ => None,
+    }
+  }
+}
+
+/// Ambient, procedurally drawn emitters.
+///
+/// The sprites are generated at draw time, so a theme never needs image files
+/// for them. Their positions are derived from the particle index and the
+/// session clock, which makes every run deterministic and keeps a screenshot
+/// stable. Disabled by default: an existing config renders exactly as before.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParticlesConfig {
+  pub enabled: bool,
+  /// Number of live particles, capped at [`MAX_PARTICLES`] at load time.
+  pub count: u32,
+  pub sprite: ParticleSprite,
+  /// Flame core and the first butterfly wing.
+  pub color: Rgb,
+  /// The second butterfly wing.
+  pub color2: Rgb,
+  pub drift: ParticleDrift,
+  /// Base travel speed in logical pixels per second.
+  pub speed: f32,
+  /// Base sprite size in logical pixels.
+  pub size: f32,
+  /// Overall opacity multiplier, 0 to 1.
+  pub opacity: f32,
+  pub layer: ParticleLayer,
+  /// One-shot burst source. Off by default, so the ambient field is unchanged.
+  pub burst_on: BurstTrigger,
+  /// Sprite used by the burst. Independent of the ambient `sprite`.
+  pub burst_sprite: ParticleSprite,
+  /// Number of sprites in the burst, capped at [`MAX_BURST_PARTICLES`].
+  pub burst_count: u32,
+}
+
+/// Hard cap for `[particles].burst_count`. The burst is one shot, but it still
+/// paints every frame until it dies, so the same budget rule applies.
+pub const MAX_BURST_PARTICLES: u32 = 64;
+
+/// Seconds a burst sprite lives. After this the sample function returns
+/// `None`, which is how the window knows the burst is over without keeping a
+/// mutable spawn table.
+pub const BURST_LIFETIME: f32 = 1.8;
+
+/// Duration of the ticker flash when the selected session changes. It is one
+/// beat of the montage, not a sustained highlight.
+pub const SESSION_FLASH_MS: f32 = 80.0;
+
+/// Hard cap for `[particles].count`, enforced by validation and again by the
+/// emitter so a hand-built config cannot turn the greeter into a space heater.
+pub const MAX_PARTICLES: u32 = 96;
+
+impl Default for ParticlesConfig {
+  fn default() -> Self {
+    Self {
+      enabled: false,
+      count: 48,
+      sprite: ParticleSprite::Flame,
+      color: Rgb::solid(0xFF, 0x7A, 0x3C),
+      color2: Rgb::solid(0xD4, 0x18, 0x30),
+      drift: ParticleDrift::Up,
+      speed: 24.0,
+      size: 6.0,
+      opacity: 0.55,
+      layer: ParticleLayer::Behind,
+      burst_on: BurstTrigger::None,
+      burst_sprite: ParticleSprite::Butterfly,
+      burst_count: 24,
+    }
+  }
+}
+
+/// The edge the ticker strip hugs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TickerAnchor {
+  Top,
+  #[default]
+  Bottom,
+}
+
+impl TickerAnchor {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "top" => Some(Self::Top),
+      "bottom" => Some(Self::Bottom),
+      _ => None,
+    }
+  }
+}
+
+/// A kinetic marquee that scrolls one joined text run.
+///
+/// The run repeats itself at its measured width, so the loop is seamless at
+/// any font and tracking value. It is disabled by default and uses the same
+/// plate vocabulary as the clock, which is what lets a glass ticket stub sit
+/// behind the copy without a second styling system.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TickerConfig {
+  pub enabled: bool,
+  /// Up to eight short lines, joined with `separator`.
+  pub items: Vec<String>,
+  pub separator: String,
+  pub anchor: TickerAnchor,
+  /// Logical pixel margin from the chosen edge.
+  pub offset: (i32, i32),
+  pub size: f32,
+  /// Scroll speed in logical pixels per second. Zero keeps it still.
+  pub speed: f32,
+  pub color: Rgb,
+  pub bold: bool,
+  /// Letter spacing in em.
+  pub tracking: f32,
+  pub layer: WidgetLayer,
+  pub plate: WidgetPlate,
+  /// Put the selected session name in front of the configured items and give
+  /// the run a one-shot flash when it changes. Off by default, so the marquee
+  /// keeps its exact configured order.
+  pub session_first: bool,
+}
+
+impl Default for TickerConfig {
+  fn default() -> Self {
+    Self {
+      enabled: false,
+      items: Vec::new(),
+      separator: "  \u{2022}  ".to_string(),
+      anchor: TickerAnchor::Bottom,
+      offset: (0, 24),
+      size: 20.0,
+      speed: 60.0,
+      color: Rgb::solid(0xF7, 0xF3, 0xE9),
+      bold: true,
+      tracking: 0.2,
+      layer: WidgetLayer::Behind,
+      plate: WidgetPlate::default(),
+      session_first: false,
+    }
+  }
+}
+
+impl TickerConfig {
+  /// The one run that scrolls, with the separator repeated at the seam so the
+  /// wrap never glues the last line to the first one.
+  #[must_use]
+  pub fn run(&self) -> String {
+    self.run_with(None)
+  }
+
+  /// The run with an optional selected session placed first. Session names
+  /// come from desktop files and are displayed in the poster's uppercase
+  /// voice; the launch command is untouched.
+  ///
+  /// The session name is live input from the session finder, so it is not part
+  /// of `items`. Keeping it separate means the configured list stays a pure
+  /// document value and the reorder is a deterministic function that tests can
+  /// call without a running greeter.
+  #[must_use]
+  pub fn run_with(&self, session: Option<&str>) -> String {
+    let session = session
+      .filter(|name| self.session_first && !name.is_empty())
+      .map(|name| name.to_uppercase());
+    if self.items.is_empty() && session.is_none() {
+      return String::new();
+    }
+    let mut lines = Vec::with_capacity(self.items.len() + 1);
+    if let Some(session) = session {
+      lines.push(session);
+    }
+    for item in &self.items {
+      // A configured line that happens to repeat the live session would read
+      // as a stutter in the marquee, so drop it while it is first.
+      if lines.first() == Some(item) && self.session_first {
+        continue;
+      }
+      lines.push(item.clone());
+    }
+    if lines.is_empty() {
+      return String::new();
+    }
+    let mut run = lines.join(&self.separator);
+    run.push_str(&self.separator);
+    run
   }
 }
 
@@ -2204,6 +2665,7 @@ impl Default for Config {
         form_width: 0.0,
         button: ButtonConfig::default(),
         decor: Vec::new(),
+        transition: TransitionConfig::default(),
       },
       clock: ClockConfig {
         enabled: true,
@@ -2226,6 +2688,10 @@ impl Default for Config {
         date_size: 18.0,
         color: None,
         date_color: None,
+        label: String::new(),
+        label_color: None,
+        label_size: 0.0,
+        label_tracking: 0.0,
         ghost: false,
         glow: None,
         glow_size: 0.0,
@@ -2315,6 +2781,8 @@ impl Default for Config {
         look: WidgetLook::default(),
         draggable: true,
       },
+      particles: ParticlesConfig::default(),
+      ticker: TickerConfig::default(),
       background: BackgroundConfig {
         kind: BackgroundKind::Auto,
         color: theme.preset.background_color(),
@@ -2474,20 +2942,22 @@ fn load_path(path: &Path, allow_package: bool) -> LoadedConfig {
 }
 
 fn discover() -> Option<PathBuf> {
-  if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
-    let candidate = PathBuf::from(xdg).join("dawn").join("config.toml");
+  discover_from(std::env::var_os(ENV_CONFIG), Path::new(SYSTEM_CONFIG))
+}
+
+/// Two layers only, and no XDG/home search. `XDG_CONFIG_HOME` is deliberately
+/// absent: a config placed there is invisible to the greeter user and having
+/// two possible machine configs makes "why did it load that file?" impossible
+/// to answer. Tests call this directly so they never have to mutate the process
+/// environment.
+fn discover_from(env: Option<OsString>, system: &Path) -> Option<PathBuf> {
+  if let Some(path) = env.filter(|value| !value.is_empty()) {
+    let candidate = PathBuf::from(path);
     if candidate.is_file() {
       return Some(candidate);
     }
   }
-  if let Some(home) = std::env::var_os("HOME").filter(|value| !value.is_empty()) {
-    let candidate = PathBuf::from(home).join(".config/dawn/config.toml");
-    if candidate.is_file() {
-      return Some(candidate);
-    }
-  }
-  let system = PathBuf::from("/etc/dawn/config.toml");
-  system.is_file().then_some(system)
+  system.is_file().then(|| system.to_path_buf())
 }
 
 /// Config is read once at boot. A cap keeps a mistaken `--config /dev/zero`
@@ -2943,6 +3413,146 @@ phase = 0.25
     assert!((0.0..1.0).contains(&wrapped));
     assert_eq!(motion.sample(2.0).loop_frac, 0.0);
     assert_eq!(super::DecorMotion::default().sample(1.0).loop_frac, 0.0);
+  }
+
+  #[test]
+  fn ticker_session_first_moves_the_live_session_and_keeps_defaults_stable() {
+    let ticker = super::TickerConfig {
+      enabled: true,
+      items: vec!["A".to_string(), "B".to_string()],
+      separator: " | ".to_string(),
+      session_first: false,
+      ..super::TickerConfig::default()
+    };
+    // Off is the historical run exactly.
+    assert_eq!(ticker.run(), "A | B | ");
+    assert_eq!(ticker.run_with(Some("GNOME")), "A | B | ");
+
+    let first = super::TickerConfig {
+      session_first: true,
+      ..ticker
+    };
+    assert_eq!(first.run_with(Some("GNOME")), "GNOME | A | B | ");
+    // The poster voice is uppercase without touching the actual session id.
+    assert_eq!(first.run_with(Some("gnome")), "GNOME | A | B | ");
+    // A missing session falls back to the configured list without an empty
+    // leading tile.
+    assert_eq!(first.run_with(Some("")), "A | B | ");
+    assert_eq!(first.run_with(None), "A | B | ");
+    // A configured duplicate does not stutter at the seam.
+    let duplicate = super::TickerConfig {
+      items: vec!["GNOME".to_string(), "B".to_string()],
+      ..first
+    };
+    assert_eq!(duplicate.run_with(Some("GNOME")), "GNOME | B | ");
+  }
+
+  #[test]
+  fn field_key_pop_defaults_off_and_accepts_a_theme_value() {
+    let defaults = super::FieldConfig::default_username();
+    assert_eq!(defaults.key_pop_ms, 0.0);
+    assert_eq!(defaults.key_pop_scale, 1.18);
+    assert!(defaults.key_pop_color.is_none());
+    // The pop defaults are inert: the byte-identical rule depends on the zero.
+    assert_eq!(super::FieldConfig::default_password().key_pop_ms, 0.0);
+  }
+
+  #[test]
+  fn burst_and_streak_keys_parse_with_off_defaults() {
+    assert_eq!(
+      super::BurstTrigger::parse("success"),
+      Some(super::BurstTrigger::Success)
+    );
+    assert_eq!(
+      super::BurstTrigger::parse("off"),
+      Some(super::BurstTrigger::None)
+    );
+    assert_eq!(super::BurstTrigger::parse("enter"), None);
+    assert_eq!(
+      super::ParticleSprite::parse("streak"),
+      Some(super::ParticleSprite::Streak)
+    );
+    let config = super::ParticlesConfig::default();
+    assert_eq!(config.burst_on, super::BurstTrigger::None);
+    assert_eq!(config.burst_count, 24);
+  }
+
+  #[test]
+  fn the_stage_call_keys_resolve_together() {
+    let path = temp_config(
+      "stage-call",
+      r##"
+[login.field]
+label_size = 9
+label_tracking = 0.3
+key_pop_ms = 140
+key_pop_scale = 1.2
+key_pop_color = "#ff7a3c"
+
+[login.transition]
+enabled = true
+trigger = "boot"
+
+[clock]
+label = "WANGSHENG PRESENTS"
+label_color = "#d8a84b"
+label_size = 11
+label_tracking = 0.3
+
+[particles]
+enabled = true
+burst_on = "success"
+burst_sprite = "streak"
+burst_count = 40
+
+[ticker]
+enabled = true
+session_first = true
+items = ["ONE"]
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(
+      loaded.issues.is_empty(),
+      "unexpected config issues: {:?}",
+      loaded.issues
+    );
+    let config = loaded.config;
+    assert_eq!(config.login.field.label_size, 9.0);
+    assert_eq!(config.login.field.label_tracking, 0.3);
+    assert_eq!(config.login.field.key_pop_ms, 140.0);
+    assert_eq!(config.login.field.key_pop_scale, 1.2);
+    assert!(config.login.field.key_pop_color.is_some());
+    assert_eq!(
+      config.login.transition.trigger,
+      super::TransitionTrigger::Boot
+    );
+    assert_eq!(config.clock.label, "WANGSHENG PRESENTS");
+    assert_eq!(config.clock.label_tracking, 0.3);
+    assert_eq!(config.particles.burst_on, super::BurstTrigger::Success);
+    assert_eq!(config.particles.burst_sprite, super::ParticleSprite::Streak);
+    assert_eq!(config.particles.burst_count, 40);
+    assert!(config.ticker.session_first);
+  }
+
+  #[test]
+  fn poster_is_a_distinct_full_bleed_layout() {
+    assert!(!super::LoginLayout::Card.is_full_bleed());
+    assert!(super::LoginLayout::Hero.is_full_bleed());
+    assert!(super::LoginLayout::Poster.is_full_bleed());
+    let path = temp_config(
+      "poster",
+      r##"
+[login]
+layout = "poster"
+width = 1920
+height = 1080
+surface = "none"
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    assert_eq!(loaded.config.login.layout, super::LoginLayout::Poster);
   }
 
   #[test]
@@ -4360,5 +4970,296 @@ adapter = "RTX"
 
     gpu.apply_env_value(Some("auto"));
     assert_eq!(gpu.adapter, "auto");
+  }
+
+  #[test]
+  fn transition_particles_and_ticker_round_trip() {
+    let path = temp_config(
+      "waves-round-trip",
+      r##"
+[login.transition]
+enabled = true
+trigger = "success"
+cuts = ["#ffffff", "#d41830", "#0e0b10"]
+cut_ms = 40
+shake = 8
+zoom = 0.1
+slam = "WELCOME TO THE PARLOR"
+slam_ms = 500
+slam_color = "#f3e7d2"
+slam_size = 72
+
+[particles]
+enabled = true
+count = 12
+sprite = "butterfly"
+color = "#ff7a3c"
+color2 = "#d41830"
+drift = "float"
+speed = 10.5
+size = 4
+opacity = 0.4
+layer = "front"
+
+[ticker]
+enabled = true
+items = ["ONE", "TWO", "THREE"]
+separator = " | "
+anchor = "top"
+offset = [12, 8]
+size = 24
+speed = 30
+color = "#d41830"
+bold = false
+tracking = 0.1
+layer = "front"
+
+[ticker.plate]
+style = "glass"
+color = "#0e0b1066"
+radius = 2
+padding = 6
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+
+    let transition = &loaded.config.login.transition;
+    assert!(transition.enabled);
+    assert_eq!(transition.trigger, super::TransitionTrigger::Success);
+    assert_eq!(transition.cuts.len(), 3);
+    assert_eq!(transition.cut_ms, 40.0);
+    assert_eq!(transition.shake, 8.0);
+    assert_eq!(transition.zoom, 0.1);
+    assert_eq!(transition.slam, "WELCOME TO THE PARLOR");
+    assert_eq!(transition.slam_ms, 500.0);
+    assert_eq!(transition.slam_size, 72.0);
+
+    let particles = &loaded.config.particles;
+    assert!(particles.enabled);
+    assert_eq!(particles.count, 12);
+    assert_eq!(particles.sprite, super::ParticleSprite::Butterfly);
+    assert_eq!(particles.drift, super::ParticleDrift::Float);
+    assert_eq!(particles.layer, super::ParticleLayer::Front);
+    assert_eq!(particles.speed, 10.5);
+    assert_eq!(particles.size, 4.0);
+    assert_eq!(particles.opacity, 0.4);
+
+    let ticker = &loaded.config.ticker;
+    assert!(ticker.enabled);
+    assert_eq!(ticker.items, vec!["ONE", "TWO", "THREE"]);
+    assert_eq!(ticker.separator, " | ");
+    assert_eq!(ticker.anchor, super::TickerAnchor::Top);
+    assert_eq!(ticker.offset, (12, 8));
+    assert_eq!(ticker.size, 24.0);
+    assert_eq!(ticker.speed, 30.0);
+    assert!(!ticker.bold);
+    assert_eq!(ticker.tracking, 0.1);
+    assert_eq!(ticker.layer, super::WidgetLayer::Front);
+    assert_eq!(ticker.plate.style, super::PlateStyle::Glass);
+    assert_eq!(
+      ticker.plate.color,
+      Some(crate::color::Rgb::rgba(0x0e, 0x0b, 0x10, 0x66))
+    );
+    assert_eq!(ticker.plate.radius, 2.0);
+    assert_eq!(ticker.plate.padding, 6.0);
+    assert_eq!(ticker.run(), "ONE | TWO | THREE | ");
+  }
+
+  #[test]
+  fn bad_transition_particles_and_ticker_values_fall_back() {
+    let path = temp_config(
+      "waves-bad",
+      r##"
+[login.transition]
+enabled = true
+trigger = "later"
+cuts = ["not-a-colour"]
+cut_ms = 5000
+shake = 999
+zoom = 2
+slam_size = 999
+slam_ms = 99999
+
+[particles]
+enabled = true
+count = 500
+sprite = "dragon"
+drift = "sideways"
+layer = "over"
+speed = 999
+size = 0
+opacity = 2
+
+[ticker]
+enabled = true
+items = ["OK", 7, ""]
+separator = " | "
+anchor = "middle"
+offset = [4, 5]
+size = 999
+speed = -1
+tracking = 4
+layer = "over"
+"##,
+    );
+    let loaded = load(Some(&path));
+    let transition = &loaded.config.login.transition;
+    assert!(transition.enabled);
+    assert_eq!(transition.trigger, super::TransitionTrigger::Enter);
+    assert_eq!(transition.cuts, super::TransitionConfig::default().cuts);
+    assert_eq!(transition.cut_ms, 55.0);
+    assert_eq!(transition.shake, 14.0);
+    assert_eq!(transition.zoom, 0.06);
+    assert_eq!(transition.slam_size, 92.0);
+    assert_eq!(transition.slam_ms, 900.0);
+
+    let particles = &loaded.config.particles;
+    assert_eq!(particles.count, 48);
+    assert_eq!(particles.sprite, super::ParticleSprite::Flame);
+    assert_eq!(particles.drift, super::ParticleDrift::Up);
+    assert_eq!(particles.layer, super::ParticleLayer::Behind);
+    assert_eq!(particles.speed, 24.0);
+    assert_eq!(particles.size, 6.0);
+    assert_eq!(particles.opacity, 0.55);
+
+    let ticker = &loaded.config.ticker;
+    assert_eq!(ticker.items, vec!["OK"]);
+    assert_eq!(ticker.anchor, super::TickerAnchor::Bottom);
+    assert_eq!(ticker.offset, (4, 5));
+    assert_eq!(ticker.size, 20.0);
+    assert_eq!(ticker.speed, 60.0);
+    assert_eq!(ticker.tracking, 0.2);
+    assert_eq!(ticker.layer, super::WidgetLayer::Behind);
+
+    for key in [
+      "login.transition.trigger",
+      "login.transition.cuts",
+      "login.transition.cut_ms",
+      "login.transition.shake",
+      "login.transition.zoom",
+      "login.transition.slam_size",
+      "login.transition.slam_ms",
+      "particles.count",
+      "particles.sprite",
+      "particles.drift",
+      "particles.layer",
+      "particles.speed",
+      "particles.size",
+      "particles.opacity",
+      "ticker.items",
+      "ticker.anchor",
+      "ticker.size",
+      "ticker.speed",
+      "ticker.tracking",
+      "ticker.layer",
+    ] {
+      assert!(
+        loaded.issues.iter().any(|issue| issue.key == key),
+        "missing issue {key}: {:?}",
+        loaded.issues
+      );
+    }
+  }
+
+  #[test]
+  fn the_new_tables_default_to_off() {
+    let loaded = load(Some(&PathBuf::from("/nonexistent/dawn/config.toml")));
+    assert!(!loaded.config.login.transition.enabled);
+    assert!(!loaded.config.particles.enabled);
+    assert!(!loaded.config.ticker.enabled);
+    assert_eq!(
+      loaded.config.login.transition.trigger,
+      super::TransitionTrigger::Enter
+    );
+  }
+}
+
+#[cfg(test)]
+mod precedence_tests {
+  use std::ffi::OsString;
+  use std::path::{Path, PathBuf};
+
+  use super::{MISSING_CONFIG_HINT, discover_from, missing_config_hint};
+
+  fn temp_dir(name: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!(
+      "dawn-precedence-{name}-{}-{}",
+      std::process::id(),
+      std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default()
+    ));
+    std::fs::create_dir_all(&path).expect("create temp dir");
+    path
+  }
+
+  #[test]
+  fn env_config_beats_the_system_path() {
+    let dir = temp_dir("env");
+    let env = dir.join("env.toml");
+    let system = dir.join("system.toml");
+    std::fs::write(&env, "[ui]\nfont_size = 17\n").expect("env config");
+    std::fs::write(&system, "[ui]\nfont_size = 18\n").expect("system config");
+    assert_eq!(
+      discover_from(Some(OsString::from(env.to_str().unwrap())), &system),
+      Some(env)
+    );
+    std::fs::remove_dir_all(dir).expect("cleanup");
+  }
+
+  #[test]
+  fn system_path_is_used_when_env_is_absent_or_missing() {
+    let dir = temp_dir("system");
+    let system = dir.join("system.toml");
+    std::fs::write(&system, "[ui]\nfont_size = 18\n").expect("system config");
+    assert_eq!(discover_from(None, &system), Some(system.clone()));
+    assert_eq!(
+      discover_from(Some(OsString::from("/nonexistent/dawn.toml")), &system),
+      Some(system)
+    );
+    std::fs::remove_dir_all(dir).expect("cleanup");
+  }
+
+  #[test]
+  fn absent_everything_means_defaults_and_one_hint() {
+    let dir = temp_dir("absent");
+    let system = dir.join("missing.toml");
+    assert_eq!(discover_from(None, &system), None);
+    assert_eq!(missing_config_hint(None), Some(MISSING_CONFIG_HINT));
+    assert_eq!(
+      MISSING_CONFIG_HINT,
+      "no machine config; create it: sudo dawn init"
+    );
+    // A loaded path suppresses the hint, which is what makes main print it at
+    // most once per run.
+    assert_eq!(
+      missing_config_hint(Some(Path::new("/etc/dawn/config.toml"))),
+      None
+    );
+    std::fs::remove_dir_all(dir).expect("cleanup");
+  }
+
+  #[test]
+  fn xdg_config_home_is_not_a_discovery_input() {
+    // The test creates a valid config under a fake XDG tree and proves the
+    // resolver has no way to reach it: `discover_from` takes only the env
+    // override and the system path. This is stronger than setting the process
+    // variable, which would leak into parallel tests.
+    let dir = temp_dir("xdg");
+    let xdg_config = dir.join("xdg/dawn/config.toml");
+    std::fs::create_dir_all(xdg_config.parent().expect("parent")).expect("xdg dir");
+    std::fs::write(&xdg_config, "[ui]\nfont_size = 30\n").expect("xdg config");
+    let system = dir.join("system.toml");
+    std::fs::write(&system, "[ui]\nfont_size = 17\n").expect("system config");
+
+    assert_ne!(
+      discover_from(None, &system),
+      Some(xdg_config),
+      "the XDG path must never win"
+    );
+    assert_eq!(discover_from(None, &system), Some(system));
+    std::fs::remove_dir_all(dir).expect("cleanup");
   }
 }

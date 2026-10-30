@@ -14,17 +14,19 @@ use toml::Value;
 
 use crate::color::Rgb;
 use crate::config::raw::{
-  Field, RawBackgroundOverride, RawConfig, RawField, RawGpu, RawWidgetPlate,
+  Field, RawBackgroundOverride, RawConfig, RawField, RawGpu, RawParticles, RawTicker,
+  RawTransition, RawWidgetPlate,
 };
 use crate::config::{
   AuthConfig, BackgroundConfig, BackgroundKind, BackgroundOverride, BatteryConfig, BatteryStyle,
   BlurConfig, ButtonEffect, CalendarConfig, CaretStyle, ClockConfig, ClockStyle, Config,
   DecorMotion, EnterFrom, EnterStyle, FieldConfig, GpuBackend, GpuConfig, GpuDevice, GpuFallback,
   GpuPower, GpuPresent, HintConfig, HoverReveal, Issue, LayoutConfig, Location, LoginConfig,
-  MediaArt, MediaConfig, MediaLayout, MediaLook, MediaProgress, MotionConfig, PlateStyle,
-  PluginsConfig, PowerConfig, SecondHand, SessionRowConfig, SessionsConfig, SurfaceStyle,
-  SystemConfig, SystemField, SystemStyle, ThemeConfig, ThemePreset, UiConfig, WeekStart,
-  WidgetLayer, WidgetLook, WidgetPlate, WidgetState,
+  MediaArt, MediaConfig, MediaLayout, MediaLook, MediaProgress, MotionConfig, ParticleDrift,
+  ParticleLayer, ParticleSprite, ParticlesConfig, PlateStyle, PluginsConfig, PowerConfig,
+  SecondHand, SessionRowConfig, SessionsConfig, SurfaceStyle, SystemConfig, SystemField,
+  SystemStyle, ThemeConfig, ThemePreset, TickerAnchor, TickerConfig, TransitionConfig,
+  TransitionTrigger, UiConfig, WeekStart, WidgetLayer, WidgetLook, WidgetPlate, WidgetState,
 };
 use crate::layout::{Anchor, Fit, Placement};
 
@@ -330,6 +332,7 @@ impl<'a> Validator<'a> {
       ) as f32,
       button: self.button_config(&raw.login.button, &login_defaults.button),
       decor: self.decor(&raw.login.decor, base),
+      transition: self.transition(&raw.login.transition),
     };
 
     let layout = LayoutConfig {
@@ -413,6 +416,29 @@ impl<'a> Validator<'a> {
       ) as f32,
       color: self.optional_color(raw.clock.color.as_ref(), "clock.color"),
       date_color: self.optional_color(raw.clock.date_color.as_ref(), "clock.date_color"),
+      label: self
+        .string_value(
+          raw.clock.label.as_ref(),
+          "clock.label",
+          "expected a short label",
+          64,
+        )
+        .unwrap_or_else(|| defaults.clock.label.clone()),
+      label_color: self.optional_color(raw.clock.label_color.as_ref(), "clock.label_color"),
+      label_size: self.range(
+        raw.clock.label_size.as_ref(),
+        "clock.label_size",
+        f64::from(defaults.clock.label_size),
+        0.0,
+        48.0,
+      ) as f32,
+      label_tracking: self.range(
+        raw.clock.label_tracking.as_ref(),
+        "clock.label_tracking",
+        f64::from(defaults.clock.label_tracking),
+        0.0,
+        0.5,
+      ) as f32,
       ghost: self.boolean(
         raw.clock.ghost.as_ref(),
         "clock.ghost",
@@ -765,6 +791,9 @@ impl<'a> Validator<'a> {
       ),
     };
 
+    let particles = self.particles(&raw.particles);
+    let ticker = self.ticker(&raw.ticker);
+
     let background = BackgroundConfig {
       kind: self.background_kind(
         raw.background.kind.as_ref(),
@@ -1015,6 +1044,8 @@ impl<'a> Validator<'a> {
       calendar,
       battery,
       system,
+      particles,
+      ticker,
       background,
       theme,
       motion,
@@ -1025,6 +1056,331 @@ impl<'a> Validator<'a> {
       plugins,
       auth,
     }
+  }
+
+  /// Resolves `[login.transition]`.
+  ///
+  /// A cut list that ends up empty is replaced by the default three-colour
+  /// flash rather than silently producing a sequence with no phase A. The slam
+  /// text may be empty on purpose: that turns the sequence into a pure colour
+  /// montage.
+  fn transition(&mut self, raw: &RawTransition) -> TransitionConfig {
+    let defaults = TransitionConfig::default();
+    TransitionConfig {
+      enabled: self.boolean(
+        raw.enabled.as_ref(),
+        "login.transition.enabled",
+        defaults.enabled,
+      ),
+      trigger: self.choice(
+        raw.trigger.as_ref(),
+        "login.transition.trigger",
+        defaults.trigger,
+        TransitionTrigger::parse,
+        "enter, success, both, boot, or failure",
+      ),
+      cuts: self.color_list(
+        raw.cuts.as_ref(),
+        "login.transition.cuts",
+        &defaults.cuts,
+        8,
+      ),
+      cut_ms: self.range(
+        raw.cut_ms.as_ref(),
+        "login.transition.cut_ms",
+        f64::from(defaults.cut_ms),
+        0.0,
+        1000.0,
+      ) as f32,
+      shake: self.range(
+        raw.shake.as_ref(),
+        "login.transition.shake",
+        f64::from(defaults.shake),
+        0.0,
+        64.0,
+      ) as f32,
+      zoom: self.range(
+        raw.zoom.as_ref(),
+        "login.transition.zoom",
+        f64::from(defaults.zoom),
+        0.0,
+        0.5,
+      ) as f32,
+      slam: self
+        .string_value(
+          raw.slam.as_ref(),
+          "login.transition.slam",
+          "expected a short line",
+          96,
+        )
+        .unwrap_or_else(|| defaults.slam.clone()),
+      slam_ms: self.range(
+        raw.slam_ms.as_ref(),
+        "login.transition.slam_ms",
+        f64::from(defaults.slam_ms),
+        0.0,
+        10000.0,
+      ) as f32,
+      slam_color: self.color(
+        raw.slam_color.as_ref(),
+        "login.transition.slam_color",
+        defaults.slam_color,
+      ),
+      slam_size: self.range(
+        raw.slam_size.as_ref(),
+        "login.transition.slam_size",
+        f64::from(defaults.slam_size),
+        8.0,
+        240.0,
+      ) as f32,
+    }
+  }
+
+  /// Resolves `[particles]`. The count is clamped by the same cap the emitter
+  /// enforces, so a huge value costs one warning and then stays sane.
+  fn particles(&mut self, raw: &RawParticles) -> ParticlesConfig {
+    let defaults = ParticlesConfig::default();
+    ParticlesConfig {
+      enabled: self.boolean(raw.enabled.as_ref(), "particles.enabled", defaults.enabled),
+      count: self.integer_range(
+        raw.count.as_ref(),
+        "particles.count",
+        u64::from(defaults.count),
+        0,
+        u64::from(crate::config::MAX_PARTICLES),
+      ) as u32,
+      sprite: self.choice(
+        raw.sprite.as_ref(),
+        "particles.sprite",
+        defaults.sprite,
+        ParticleSprite::parse,
+        "flame, butterfly, dot, or streak",
+      ),
+      color: self.color(raw.color.as_ref(), "particles.color", defaults.color),
+      color2: self.color(raw.color2.as_ref(), "particles.color2", defaults.color2),
+      drift: self.choice(
+        raw.drift.as_ref(),
+        "particles.drift",
+        defaults.drift,
+        ParticleDrift::parse,
+        "up, down, or float",
+      ),
+      speed: self.range(
+        raw.speed.as_ref(),
+        "particles.speed",
+        f64::from(defaults.speed),
+        0.0,
+        400.0,
+      ) as f32,
+      size: self.range(
+        raw.size.as_ref(),
+        "particles.size",
+        f64::from(defaults.size),
+        1.0,
+        48.0,
+      ) as f32,
+      opacity: self.range(
+        raw.opacity.as_ref(),
+        "particles.opacity",
+        f64::from(defaults.opacity),
+        0.0,
+        1.0,
+      ) as f32,
+      layer: self.choice(
+        raw.layer.as_ref(),
+        "particles.layer",
+        defaults.layer,
+        ParticleLayer::parse,
+        "behind or front",
+      ),
+      burst_on: self.choice(
+        raw.burst_on.as_ref(),
+        "particles.burst_on",
+        defaults.burst_on,
+        crate::config::BurstTrigger::parse,
+        "none or success",
+      ),
+      burst_sprite: self.choice(
+        raw.burst_sprite.as_ref(),
+        "particles.burst_sprite",
+        defaults.burst_sprite,
+        ParticleSprite::parse,
+        "flame, butterfly, dot, or streak",
+      ),
+      burst_count: self.integer_range(
+        raw.burst_count.as_ref(),
+        "particles.burst_count",
+        u64::from(defaults.burst_count),
+        0,
+        u64::from(crate::config::MAX_BURST_PARTICLES),
+      ) as u32,
+    }
+  }
+
+  /// Resolves `[ticker]`. Items are capped before they reach the text engine;
+  /// an enabled ticker with no usable lines is reported but stays harmless.
+  fn ticker(&mut self, raw: &RawTicker) -> TickerConfig {
+    let defaults = TickerConfig::default();
+    let enabled = self.boolean(raw.enabled.as_ref(), "ticker.enabled", defaults.enabled);
+    let items = self.text_list(raw.items.as_ref(), "ticker.items", 8, 128);
+    if enabled && items.is_empty() {
+      self.issue(
+        "ticker.items",
+        raw.items.as_ref(),
+        "enabled ticker has no usable items, so nothing will scroll",
+      );
+    }
+    TickerConfig {
+      enabled,
+      items,
+      separator: self
+        .literal_value(
+          raw.separator.as_ref(),
+          "ticker.separator",
+          "expected a short separator",
+          32,
+        )
+        .unwrap_or_else(|| defaults.separator.clone()),
+      anchor: self.choice(
+        raw.anchor.as_ref(),
+        "ticker.anchor",
+        defaults.anchor,
+        TickerAnchor::parse,
+        "top or bottom",
+      ),
+      offset: self.offset(raw.offset.as_ref(), "ticker.offset", defaults.offset),
+      size: self.range(
+        raw.size.as_ref(),
+        "ticker.size",
+        f64::from(defaults.size),
+        8.0,
+        96.0,
+      ) as f32,
+      speed: self.range(
+        raw.speed.as_ref(),
+        "ticker.speed",
+        f64::from(defaults.speed),
+        0.0,
+        400.0,
+      ) as f32,
+      color: self.color(raw.color.as_ref(), "ticker.color", defaults.color),
+      bold: self.boolean(raw.bold.as_ref(), "ticker.bold", defaults.bold),
+      tracking: self.range(
+        raw.tracking.as_ref(),
+        "ticker.tracking",
+        f64::from(defaults.tracking),
+        0.0,
+        0.5,
+      ) as f32,
+      layer: self.widget_layer(raw.layer.as_ref(), "ticker.layer", defaults.layer),
+      session_first: self.boolean(
+        raw.session_first.as_ref(),
+        "ticker.session_first",
+        defaults.session_first,
+      ),
+      plate: self.plate(&raw.plate, "ticker.plate"),
+    }
+  }
+
+  /// A bounded list of colour strings. Missing values use `default`; an array
+  /// whose entries all fail to parse also falls back instead of leaving a
+  /// phase-less transition or an invisible emitter.
+  fn color_list(
+    &mut self,
+    field: Option<&Field>,
+    key: &str,
+    default: &[Rgb],
+    max: usize,
+  ) -> Vec<Rgb> {
+    let Some(field) = field else {
+      return default.to_vec();
+    };
+    let Some(values) = field.get_ref().as_array() else {
+      self.issue(
+        key,
+        Some(field),
+        "expected an array of hex colours such as [\"#ffffff\", \"#d41830\"]",
+      );
+      return default.to_vec();
+    };
+    if values.len() > max {
+      self.issue(key, Some(field), format!("accepts at most {max} colours"));
+    }
+    let mut colours = Vec::new();
+    for value in values.iter().take(max) {
+      let Some(text) = value.as_str() else {
+        self.issue(key, Some(field), "every entry must be a hex colour string");
+        continue;
+      };
+      match Rgb::parse(text) {
+        Ok(colour) => colours.push(colour),
+        Err(error) => self.issue(key, Some(field), error.to_string()),
+      }
+    }
+    if colours.is_empty() {
+      self.issue(key, Some(field), "no usable colours; using the defaults");
+      default.to_vec()
+    } else {
+      colours
+    }
+  }
+
+  /// A bounded list of short text runs for the ticker. Empty entries are
+  /// dropped because they would only add an invisible gap.
+  fn text_list(
+    &mut self,
+    field: Option<&Field>,
+    key: &str,
+    max_items: usize,
+    max_chars: usize,
+  ) -> Vec<String> {
+    let Some(field) = field else {
+      return Vec::new();
+    };
+    let Some(values) = field.get_ref().as_array() else {
+      self.issue(
+        key,
+        Some(field),
+        "expected an array of strings such as [\"FIRST\", \"SECOND\"]",
+      );
+      return Vec::new();
+    };
+    if values.len() > max_items {
+      self.issue(
+        key,
+        Some(field),
+        format!("accepts at most {max_items} items"),
+      );
+    }
+    let mut items = Vec::new();
+    for value in values.iter().take(max_items) {
+      let Some(text) = value.as_str() else {
+        self.issue(key, Some(field), "every item must be a string");
+        continue;
+      };
+      let text = text.trim();
+      if text.is_empty() {
+        continue;
+      }
+      if text.chars().count() > max_chars {
+        self.issue(
+          key,
+          Some(field),
+          format!("every item must be at most {max_chars} characters"),
+        );
+        continue;
+      }
+      if text.chars().any(char::is_control) {
+        self.issue(
+          key,
+          Some(field),
+          "items must not contain control characters",
+        );
+        continue;
+      }
+      items.push(text.to_string());
+    }
+    items
   }
 
   fn location(&self, field: &Field) -> Option<Location> {
@@ -1060,6 +1416,36 @@ impl<'a> Validator<'a> {
       return None;
     };
     let value = value.trim();
+    if value.chars().count() > max_chars {
+      self.issue(
+        key,
+        Some(field),
+        format!("must be at most {max_chars} characters"),
+      );
+      return None;
+    }
+    if value.chars().any(char::is_control) {
+      self.issue(key, Some(field), "must not contain control characters");
+      return None;
+    }
+    Some(value.to_string())
+  }
+
+  /// Like [`Self::string_value`], but keeps leading and trailing spaces. The
+  /// ticker separator is one of the few values where the whitespace is the
+  /// design, so trimming it would silently change the marquee rhythm.
+  fn literal_value(
+    &mut self,
+    field: Option<&Field>,
+    key: &str,
+    expectation: &str,
+    max_chars: usize,
+  ) -> Option<String> {
+    let field = field?;
+    let Some(value) = field.get_ref().as_str() else {
+      self.issue(key, Some(field), expectation);
+      return None;
+    };
     if value.chars().count() > max_chars {
       self.issue(
         key,
@@ -1416,11 +1802,15 @@ impl<'a> Validator<'a> {
     match value {
       "card" => crate::config::LoginLayout::Card,
       "hero" => crate::config::LoginLayout::Hero,
+      // A poster is the full-bleed frame without a surface. It shares the hero
+      // geometry (a fixed frame with `form_offset`) but the name describes the
+      // cardless result an author actually wants.
+      "poster" => crate::config::LoginLayout::Poster,
       _ => {
         self.issue(
           "login.layout",
           Some(field),
-          format!("unknown layout {value:?}; use card or hero"),
+          format!("unknown layout {value:?}; use card, hero, or poster"),
         );
         default
       }
@@ -2571,6 +2961,23 @@ impl<'a> Validator<'a> {
         own.label_color.as_ref().or(shared.label_color.as_ref()),
         &key("label_color"),
       ),
+      label_size: self.range(
+        own.label_size.as_ref().or(shared.label_size.as_ref()),
+        &key("label_size"),
+        f64::from(default.label_size),
+        0.0,
+        64.0,
+      ) as f32,
+      label_tracking: self.range(
+        own
+          .label_tracking
+          .as_ref()
+          .or(shared.label_tracking.as_ref()),
+        &key("label_tracking"),
+        f64::from(default.label_tracking),
+        0.0,
+        0.5,
+      ) as f32,
       placeholder: text(
         self,
         own.placeholder.as_ref(),
@@ -2702,6 +3109,24 @@ impl<'a> Validator<'a> {
         shared.mask.as_ref(),
         "mask",
         &default.mask,
+      ),
+      key_pop_ms: self.range(
+        own.key_pop_ms.as_ref().or(shared.key_pop_ms.as_ref()),
+        &key("key_pop_ms"),
+        f64::from(default.key_pop_ms),
+        0.0,
+        2000.0,
+      ) as f32,
+      key_pop_scale: self.range(
+        own.key_pop_scale.as_ref().or(shared.key_pop_scale.as_ref()),
+        &key("key_pop_scale"),
+        f64::from(default.key_pop_scale),
+        1.0,
+        2.5,
+      ) as f32,
+      key_pop_color: self.optional_color(
+        own.key_pop_color.as_ref().or(shared.key_pop_color.as_ref()),
+        &key("key_pop_color"),
       ),
     }
   }
