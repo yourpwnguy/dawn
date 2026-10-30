@@ -640,6 +640,27 @@ impl<'a> Validator<'a> {
         1.0,
         21.0,
       ) as f32,
+      scanlines: self.range(
+        raw.theme.scanlines.as_ref(),
+        "theme.scanlines",
+        f64::from(tokens.scanlines),
+        0.0,
+        1.0,
+      ) as f32,
+      scanline_gap: self.integer_range(
+        raw.theme.scanline_gap.as_ref(),
+        "theme.scanline_gap",
+        u64::from(tokens.scanline_gap),
+        2,
+        12,
+      ) as u32,
+      scanline_ms: self.range(
+        raw.theme.scanline_ms.as_ref(),
+        "theme.scanline_ms",
+        f64::from(tokens.scanline_ms),
+        1000.0,
+        20000.0,
+      ) as f32,
     };
 
     let motion = MotionConfig {

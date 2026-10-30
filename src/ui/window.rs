@@ -47,7 +47,7 @@ use crate::ui::canvas::Canvas;
 use crate::ui::drag::{Drag, HitRegion};
 use crate::ui::glass::GlassCache;
 use crate::ui::gpu;
-use crate::ui::media::{self, MediaHandle};
+use crate::ui::media::{self, MediaControl, MediaHandle};
 use crate::ui::motion::MotionFrame;
 use crate::ui::render::{self, Scene};
 use crate::ui::text::TextEngine;
@@ -277,6 +277,30 @@ struct Handler {
   /// Coalesces wallpaper wakeups. Without it a slow paint can queue one event
   /// per decoded frame and fall further behind the video.
   frame_pending: Arc<AtomicBool>,
+}
+
+/// Parses a media button hit region id.
+///
+/// The renderer builds these ids as `media:<index>:<action>`, where the index
+/// is the position in `App::media_states()`. Anything else returns `None`, so a
+/// malformed or hostile id simply falls through to the rest of the click
+/// policy. The index is allowed to be any `usize` here; the caller checks it
+/// against the live handle list, which is what makes an out-of-range id safely
+/// do nothing instead of panicking.
+fn media_control_id(id: &str) -> Option<(usize, MediaControl)> {
+  let rest = id.strip_prefix("media:")?;
+  let (index, action) = rest.split_once(':')?;
+  if action.contains(':') {
+    return None;
+  }
+  let index = index.parse::<usize>().ok()?;
+  let control = match action {
+    "prev" => MediaControl::Previous,
+    "play" => MediaControl::PlayPause,
+    "next" => MediaControl::Next,
+    _ => return None,
+  };
+  Some((index, control))
 }
 
 impl Handler {
@@ -621,6 +645,11 @@ impl Handler {
         return Err("cannot allocate the UI overlay".to_string());
       };
       canvas.clear_transparent();
+      // The GPU path keeps the wallpaper in its own texture, so the CRT
+      // overlay goes on the transparent UI layer first. The form then paints
+      // over it, which keeps the same wallpaper-under-text ordering as the
+      // CPU path.
+      render::draw_scanlines(canvas, &scene);
       self.regions = render::paint_overlay(canvas, &mut self.text, &self.glass, &scene);
       self.last_overlay_at = Some(Instant::now());
       renderer.set_ui(canvas.pixmap())?;
@@ -721,6 +750,20 @@ impl Handler {
       self.app.key(Key::Enter);
       self.request_redraw();
       self.maybe_finish(event_loop);
+      return;
+    }
+    // Media transport buttons are ordinary hit regions. We parse the id rather
+    // than comparing strings so a malformed id cannot be mistaken for a field,
+    // and an index that no longer has a live handle simply does nothing.
+    if let Some((index, control)) = id.and_then(media_control_id) {
+      if let Some(handle) = self._media.get(index) {
+        // A dropped worker is the only reason this can fail, and the next
+        // snapshot wake-up will repaint anyway. The click still belongs to the
+        // widget, so we return instead of falling through to field focus.
+        let _ = handle.control(control);
+        self.ui_dirty = true;
+        self.request_redraw();
+      }
       return;
     }
     let focused = match id {
@@ -1019,5 +1062,59 @@ fn translate_key(event: &KeyEvent, modifiers: ModifiersState) -> Option<Key> {
       .filter(|ch| !ch.is_control())
       .map(Key::Char),
     _ => None,
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::media_control_id;
+  use crate::ui::media::MediaControl;
+
+  #[test]
+  fn media_control_ids_map_to_the_right_action() {
+    assert_eq!(
+      media_control_id("media:0:prev"),
+      Some((0, MediaControl::Previous))
+    );
+    assert_eq!(
+      media_control_id("media:12:play"),
+      Some((12, MediaControl::PlayPause))
+    );
+    assert_eq!(
+      media_control_id("media:3:next"),
+      Some((3, MediaControl::Next))
+    );
+  }
+
+  #[test]
+  fn malformed_media_ids_are_ignored() {
+    // Missing pieces, extra pieces, unknown actions, and values that would
+    // overflow a usize all have to fall through without panicking.
+    for id in [
+      "",
+      "media",
+      "media:",
+      "media:0",
+      "media::play",
+      "media:0:stop",
+      "media:0:play:extra",
+      "music:0:play",
+      "media:-1:play",
+      "media:abc:play",
+      "media:999999999999999999999999999999:play",
+    ] {
+      assert_eq!(media_control_id(id), None, "{id:?} should be ignored");
+    }
+  }
+
+  #[test]
+  fn a_parseable_index_is_left_for_the_handle_lookup() {
+    // The parser is deliberately not bound to the current handle count. A
+    // valid id with a large index is still well formed; `pointer_press` drops
+    // it with a checked `.get(index)` rather than treating it as malformed.
+    assert_eq!(
+      media_control_id("media:42:next"),
+      Some((42, MediaControl::Next))
+    );
   }
 }

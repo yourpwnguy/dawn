@@ -62,6 +62,13 @@ pub struct Theme {
   pub shadow: Rgb,
   pub focus_ring: Rgb,
   pub min_contrast: f32,
+  /// CRT scanline strength, 0 to 1. See `ThemeConfig::scanlines`.
+  pub scanlines: f32,
+  /// Physical pixel spacing between scanlines.
+  pub scanline_gap: u32,
+  /// Sweep period in milliseconds. The static lines ignore it; the moving band
+  /// uses it as its cycle time.
+  pub scanline_ms: f32,
   pub font_size: f32,
   pub card_width: f32,
   pub greeting: String,
@@ -157,7 +164,8 @@ impl Theme {
       && (self.decor.iter().any(|item| item.motion.active())
         || self.clock_look.motion.active()
         || self.media_look.motion.active()
-        || self.clock_face_animating)
+        || self.clock_face_animating
+        || self.scanlines > 0.0)
   }
 }
 
@@ -180,6 +188,9 @@ impl From<&Config> for Theme {
       shadow: config.theme.shadow,
       focus_ring: config.theme.focus_ring,
       min_contrast: config.theme.min_contrast,
+      scanlines: config.theme.scanlines,
+      scanline_gap: config.theme.scanline_gap,
+      scanline_ms: config.theme.scanline_ms,
       font_size: config.ui.font_size,
       card_width: config.login.width,
       greeting: config.login.greeting.clone(),
