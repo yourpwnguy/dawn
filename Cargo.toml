@@ -89,7 +89,7 @@ wgpu = { version = "=30.0.1", default-features = false, features = [
     "gles",
 ] }
 bytemuck = { version = "1", features = ["derive"] }
-pollster = "0.4"
+pollster = "1.0"
 
 # CPU drawing (rounded rects, gradients, image scaling) and text shaping.
 tiny-skia = { version = "0.12", features = ["png-format"] }
