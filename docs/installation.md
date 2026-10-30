@@ -128,9 +128,11 @@ in
 }
 ```
 
-`DAWN_THEME_DIRS` is a colon-separated list of extra read-only theme stores.
-`dawn add` never writes there, which keeps NixOS declarative. On a mutable
-system you can still use `/usr/share/dawn/themes` and `dawn add --system PATH`.
+`DAWN_THEME_DIRS` is a colon-separated list of extra read-only system theme
+stores. `dawn add` never writes there, which keeps NixOS declarative. On a
+mutable system the canonical store is `/usr/share/dawn/themes`, and `dawn add`
+writes there by default (run it with sudo). `--user` is still available for the
+deprecated XDG store used by packaging tests and sandboxes.
 
 ## Install the binary
 
@@ -145,21 +147,34 @@ else to run.
 
 ## Install a config
 
-The neutral example is a complete config:
+Let dawn write the commented first-run config:
 
 ```sh
-sudo install -Dm644 examples/config.toml /etc/dawn/config.toml
+sudo dawn init
+```
+
+It refuses to replace an existing file; pass `--force` to rewrite it. Use
+`dawn init --config PATH` to write an explicit file, for example in a test or a
+staging directory.
+
+If you prefer to start from the built-in defaults, let dawn write them:
+
+```sh
+sudo dawn init
 ```
 
 dawn reads, in order:
 
 1. `--config PATH`
-2. `$XDG_CONFIG_HOME/dawn/config.toml`
-3. `~/.config/dawn/config.toml`
-4. `/etc/dawn/config.toml`
+2. `DAWN_CONFIG`
+3. `/etc/dawn/config.toml`
 
-A greeter usually has no useful `HOME`, so `/etc/dawn/config.toml` is the
-normal choice. Keep it readable by the `greeter` user:
+There is no per-user config search. A greeter usually has no useful `HOME`, so a
+file under `$XDG_CONFIG_HOME` would not be the one the login screen reads.
+When none of the three exists, dawn runs on the built-in defaults and prints
+one line: `no machine config; create it: sudo dawn init`.
+
+Keep `/etc/dawn/config.toml` readable by the `greeter` user:
 
 ```sh
 sudo chmod 644 /etc/dawn/config.toml
@@ -171,8 +186,9 @@ reason.
 
 ## Use a theme bundle
 
-A theme bundle is one directory containing a manifest, a complete config, and
-every asset the config names:
+A DSB-2 bundle is one directory with exactly four required artifacts. Media
+lives under `assets/`. The normative layout, manifest schema, and numbered
+validation rules are in [bundle-spec.md](bundle-spec.md).
 
 ```text
 midnight/
@@ -181,46 +197,77 @@ midnight/
   preview.webp
   assets/
     crest.png
-    rule.svg
-  wallpaper.mp4
+    wallpaper.mp4
 ```
 
 `theme.toml` describes the bundle:
 
 ```toml
-schema = 1
+[spec]
+revision = 2
+
+[bundle]
 id = "midnight"
 name = "Midnight"
 version = "1.0.0"
 description = "A dark cardless login."
 preview = "preview.webp"
+
+[bundle.engine]
+min = "0.5.0"
+
+[[author]]
+name = "Ada Grey"
+role = "layout"
 ```
 
-`config.toml` is a normal dawn config. All paths in it must be relative to the
-bundle directory. A bundle must not set `layout.save = true` or select another
-theme with `[theme].package`.
+`config.toml` is a normal dawn config. All asset paths in it must be relative to
+the bundle root and must live under `assets/`. A bundle must not set
+`layout.save = true` or select another theme with `[theme].package`.
 
+Create a commented bundle and validate it before installing:
+
+```sh
+dawn new ./themes --id midnight
+dawn check ./themes/midnight
+sudo dawn add ./themes/midnight
+```
+
+`dawn check` exits 0 with zero issues and prints a numbered report such as
+`rule 2: config.toml: image "wallpaper.mp4" must live under assets/` otherwise.
 Install one bundle, or a directory containing several bundles:
 
 ```sh
-dawn add ./midnight
-dawn add ./themes
+sudo dawn add ./midnight
+sudo dawn add ./themes
 dawn list
 ```
 
-The default store is `$XDG_DATA_HOME/dawn/themes`, normally
-`~/.local/share/dawn/themes`. A real greeter runs as the `greeter` user, which
-usually cannot read your home directory. Install system themes with:
+The default store is `/usr/share/dawn/themes`. A real greeter runs as the
+`greeter` user, which usually cannot read your home directory, so system
+themes are the normal choice. `--user` installs into
+`$XDG_DATA_HOME/dawn/themes` instead, normally `~/.local/share/dawn/themes`,
+for packaging tests and sandboxes. `--system` is still accepted and is now the
+default. Lookup checks the system store and every `DAWN_THEME_DIRS` entry first;
+a theme that exists only in the user store still loads but warns that it should
+be reinstalled with `sudo dawn add PATH --force`.
+
+`dawn add` validates the manifest, the full config, every asset reference, and
+the tree against the DSB-2 rules. It rejects symlinks, absolute asset paths,
+references outside `assets/`, and bundles larger than 8 GiB. Installs are staged
+and renamed into place, so a failed validation leaves the previous theme
+untouched. Pass `--force` to replace an installed theme with the same id.
+
+Revision 1 bundles still install as before, with one warning naming the
+migration command. Upgrade a tree in place with:
 
 ```sh
-sudo dawn add --system ./midnight
+sudo dawn add ./old-theme --migrate --force
 ```
 
-That writes to `/usr/share/dawn/themes`. `dawn add` validates the manifest, the
-full config, every referenced image, plugin directory, and the asset tree. It
-rejects symlinks, absolute asset paths, and bundles larger than 8 GiB. Installs
-are staged and renamed into place, so a failed validation leaves the previous
-theme untouched. Pass `--force` to replace an installed theme with the same id.
+Migration moves root-level media into `assets/`, patches the matching config
+references, fills in a placeholder author marked as a TODO, rewrites the
+manifest as revision 2, and validates the result before replacing anything.
 
 Run a theme for one session:
 
@@ -239,10 +286,10 @@ package = "midnight"
 A pointer config is not merged with the bundle. The bundle's config is the
 single source of truth, and the pointer file only chooses it.
 
-Remove a user theme with `dawn remove midnight`. Use `dawn remove --system
-midnight` for the system store. `dawn list` shows each theme's id, version,
-source, and name. Broken bundles are reported as warnings and skipped instead
-of breaking the list.
+Remove a system theme with `sudo dawn remove midnight` (the default store).
+Use `dawn remove --user midnight` for the user store; `--system` is still
+accepted. `dawn list` shows each theme's id, version, source, and name. Broken
+bundles are reported as warnings and skipped instead of breaking the list.
 
 The repository has six complete bundles under `examples/themes/` you can add,
 inspect, or copy as a starting point.

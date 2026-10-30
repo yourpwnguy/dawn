@@ -82,7 +82,7 @@ jobs:
             'Name=CI Session' \
             'Exec=/bin/true' \
             | sudo tee /usr/share/wayland-sessions/dawn-ci.desktop >/dev/null
-          ./target/release/dawn --config examples/config.toml --check-config
+          ./target/release/dawn --config src/default-config.toml --check-config
 
       - name: theme store check
         run: |

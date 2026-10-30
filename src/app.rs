@@ -28,7 +28,7 @@ use tracing::{info, warn};
 
 use crate::auth::model::{Launch, NoticeKind, Prompt, PromptKind};
 use crate::auth::worker::{Event, WorkerHandle};
-use crate::config::Config;
+use crate::config::{Config, SESSION_FLASH_MS};
 use crate::plugin::{self, Plugin};
 use crate::session::Session;
 use crate::sysinfo::{BatterySnapshot, SystemSnapshot};
@@ -84,6 +84,11 @@ pub struct App {
   /// Whether the current answer should be masked. Login passwords always are;
   /// a PAM "visible" prompt (an OTP, for example) is not.
   answer_secret: bool,
+  /// Whether the password the user typed before PAM asked for one has already
+  /// been sent for this conversation. At most ONE auto-answer is allowed
+  /// between a Begin and the next Failed or Starting event, so a PAM re-ask
+  /// after a wrong password is never answered with the stale secret.
+  secret_auto: bool,
   status: Option<Line>,
   busy: bool,
   cancel_requested: bool,
@@ -100,6 +105,15 @@ pub struct App {
   motion: Motion,
   authenticated: bool,
   finished: Option<Finish>,
+  /// Increments every time an auth request is actually handed to the worker.
+  /// The window watches it to start the optional cut sequence exactly on a
+  /// submit, not on a Tab or an Enter that only moved focus. It carries no
+  /// credential and no state the worker reads.
+  submit_epoch: u64,
+  /// Instant of the last inserted character, for the optional key pop.
+  typed_at: Option<Instant>,
+  /// Instant the session selection last changed, for the ticker flash.
+  session_changed_at: Option<Instant>,
 }
 
 impl App {
@@ -144,6 +158,7 @@ impl App {
       answer: TextInput::new(MAX_ANSWER_CHARS),
       prompt: None,
       answer_secret: true,
+      secret_auto: false,
       status,
       busy: false,
       cancel_requested: false,
@@ -159,12 +174,43 @@ impl App {
       motion,
       authenticated: false,
       finished: None,
+      submit_epoch: 0,
+      typed_at: None,
+      session_changed_at: None,
+    }
+  }
+
+  /// Swaps the theme and widget list after a successful hot reload.
+  ///
+  /// This deliberately keeps the auth worker, sessions, typed input, and media
+  /// pollers. A theme edit is a cosmetic event: it must not reset a half-typed
+  /// password or restart the login state machine. The text engine lives in the
+  /// window layer and is only rebuilt when the font actually changed.
+  pub fn reload(&mut self, config: Config, mut plugins: Vec<Plugin>, warning: Option<String>) {
+    self.theme = Theme::from(&config);
+    let builtins = plugin::builtins(&config);
+    plugins.extend(builtins.plugins);
+    self.plugins = plugins;
+    self.warning = warning;
+    self.motion = Motion::new(&config.motion, config.power.low_power);
+    // The tick signature is built from the old widget list. Clearing it makes
+    // the next tick notice the new widgets instead of reporting no change.
+    self.signature.clear();
+    if self.sessions.is_empty() {
+      self.status = Some(Line::error(config.login.no_sessions));
     }
   }
 
   #[must_use]
   pub fn finished(&self) -> Option<Finish> {
     self.finished
+  }
+
+  /// How many auth requests have actually been sent. The window compares this
+  /// before and after a key so a focus move never plays the cut sequence.
+  #[must_use]
+  pub fn submit_epoch(&self) -> u64 {
+    self.submit_epoch
   }
 
   /// Moves keyboard focus when the pointer clicks a field. The fields are
@@ -175,6 +221,7 @@ impl App {
       return false;
     }
     self.focus = focus;
+    self.typed_at = None;
     self.motion.notify_focus(Instant::now());
     true
   }
@@ -244,7 +291,20 @@ impl App {
 
   #[must_use]
   pub fn motion_active(&self) -> bool {
-    self.motion.active()
+    let now = Instant::now();
+    let pop_ms = self
+      .theme
+      .login
+      .username
+      .key_pop_ms
+      .max(self.theme.login.password.key_pop_ms);
+    let pop = self
+      .typed_at
+      .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() * 1000.0 < pop_ms);
+    let flash = self.session_changed_at.is_some_and(|at| {
+      now.saturating_duration_since(at).as_secs_f32() * 1000.0 < SESSION_FLASH_MS
+    });
+    self.motion.active() || pop || flash
   }
 
   /// Media states for the window to feed. The app never talks to D-Bus.
@@ -289,6 +349,7 @@ impl App {
       Key::Escape => self.escape(),
     }
     if self.focus != previous_focus {
+      self.typed_at = None;
       self.motion.notify_focus(Instant::now());
     }
     true
@@ -309,13 +370,17 @@ impl App {
         self.focus = Focus::Password;
         self.prompt = Some(prompt);
         self.busy = false;
-        // Keep a password the user typed before PAM asked for one, so they do
-        // not have to type it twice. A visible prompt clears the field instead,
-        // because showing a pre-typed password in plain text would be a leak.
-        // The user still has to press Enter, so the value is never sent into a
-        // prompt they have not seen.
         if !self.answer_secret {
+          // A visible prompt clears the field instead of keeping the typed
+          // value, because showing a pre-typed password in plain text would be
+          // a leak. The user sees this prompt and types the answer themselves.
           self.answer.clear();
+        } else if !self.answer.is_empty() && !self.secret_auto {
+          // The user already typed the password before the first submit sent
+          // `create_session`. PAM's hidden password prompt is the one they
+          // meant, so answer it now instead of asking for a second Enter. The
+          // `secret_auto` guard keeps this to one send per conversation.
+          self.auto_answer();
         }
       }
       Event::Notice(notice) => {
@@ -335,6 +400,7 @@ impl App {
         self.status = None;
         self.answer.clear();
         self.busy = true;
+        self.secret_auto = false;
       }
       Event::Started => {
         info!("session start accepted, exiting so greetd can launch it");
@@ -349,6 +415,7 @@ impl App {
         self.prompt = None;
         self.answer_secret = true;
         self.answer.clear();
+        self.secret_auto = false;
         self.focus = Focus::Password;
         self.status = Some(Line::error(failure.message));
         if failure.during_start {
@@ -365,6 +432,28 @@ impl App {
       }
     }
     true
+  }
+
+  /// Sends a password the user typed before PAM asked for one.
+  ///
+  /// This mirrors the prompt branch of [`Self::submit`], including moving the
+  /// secret out with [`TextInput::take_secret`] (which wipes the field) and
+  /// reporting a dead worker the same way. It deliberately does NOT touch
+  /// `submit_epoch`: the window starts its cut transition on the user's real
+  /// Enter, and bumping again here would restart that animation late.
+  fn auto_answer(&mut self) {
+    let Some(worker) = self.worker.as_ref() else {
+      // Screenshot and `--check-config` runs have no worker. Leave the typed
+      // value alone and let the user press Enter as before.
+      return;
+    };
+    let secret = self.answer.take_secret();
+    self.busy = true;
+    self.status = None;
+    self.secret_auto = true;
+    if !worker.answer(secret) {
+      self.worker_lost();
+    }
   }
 
   /// The current frame description. Safe to call at any time; it never touches
@@ -388,6 +477,8 @@ impl App {
         self.answer.masked_cursor_prefix_with(mask).chars().count()
       },
       focus: self.focus,
+      typed_at: self.typed_at,
+      session_changed_at: self.session_changed_at,
       prompt: self.prompt.as_ref().map(|prompt| prompt.message.clone()),
       status: self.status.clone(),
       session: self
@@ -431,8 +522,14 @@ impl App {
 
   fn insert_char(&mut self, ch: char) {
     match self.focus {
-      Focus::Username => self.username.insert(ch),
-      Focus::Password => self.answer.insert(ch),
+      Focus::Username => {
+        self.username.insert(ch);
+        self.typed_at = Some(Instant::now());
+      }
+      Focus::Password => {
+        self.answer.insert(ch);
+        self.typed_at = Some(Instant::now());
+      }
       Focus::Picker => {}
     }
   }
@@ -448,8 +545,9 @@ impl App {
   fn enter(&mut self) {
     match self.focus {
       Focus::Picker => {
-        if self.picker_index < self.sessions.len() {
+        if self.picker_index < self.sessions.len() && self.picker_index != self.session_index {
           self.session_index = self.picker_index;
+          self.session_changed_at = Some(Instant::now());
         }
         self.focus = Focus::Password;
         self.status = None;
@@ -477,6 +575,7 @@ impl App {
       let secret = self.answer.take_secret();
       self.busy = true;
       self.status = None;
+      self.submit_epoch = self.submit_epoch.wrapping_add(1);
       if !worker.answer(secret) {
         self.worker_lost();
       }
@@ -505,6 +604,8 @@ impl App {
       info!(session = %session_id, "login attempt started");
       self.busy = true;
       self.status = None;
+      self.secret_auto = false;
+      self.submit_epoch = self.submit_epoch.wrapping_add(1);
     } else {
       self.worker_lost();
     }
@@ -616,9 +717,16 @@ impl Drop for App {
 
 #[cfg(test)]
 mod tests {
+  use std::sync::mpsc::{self, Receiver};
+  use std::sync::{Arc, Mutex};
+  use std::time::Duration;
+
   use super::{App, Finish, Key};
-  use crate::auth::model::{Notice, NoticeKind, Prompt, PromptKind};
-  use crate::auth::worker::Mode;
+  use crate::auth::backend::Backend;
+  use crate::auth::client::ClientError;
+  use crate::auth::flow::Outgoing;
+  use crate::auth::model::{Notice, NoticeKind, Prompt, PromptKind, Response};
+  use crate::auth::worker::{Mode, spawn_with_backend};
   use crate::config::Config;
   use crate::session::Session;
 
@@ -659,6 +767,81 @@ mod tests {
     for ch in text.chars() {
       app.key(Key::Char(ch));
     }
+  }
+
+  /// A backend that asks for a password and records every answer it gets.
+  /// `reask` makes it ask a second time after the first answer, which models a
+  /// PAM stack asking again inside the same conversation.
+  struct ScriptedBackend {
+    reask: bool,
+    answers: Arc<Mutex<Vec<String>>>,
+  }
+
+  impl Backend for ScriptedBackend {
+    fn request(&mut self, request: Outgoing) -> Result<Response, ClientError> {
+      match request {
+        Outgoing::CreateSession { .. } => Ok(Response::Prompt {
+          kind: PromptKind::Secret,
+          message: "Password:".to_string(),
+        }),
+        Outgoing::Answer { response } => {
+          let secret = response.expect("test backend expects a secret answer");
+          let mut answers = self.answers.lock().expect("answer log poisoned");
+          answers.push(secret.expose().to_string());
+          if self.reask && answers.len() == 1 {
+            Ok(Response::Prompt {
+              kind: PromptKind::Secret,
+              message: "Password again:".to_string(),
+            })
+          } else {
+            Ok(Response::Success)
+          }
+        }
+        Outgoing::Start(_) | Outgoing::Cancel => Ok(Response::Success),
+      }
+    }
+  }
+
+  fn app_with_scripted_worker(
+    reask: bool,
+  ) -> (App, Receiver<super::Event>, Arc<Mutex<Vec<String>>>) {
+    let (tx, rx) = mpsc::channel();
+    let answers = Arc::new(Mutex::new(Vec::new()));
+    let worker = spawn_with_backend(
+      Box::new(ScriptedBackend {
+        reask,
+        answers: Arc::clone(&answers),
+      }),
+      move |event| {
+        let _ = tx.send(event);
+      },
+    )
+    .expect("scripted worker should start");
+    let app = App::new(
+      Config::default(),
+      vec![session(0)],
+      Vec::new(),
+      Some(worker),
+      None,
+      true,
+    );
+    (app, rx, answers)
+  }
+
+  fn recv_auth(rx: &Receiver<super::Event>) -> super::Event {
+    rx.recv_timeout(Duration::from_secs(2))
+      .expect("worker did not emit an event")
+  }
+
+  /// Types a username and password, then presses Enter once. This is the
+  /// pre-typed path: the submit sends `create_session` and the password is
+  /// still sitting in the field when PAM asks for it.
+  fn submit_pre_typed_password(app: &mut App, rx: &Receiver<super::Event>) -> super::Event {
+    type_text(app, "alice");
+    app.key(Key::Tab);
+    type_text(app, "pw");
+    app.key(Key::Enter);
+    recv_auth(rx)
   }
 
   #[test]
@@ -737,19 +920,124 @@ mod tests {
   }
 
   #[test]
-  fn a_full_login_is_sent_to_the_worker_only_after_a_password() {
+  fn submit_epoch_only_moves_when_a_request_is_sent() {
     let mut app = app_with_worker(1);
+    // A focus move is not a submit, and the cut sequence must not fire.
+    type_text(&mut app, "alice");
+    app.key(Key::Enter);
+    assert_eq!(app.submit_epoch(), 0);
+
+    type_text(&mut app, "pw");
+    app.key(Key::Enter);
+    assert_eq!(app.submit_epoch(), 1);
+
+    // Enter while busy is read-only, so it cannot replay the sequence.
+    app.key(Key::Enter);
+    assert_eq!(app.submit_epoch(), 1);
+  }
+
+  #[test]
+  fn a_submit_without_a_worker_does_not_count_as_sent() {
+    let mut app = app(1);
     type_text(&mut app, "alice");
     app.key(Key::Enter);
     type_text(&mut app, "pw");
     app.key(Key::Enter);
+    assert_eq!(app.submit_epoch(), 0);
+  }
+
+  #[test]
+  fn a_pre_typed_password_answers_the_pam_prompt_without_a_second_enter() {
+    let (mut app, rx, answers) = app_with_scripted_worker(false);
+    let prompt = submit_pre_typed_password(&mut app, &rx);
+    // The submit is in flight and the typed password is masked.
     assert!(app.view().busy);
-    // The password typed before the prompt is kept, still masked, so the user
-    // does not have to type it again.
     assert_eq!(app.view().password, "\u{2022}\u{2022}");
-    // Typing while busy must not change it.
-    type_text(&mut app, "x");
+
+    app.handle_auth(prompt);
+
+    // One Enter was enough: the hidden PAM prompt took the typed value.
+    assert!(app.view().busy);
+    assert_eq!(app.view().prompt.as_deref(), Some("Password:"));
+    // The secret moved out of the field, so nothing is left to display.
+    assert!(app.view().password.is_empty());
+    // Waiting for the next worker event proves the answer reached the backend.
+    assert!(matches!(recv_auth(&rx), super::Event::Starting));
+    assert_eq!(*answers.lock().unwrap(), vec!["pw".to_string()]);
+  }
+
+  #[test]
+  fn a_pam_reask_is_not_auto_answered() {
+    let (mut app, rx, answers) = app_with_scripted_worker(true);
+    let prompt = submit_pre_typed_password(&mut app, &rx);
+    app.handle_auth(prompt);
+    let reask = recv_auth(&rx);
+    assert!(matches!(reask, super::Event::Prompt(_)));
+
+    app.handle_auth(reask);
+
+    // The one-shot guard leaves the second prompt for the user instead of
+    // replaying the stale secret, which is the loop safety.
+    assert!(!app.view().busy);
+    assert!(app.view().prompt.is_some());
+    assert_eq!(*answers.lock().unwrap(), vec!["pw".to_string()]);
+
+    type_text(&mut app, "second");
+    app.key(Key::Enter);
+    // Draining to Started proves the worker processed every answer in order.
+    while !matches!(recv_auth(&rx), super::Event::Started) {}
+    assert_eq!(
+      *answers.lock().unwrap(),
+      vec!["pw".to_string(), "second".to_string()]
+    );
+  }
+
+  #[test]
+  fn auto_answer_does_not_bump_the_submit_epoch() {
+    let (mut app, rx, _answers) = app_with_scripted_worker(false);
+    let prompt = submit_pre_typed_password(&mut app, &rx);
+    assert_eq!(app.submit_epoch(), 1);
+
+    app.handle_auth(prompt);
+
+    // The automatic answer belongs to the same user intent as the Enter that
+    // sent `create_session`, so the window's cut transition must not restart.
+    assert_eq!(app.submit_epoch(), 1);
+    assert!(matches!(recv_auth(&rx), super::Event::Starting));
+    assert_eq!(app.submit_epoch(), 1);
+  }
+
+  #[test]
+  fn a_visible_prompt_still_clears_the_field() {
+    let mut app = app(1);
+    type_text(&mut app, "alice");
+    app.key(Key::Tab);
+    type_text(&mut app, "pw");
     assert_eq!(app.view().password, "\u{2022}\u{2022}");
+
+    app.handle_auth(super::Event::Prompt(Prompt {
+      kind: PromptKind::Visible,
+      message: "Verification code:".to_string(),
+    }));
+
+    // Showing a pre-typed password in plain text would leak it.
+    assert!(app.view().password.is_empty());
+    assert_eq!(app.view().prompt.as_deref(), Some("Verification code:"));
+  }
+
+  #[test]
+  fn an_empty_password_field_waits_for_the_user() {
+    let (mut app, rx, answers) = app_with_scripted_worker(false);
+    type_text(&mut app, "alice");
+    app.key(Key::Tab);
+    app.key(Key::Enter);
+    let prompt = recv_auth(&rx);
+    app.handle_auth(prompt);
+
+    // Nothing was typed, so there is nothing to send and the prompt waits.
+    assert!(!app.view().busy);
+    assert!(app.view().prompt.is_some());
+    assert!(answers.lock().unwrap().is_empty());
   }
 
   #[test]

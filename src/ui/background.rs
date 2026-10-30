@@ -310,6 +310,39 @@ impl BackgroundView {
     }
   }
 
+  /// Applies a new config without throwing away a still-valid frame set.
+  ///
+  /// `keep_loaded` is the studio's promise that an edit did not touch the
+  /// image path. When the kind and path are unchanged we keep the decoded
+  /// frames and only update the cheap fields (colour, fps, idle pause). A
+  /// different path, or a switch to/from a solid background, clears the frame
+  /// set so the normal loader can replace it.
+  pub fn reconfigure(&mut self, config: &Config, keep_loaded: bool) {
+    let old = std::mem::replace(&mut self.config, config.background.clone());
+    self.placeholder = config.background.color;
+    self.gradient = config.background.gradient;
+    self.low_power = config.power.low_power || config.motion.reduced;
+
+    let image_kind = matches!(
+      self.config.kind,
+      BackgroundKind::Auto | BackgroundKind::Image | BackgroundKind::Animated
+    );
+    let reusable =
+      keep_loaded && old.kind == self.config.kind && old.image == self.config.image && image_kind;
+    if reusable {
+      return;
+    }
+
+    self.loaded = None;
+    self.previous = None;
+    self.fade_start = None;
+    self.accepted = None;
+    self.requested = None;
+    self.loading = false;
+    // A fresh generation makes any loader result already in flight stale.
+    self.generation = self.generation.wrapping_add(1);
+  }
+
   /// Starts a load for this size and output. Returns `None` when the same
   /// load is already in flight, so a resize storm cannot spawn a thread per
   /// event.

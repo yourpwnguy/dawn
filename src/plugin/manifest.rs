@@ -386,6 +386,10 @@ fn validate_widget(raw: RawWidget, default_color: Rgb) -> Result<ParsedWidget, S
         date_size: validate_size(date_size.and_then(Num::to_f32).unwrap_or(12.0))?,
         color: Some(color),
         date_color,
+        label: String::new(),
+        label_color: None,
+        label_size: 0.0,
+        label_tracking: 0.0,
         // The v1 manifest does not expose the decorative face options yet.
         // Defaults keep a plugin clock on the same object model as a built-in
         // clock without inventing a second configuration surface.

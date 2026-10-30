@@ -8,7 +8,8 @@
 
 use tiny_skia::{
   FillRule, FilterQuality, GradientStop, LinearGradient, Mask, Paint, Path, PathBuilder, Pattern,
-  Pixmap, PixmapPaint, Point, Rect as SkRect, Shader, SpreadMode, Stroke, Transform,
+  Pixmap, PixmapPaint, Point, RadialGradient, Rect as SkRect, Shader, SpreadMode, Stroke,
+  Transform,
 };
 
 use crate::color::Rgb;
@@ -390,6 +391,77 @@ impl Canvas {
     self
       .pixmap
       .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+  }
+
+  /// A soft radial blob. Ambient particles use this for the ember core: the
+  /// first stop is the hot colour, the last one should be transparent so the
+  /// sprite dissolves into the wallpaper instead of ending on a hard disc.
+  pub fn radial_gradient(&mut self, center: (f32, f32), radius: f32, stops: &[(f32, Rgb)]) {
+    if radius <= 0.0 || stops.len() < 2 {
+      return;
+    }
+    let center = self.local_point(center);
+    let stops = stops
+      .iter()
+      .map(|(at, color)| GradientStop::new(at.clamp(0.0, 1.0), color.to_skia()))
+      .collect();
+    let Some(shader) = RadialGradient::new(
+      Point::from_xy(center.0, center.1),
+      0.0,
+      Point::from_xy(center.0, center.1),
+      radius,
+      stops,
+      SpreadMode::Pad,
+      Transform::identity(),
+    ) else {
+      return;
+    };
+    let paint = Paint {
+      shader,
+      anti_alias: true,
+      ..Paint::default()
+    };
+    let bounds = Rect::new(
+      center.0 - radius,
+      center.1 - radius,
+      radius * 2.0,
+      radius * 2.0,
+    );
+    let Some(bounds) = bounds.to_skia() else {
+      return;
+    };
+    self
+      .pixmap
+      .fill_rect(bounds, &paint, Transform::identity(), None);
+  }
+
+  /// A solid triangle in absolute screen coordinates. Butterfly wings are two
+  /// of these, mirrored around the body, with the flap expressed as a changing
+  /// horizontal wing span.
+  pub fn fill_triangle(&mut self, a: (f32, f32), b: (f32, f32), c: (f32, f32), color: Rgb) {
+    let a = self.local_point(a);
+    let b = self.local_point(b);
+    let c = self.local_point(c);
+    let mut builder = PathBuilder::new();
+    builder.move_to(a.0, a.1);
+    builder.line_to(b.0, b.1);
+    builder.line_to(c.0, c.1);
+    builder.close();
+    let Some(path) = builder.finish() else {
+      return;
+    };
+    let paint = Paint {
+      shader: Shader::SolidColor(color.to_skia()),
+      anti_alias: true,
+      ..Paint::default()
+    };
+    self.pixmap.fill_path(
+      &path,
+      &paint,
+      FillRule::Winding,
+      Transform::identity(),
+      None,
+    );
   }
 
   pub fn line(&mut self, from: (f32, f32), to: (f32, f32), color: Rgb, width: f32) {

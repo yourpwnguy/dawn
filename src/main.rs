@@ -30,6 +30,29 @@ fn main() -> ExitCode {
 
   let cli = match command {
     Command::Theme(command) => return dawn::theme::cli::run(command),
+    Command::Init(command) => return dawn::init::run(command),
+    Command::Dev(command) => {
+      init_logging(false);
+      return match dawn::dev::run(command) {
+        Ok(code) => code,
+        Err(error) => {
+          eprintln!("dawn: {error:#}");
+          ExitCode::FAILURE
+        }
+      };
+    }
+    Command::Completions(shell) => {
+      return match cli::write_completions(shell) {
+        Ok(()) => ExitCode::SUCCESS,
+        // `dawn completions zsh | head` closes the pipe early; that is a
+        // normal way to read the first lines, not a failure.
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Err(error) => {
+          eprintln!("dawn: cannot write completions: {error}");
+          ExitCode::FAILURE
+        }
+      };
+    }
     Command::Run(cli) => cli,
   };
 
@@ -78,6 +101,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
   match &loaded.path {
     Some(path) => info!(path = %path.display(), "loaded config"),
     None => info!("no config file found, using built-in defaults"),
+  }
+  // Exactly one plain line, not a tracing record: this is the instruction an
+  // admin sees on a fresh install, and it has to survive a log filter.
+  if let Some(hint) = config::missing_config_hint(loaded.path.as_deref()) {
+    eprintln!("{hint}");
   }
 
   if cli.list_gpus {

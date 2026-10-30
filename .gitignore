@@ -7,3 +7,6 @@
 .opencode/
 .ruff_cache/
 dawn-preview.png
+
+# Working notes kept locally, never published.
+/docs/ideas/

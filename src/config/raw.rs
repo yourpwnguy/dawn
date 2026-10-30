@@ -35,6 +35,10 @@ pub struct RawConfig {
   #[serde(default)]
   pub system: RawSystem,
   #[serde(default)]
+  pub particles: RawParticles,
+  #[serde(default)]
+  pub ticker: RawTicker,
+  #[serde(default)]
   pub background: RawBackground,
   #[serde(default)]
   pub theme: RawTheme,
@@ -127,6 +131,8 @@ pub struct RawLogin {
   pub form_width: Option<Field>,
   #[serde(default)]
   pub button: RawButton,
+  #[serde(default)]
+  pub transition: RawTransition,
   #[serde(default, rename = "decor")]
   pub decor: Vec<RawDecor>,
 }
@@ -323,6 +329,10 @@ pub struct RawField {
   #[serde(default)]
   pub label_color: Option<Field>,
   #[serde(default)]
+  pub label_size: Option<Field>,
+  #[serde(default)]
+  pub label_tracking: Option<Field>,
+  #[serde(default)]
   pub placeholder: Option<Field>,
   #[serde(default)]
   pub font_size: Option<Field>,
@@ -370,6 +380,12 @@ pub struct RawField {
   pub rotation: Option<Field>,
   #[serde(default)]
   pub mask: Option<Field>,
+  #[serde(default)]
+  pub key_pop_ms: Option<Field>,
+  #[serde(default)]
+  pub key_pop_scale: Option<Field>,
+  #[serde(default)]
+  pub key_pop_color: Option<Field>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -496,6 +512,14 @@ pub struct RawClock {
   pub color: Option<Field>,
   #[serde(default)]
   pub date_color: Option<Field>,
+  #[serde(default)]
+  pub label: Option<Field>,
+  #[serde(default)]
+  pub label_color: Option<Field>,
+  #[serde(default)]
+  pub label_size: Option<Field>,
+  #[serde(default)]
+  pub label_tracking: Option<Field>,
   #[serde(default)]
   pub ghost: Option<Field>,
   #[serde(default)]
@@ -680,6 +704,97 @@ pub struct RawSystem {
   pub label_color: Option<Field>,
   #[serde(default)]
   pub draggable: Option<Field>,
+}
+
+/// `[login.transition]`: a decorative cut sequence played around a submit or
+/// a successful authentication. Every key is optional.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawTransition {
+  #[serde(default)]
+  pub enabled: Option<Field>,
+  #[serde(default)]
+  pub trigger: Option<Field>,
+  #[serde(default)]
+  pub cuts: Option<Field>,
+  #[serde(default)]
+  pub cut_ms: Option<Field>,
+  #[serde(default)]
+  pub shake: Option<Field>,
+  #[serde(default)]
+  pub zoom: Option<Field>,
+  #[serde(default)]
+  pub slam: Option<Field>,
+  #[serde(default)]
+  pub slam_ms: Option<Field>,
+  #[serde(default)]
+  pub slam_color: Option<Field>,
+  #[serde(default)]
+  pub slam_size: Option<Field>,
+}
+
+/// `[particles]`: procedural ambient emitters.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawParticles {
+  #[serde(default)]
+  pub enabled: Option<Field>,
+  #[serde(default)]
+  pub count: Option<Field>,
+  #[serde(default)]
+  pub sprite: Option<Field>,
+  #[serde(default)]
+  pub color: Option<Field>,
+  #[serde(default)]
+  pub color2: Option<Field>,
+  #[serde(default)]
+  pub drift: Option<Field>,
+  #[serde(default)]
+  pub speed: Option<Field>,
+  #[serde(default)]
+  pub size: Option<Field>,
+  #[serde(default)]
+  pub opacity: Option<Field>,
+  #[serde(default)]
+  pub layer: Option<Field>,
+  #[serde(default)]
+  pub burst_on: Option<Field>,
+  #[serde(default)]
+  pub burst_sprite: Option<Field>,
+  #[serde(default)]
+  pub burst_count: Option<Field>,
+}
+
+/// `[ticker]`: the kinetic marquee.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawTicker {
+  #[serde(default)]
+  pub enabled: Option<Field>,
+  #[serde(default)]
+  pub items: Option<Field>,
+  #[serde(default)]
+  pub separator: Option<Field>,
+  #[serde(default)]
+  pub anchor: Option<Field>,
+  #[serde(default)]
+  pub offset: Option<Field>,
+  #[serde(default)]
+  pub size: Option<Field>,
+  #[serde(default)]
+  pub speed: Option<Field>,
+  #[serde(default)]
+  pub color: Option<Field>,
+  #[serde(default)]
+  pub bold: Option<Field>,
+  #[serde(default)]
+  pub tracking: Option<Field>,
+  #[serde(default)]
+  pub layer: Option<Field>,
+  #[serde(default)]
+  pub session_first: Option<Field>,
+  #[serde(default)]
+  pub plate: RawWidgetPlate,
 }
 
 #[derive(Debug, Default, Deserialize)]

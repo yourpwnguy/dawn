@@ -1,0 +1,80 @@
+# dawn first-run configuration. Written by `dawn init`.
+# Every key is optional; these are the built-in defaults. Validate after editing
+# with `dawn --config /etc/dawn/config.toml --check-config`.
+
+[ui]
+# Unknown font families fall back to the embedded Inter face.
+font = "Inter"
+font_size = 17
+fullscreen = true
+
+[login]
+# The login card. Sizes derive from ui.font_size unless set here.
+width = 380
+padding = 26
+radius = 18
+show_hints = true
+show_session = true
+show_picker = true
+
+[login.username]
+placeholder = "Username"
+
+[login.password]
+placeholder = "Password"
+
+[login.session]
+label = "Session"
+
+[clock]
+# Clock at the top of the screen. Use style = "analog" for a dial.
+enabled = true
+style = "digital"
+time_format = "%H:%M"
+date_format = "%A, %B %d"
+anchor = "top-center"
+offset = [0, 48]
+size = 54
+
+[media]
+# The current MPRIS track, when a player is on the local bus.
+enabled = true
+anchor = "bottom-left"
+offset = [32, 32]
+show_art = true
+
+[background]
+# auto uses image when set, otherwise the gradient.
+kind = "auto"
+color = "#0b1020"
+gradient = true
+fit = "cover"
+fps = 0
+memory_limit_mb = 128
+idle_pause_secs = 45
+
+[theme]
+# glass-dark, glass-light, or minimal.
+preset = "glass-dark"
+
+[motion]
+# Boot, focus, and shake timings use the built-in defaults.
+enabled = true
+reduced = false
+
+[layout]
+# Remember dragged widget positions. Off so a greeter writes nothing.
+save = false
+
+[sessions]
+# Where .desktop session entries are discovered.
+dirs = ["/usr/share/wayland-sessions", "/usr/share/xsessions"]
+
+[plugins]
+# Declarative plugin directories. No code is executed.
+enabled = true
+dirs = ["/usr/share/dawn/plugins", "~/.config/dawn/plugins"]
+
+[auth]
+# Leave socket unset in a real greeter: greetd sets GREETD_SOCK.
+timeout_secs = 120

@@ -1,6 +1,6 @@
 schema = 1
 id = "hutao-montagem"
-name = "After Dark"
-version = "1.0.0"
-description = "A crimson concert poster with a marquee ring, notes, and a ticket stub."
+name = "After Dark: The Stage Call"
+version = "2.0.0"
+description = "A cardless concert-poster login: hard-cut crimson stage, inline poster headline, hairline credential rules, support-act marquee, keystroke pop, and a butterfly success burst."
 preview = "preview.webp"

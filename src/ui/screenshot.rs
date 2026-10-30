@@ -96,6 +96,8 @@ pub fn render(
     // A screenshot has no pointer, so parallax stays at its neutral offset.
     cursor: None,
     screen: (width as f32, height as f32),
+    burst_at: None,
+    hud: None,
   };
   let _ = render::paint(&mut canvas, &mut text, &mut background, &mut glass, &scene);
 

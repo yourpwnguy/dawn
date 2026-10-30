@@ -2,6 +2,127 @@
 
 All notable changes to dawn are recorded here.
 
+## 0.5.0 - 2026-10-30
+
+### Added
+
+- DSB-2, the strict bundle format. `docs/bundle-spec.md` is the normative text.
+  A bundle has four required artifacts (`theme.toml`, `config.toml`,
+  `preview.webp`, `assets/`), a revision 2 manifest with an engine minimum and
+  at least one author, and no license fields.
+- `dawn check PATH` validates an uninstalled bundle tree and reports every
+  problem as `rule <n>: <file>: <what>`.
+- `dawn new PARENT --id ID` scaffolds a commented, valid bundle with a generated
+  640x400 WebP preview.
+- `dawn add PATH --migrate` upgrades a revision 1 tree to revision 2. It moves
+  root-level media into `assets/`, patches matching `image` and `art` values,
+  fills a placeholder author, and validates before replacing anything. Without
+  `--force` the source tree is left untouched.
+- `dawn dev [PATH] [--theme ID] [--size WxH] [--no-hud]` opens a windowed
+  dry-run greeter that reloads a config or DSB bundle when it changes. It
+  validates a bundle tree first, keeps the last good theme on a broken edit,
+  and never opens a greetd socket or starts a session. `docs/dev.md` documents
+  the keys, the HUD, and the reload guarantees.
+- `dawn completions <SHELL>` prints a bash, elvish, fish, PowerShell, or zsh
+  completion script to stdout. The shell also has a `-s` short form.
+- Short flags for the remaining run options: `-c/--config`, `-t/--theme`,
+  `-d/--dry-run`, `-y/--tty`, `-k/--check-config`, `-g/--list-gpus`,
+  `-s/--screenshot`, `-z/--size`, and `-f/--fullscreen`.
+- `dawn add`/`dawn remove` aliases: `install`/`i` and `uninstall`/`rm`, plus
+  `ls` for `list`.
+- `-F/--force` and `-u/--user` on theme commands.
+- `dawn init` writes a commented first-run config to `/etc/dawn/config.toml`
+  by default, with `--config PATH` for an explicit target. It refuses to
+  overwrite without `--force`, stages the write and renames it into place, and
+  prints the exact `sudo dawn init ...` rerun line when the destination is not
+  writable.
+- The README shows the Hu Tao Montagem theme in motion next to the other
+  bundled themes.
+
+### Changed
+
+- Config discovery is now exactly three layers: `--config PATH`, `DAWN_CONFIG`,
+  then `/etc/dawn/config.toml`. The `$XDG_CONFIG_HOME` and `~/.config` search
+  paths are gone, because a greeter with no useful `HOME` never read them.
+- With no config file, dawn prints exactly one line: `no machine config; create
+  it: sudo dawn init`.
+- `dawn init` writes only `/etc/dawn/config.toml` by default. `--config PATH`
+  remains as the explicit testing seam. The `--user` flag is removed.
+- The init permission hint is always the single line
+  `rerun with sudo: sudo dawn init --force`.
+- The system store `/usr/share/dawn/themes` and `DAWN_THEME_DIRS` entries are
+  now checked before the XDG user store, no matter which copy is newer. A
+  theme that exists only in the user store still loads, but dawn warns that it
+  should be reinstalled into the system store.
+- `dawn add` and `dawn remove` target the system store by default. `--user`
+  opts back into `$XDG_DATA_HOME/dawn/themes` for packaging tests and sandboxes;
+  `--system` is still accepted and is now the default. A non-root `dawn add`
+  prints the exact `sudo dawn add ... --force` command to rerun instead of
+  trying to escalate.
+- A successful install prints one next-step line for selecting the theme.
+
+### Fixed
+
+- Sign-in no longer asks for Enter twice when the password was already typed
+  before the first submit; PAM re-asks after a failure still wait for the user.
+
+## 0.4.0 - 2026-10-30
+
+### Added
+
+- `[login.transition].trigger` accepts `boot` (one cut at the first presented
+  frame) and `failure` (one cut when an auth attempt is rejected). `boot`
+  never touches authentication, `failure` only paints after the form is back,
+  and neither can hold the process open. `both` keeps its old enter-plus-success
+  meaning, so existing configs do not start cutting at boot or on a wrong
+  password.
+- `[particles]` one-shot burst: `burst_on = "success"`, `burst_sprite`, and
+  `burst_count` (capped at 64). The burst is a closed-form field of the time
+  since success, so it spawns exactly once, stays inside the screen, and fades
+  out over 1.8 seconds. The new `streak` sprite is a thin vertical light ray for
+  both ambient and burst use.
+- Per-keystroke pop on input fields: `key_pop_ms`, `key_pop_scale`, and
+  `key_pop_color` draw the newest character with an expo-out overshoot and a
+  colour blend back to the field text. The run is split with `char_indices`, so
+  multibyte glyphs and the password mask are safe.
+- `label_size` and `label_tracking` on fields, for a micro label that is
+  independent of the large typed value.
+- `[clock].label`, `label_color`, `label_size`, and `label_tracking` put a small
+  tracked caps line above the digital clock.
+- `[ticker].session_first` puts the selected session at the head of the marquee,
+  uppercased for the poster voice, and flashes the run gold for 80 ms when the
+  selection changes.
+
+### Changed
+
+- `[login] layout = "poster"`: a full-bleed fixed frame with no implied surface,
+  for a cardless poster where decor and the form are placed with
+  `form_offset`. It shares the hero geometry, so it still scales to fit a
+  smaller output.
+- The hutao-montagem example is rebuilt as AFTER DARK: THE STAGE CALL. The
+  login has no card or plate: a poster headline, inline hairline fields, a
+  support-act marquee, and a success cut with a butterfly burst. The old ticket
+  stub and hero panel are gone.
+- The live drag outline is only drawn for draggable regions, so a full-bleed
+  cardless theme no longer shows a rectangle around the whole frame just
+  because the pointer is inside it.
+
+## 0.3.0 - 2026-10-30
+
+### Added
+
+- `[login.transition]`: an optional cut sequence played around a submit or a
+  successful authentication. Full-screen colour cuts, a decaying shake and zoom
+  punch, and one slammed line. Off by default, never part of the auth path, and
+  the success hold is capped at two seconds.
+- `[particles]`: procedural flame, butterfly, and dot emitters with a hard cap
+  of 96, deterministic positions, and a behind or front layer. No image files.
+- `[ticker]`: a kinetic marquee that scrolls one measured text run seamlessly
+  at the top or bottom edge, with the same plate vocabulary as the clock.
+- The hutao-montagem example is rebuilt around the montage: hard cuts, ember
+  particles, a glass ticket marquee, a matching clock plate, and the crimson,
+  black, bone, gold, and ember palette.
+
 ## 0.2.6 - 2026-10-30
 
 ### Fixed

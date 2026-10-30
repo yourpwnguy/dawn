@@ -223,18 +223,23 @@ for single-user machines and can be turned off on shared ones.
 
 ## Theme store
 
-`theme` owns the bundle format and the on-disk stores. A bundle is a directory
-with `theme.toml`, a complete `config.toml`, and every asset the config names.
-`dawn add` validates the manifest, the config (through the normal validator),
-all image paths, plugin directories, and the file tree before copying it into a
-staging directory. Symlinks, absolute asset paths, nested `[theme].package`
-pointers, and writable `layout.save` are rejected. The staged directory is then
-renamed into place, with the previous bundle moved aside for a rollback if the
-rename fails.
+`theme` owns the bundle format and the on-disk stores. A DSB-2 bundle is a
+directory with `theme.toml`, a complete `config.toml`, `preview.webp`, and an
+`assets/` root. `theme::spec` is the single validator behind both `dawn check`
+and `dawn add`; it enforces the numbered rules in `docs/bundle-spec.md`,
+including asset references confined to `assets/`, full config validation, a
+known manifest revision, and at least one author. `dawn add` validates before
+copying, copies into a staging directory, validates the staged tree again, and
+only then renames it into place, with the previous bundle moved aside for a
+rollback if the rename fails. Revision 1 trees still install with one warning;
+`dawn add --migrate` upgrades them through a validated sibling copy.
 
-Lookup checks the user store, the system store, then any `DAWN_THEME_DIRS`
-entries. `--theme ID` asks `theme` for the directory and loads its `config.toml`
-with package resolution disabled. A config can also contain
+Lookup checks `/usr/share/dawn/themes`, then any `DAWN_THEME_DIRS` entries, and
+only then the deprecated user store. System stores always win, and a user-store
+fallback still loads but logs a warning with the sudo command that reinstalls
+the bundle. `dawn add` writes to the system store by default; `--user` opts
+back into the XDG store. `--theme ID` asks `theme` for the directory and loads
+its `config.toml` with package resolution disabled. A config can also contain
 `[theme].package = "ID"`; that file is a pointer and the bundle config replaces
 it wholesale. This keeps a bundle portable: the same directory is the config
 and the assets, wherever it is copied.
@@ -243,7 +248,7 @@ and the assets, wherever it is copied.
 
 | Failure | Behaviour |
 | --- | --- |
-| Config file missing | Built-in defaults |
+| Config file missing | Built-in defaults plus one `sudo dawn init` hint |
 | One bad config field | That field falls back; the rest applies; a warning is shown |
 | Unreadable config file | Defaults plus a warning |
 | Broken plugin | Logged and skipped |
