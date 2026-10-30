@@ -2495,12 +2495,15 @@ pub struct GpuConfig {
   pub enabled: bool,
   /// Graphics API to enable during adapter enumeration.
   pub backend: GpuBackend,
-  /// `"auto"`, `"index:N"` into the filtered adapter list, or a
-  /// case-insensitive substring of the adapter name or driver.
+  /// `"auto"`, a class keyword (`"integrated"`, `"discrete"`, `"software"`),
+  /// `"index:N"` into the filtered adapter list, or a case-insensitive
+  /// substring of the adapter name or driver.
   pub adapter: String,
-  /// Adapter class filter. `backend = "software"` forces this to `Cpu`.
+  /// Adapter class filter. `backend = "software"` forces this to `Cpu`, and
+  /// the `adapter` class keywords override it as the more specific request.
   pub device: GpuDevice,
-  /// Ranking preference when `adapter = "auto"`.
+  /// Ranking preference when the adapter is `auto`. The `integrated` and
+  /// `discrete` keywords set this instead.
   pub power: GpuPower,
   /// Requested swapchain mode. Unsupported modes fall back without failing.
   pub present: GpuPresent,

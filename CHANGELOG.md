@@ -2,6 +2,21 @@
 
 All notable changes to dawn are recorded here.
 
+## 0.6.1 - 2026-10-30
+
+### Fixed
+
+- `-v` no longer fills the log with cosmic-text's "No default font match"
+  debug lines. Dependency chatter stays at WARN while dawn's own debug records
+  remain.
+
+### Changed
+
+- `[gpu] adapter` accepts `integrated`, `discrete`, and `software`. Those set
+  the device class and power ranking, so most configs no longer need the
+  separate `device` and `power` keys. The keys still work for filters and
+  orderings the keywords cannot express.
+
 ## 0.6.0 - 2026-10-30
 
 ### Added
