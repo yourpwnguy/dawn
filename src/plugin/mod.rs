@@ -27,7 +27,10 @@ use tiny_skia::Pixmap;
 use tracing::{debug, info, warn};
 
 use crate::color::Rgb;
-use crate::config::{Config, MediaLook, PluginsConfig, ThemeConfig, WidgetLayer};
+use crate::config::{
+  BatteryConfig, CalendarConfig, Config, MediaLook, PluginsConfig, SystemConfig, ThemeConfig,
+  WidgetLayer,
+};
 use crate::layout::Placement;
 use crate::ui::clock::ClockSpec;
 use crate::ui::media::MediaState;
@@ -73,6 +76,24 @@ pub enum Widget {
     draggable: bool,
     layer: WidgetLayer,
   },
+  /// A first-party month grid built from `[calendar]`.
+  Calendar {
+    spec: CalendarConfig,
+    placement: Placement,
+    draggable: bool,
+  },
+  /// A first-party local battery indicator built from `[battery]`.
+  Battery {
+    spec: BatteryConfig,
+    placement: Placement,
+    draggable: bool,
+  },
+  /// A first-party local system monitor built from `[system]`.
+  System {
+    spec: SystemConfig,
+    placement: Placement,
+    draggable: bool,
+  },
 }
 
 impl Widget {
@@ -85,6 +106,9 @@ impl Widget {
       Self::Clock { .. } => "clock",
       Self::Image { .. } => "image",
       Self::Media { .. } => "media",
+      Self::Calendar { .. } => "calendar",
+      Self::Battery { .. } => "battery",
+      Self::System { .. } => "system",
     }
   }
 
@@ -94,7 +118,10 @@ impl Widget {
       Self::Text { placement, .. }
       | Self::Clock { placement, .. }
       | Self::Image { placement, .. }
-      | Self::Media { placement, .. } => placement,
+      | Self::Media { placement, .. }
+      | Self::Calendar { placement, .. }
+      | Self::Battery { placement, .. }
+      | Self::System { placement, .. } => placement,
     }
   }
 
@@ -105,7 +132,14 @@ impl Widget {
     match self {
       Self::Clock { spec, .. } => spec.signature(now),
       Self::Media { state, .. } => state.generation().to_string(),
-      Self::Text { .. } | Self::Image { .. } => String::new(),
+      // The calendar only changes when the date does, so using the date as its
+      // signature wakes the UI at midnight even when no clock widget exists.
+      Self::Calendar { .. } => now.date().to_string(),
+      // Battery and system have no signature of their own; the app compares
+      // their snapshots on the same tick and asks for a repaint itself.
+      Self::Text { .. } | Self::Image { .. } | Self::Battery { .. } | Self::System { .. } => {
+        String::new()
+      }
     }
   }
 
@@ -122,7 +156,11 @@ impl Widget {
   #[must_use]
   pub fn draggable(&self) -> bool {
     match self {
-      Self::Clock { draggable, .. } | Self::Media { draggable, .. } => *draggable,
+      Self::Clock { draggable, .. }
+      | Self::Media { draggable, .. }
+      | Self::Calendar { draggable, .. }
+      | Self::Battery { draggable, .. }
+      | Self::System { draggable, .. } => *draggable,
       Self::Text { .. } | Self::Image { .. } => false,
     }
   }
@@ -137,6 +175,9 @@ impl Widget {
       | Self::Clock { layer, .. }
       | Self::Image { layer, .. }
       | Self::Media { layer, .. } => *layer,
+      Self::Calendar { spec, .. } => spec.layer,
+      Self::Battery { spec, .. } => spec.layer,
+      Self::System { spec, .. } => spec.layer,
     }
   }
 }
@@ -201,6 +242,27 @@ pub fn builtins(config: &Config) -> Builtins {
       layer: config.media.layer,
     });
   }
+  if config.calendar.enabled {
+    widgets.push(Widget::Calendar {
+      spec: config.calendar.clone(),
+      placement: config.calendar.placement.clone(),
+      draggable: config.calendar.draggable,
+    });
+  }
+  if config.battery.enabled {
+    widgets.push(Widget::Battery {
+      spec: config.battery.clone(),
+      placement: config.battery.placement.clone(),
+      draggable: config.battery.draggable,
+    });
+  }
+  if config.system.enabled {
+    widgets.push(Widget::System {
+      spec: config.system.clone(),
+      placement: config.system.placement.clone(),
+      draggable: config.system.draggable,
+    });
+  }
   if widgets.is_empty() {
     return Builtins {
       plugins: Vec::new(),
@@ -212,7 +274,9 @@ pub fn builtins(config: &Config) -> Builtins {
       id: "dawn".to_string(),
       name: "Dawn built-in widgets".to_string(),
       version: env!("CARGO_PKG_VERSION").to_string(),
-      description: "Clock and media widgets configured in the main config.".to_string(),
+      description:
+        "Clock, media, calendar, battery, and system widgets configured in the main config."
+          .to_string(),
       widgets,
       builtin: true,
     }],
@@ -573,5 +637,26 @@ mod tests {
     assert!(built.plugins[0].builtin);
     assert_eq!(built.plugins[0].widgets.len(), 2);
     assert_eq!(built.media.len(), 1);
+  }
+
+  #[test]
+  fn new_widgets_register_only_when_enabled() {
+    let mut config = Config::default();
+    config.calendar.enabled = true;
+    config.battery.enabled = true;
+    config.system.enabled = true;
+    let built = super::builtins(&config);
+    let widgets = &built.plugins[0].widgets;
+    assert_eq!(widgets.len(), 5);
+    let kinds: Vec<&str> = widgets.iter().map(super::Widget::kind).collect();
+    assert_eq!(kinds, ["clock", "media", "calendar", "battery", "system"]);
+    // The default layer is behind, but an explicit front layer must reach the
+    // renderer through the widget itself.
+    config.calendar.layer = crate::config::WidgetLayer::Front;
+    let built = super::builtins(&config);
+    assert_eq!(
+      built.plugins[0].widgets[2].layer(),
+      crate::config::WidgetLayer::Front
+    );
   }
 }

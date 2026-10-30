@@ -2,6 +2,16 @@
 
 All notable changes to dawn are recorded here.
 
+## 0.2.4 - 2026-10-30
+
+### Added
+
+- First-party calendar, battery, and system widgets. `[calendar]` draws a month
+  grid, `[battery]` reads the local power supply as a ring, bar, or pill, and
+  `[system]` shows hostname, kernel, uptime, load, and memory from `/proc`. All
+  three reuse the clock plate, motion, and state controls and are disabled by
+  default.
+
 ## 0.2.3 - 2026-10-30
 
 ### Added

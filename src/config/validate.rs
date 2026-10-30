@@ -17,13 +17,14 @@ use crate::config::raw::{
   Field, RawBackgroundOverride, RawConfig, RawField, RawGpu, RawWidgetPlate,
 };
 use crate::config::{
-  AuthConfig, BackgroundConfig, BackgroundKind, BackgroundOverride, BlurConfig, ButtonEffect,
-  CaretStyle, ClockConfig, ClockStyle, Config, DecorMotion, EnterFrom, EnterStyle, FieldConfig,
-  GpuBackend, GpuConfig, GpuDevice, GpuFallback, GpuPower, GpuPresent, HintConfig, HoverReveal,
-  Issue, LayoutConfig, Location, LoginConfig, MediaArt, MediaConfig, MediaLayout, MediaLook,
-  MediaProgress, MotionConfig, PlateStyle, PluginsConfig, PowerConfig, SecondHand,
-  SessionRowConfig, SessionsConfig, SurfaceStyle, ThemeConfig, ThemePreset, UiConfig, WidgetLayer,
-  WidgetLook, WidgetPlate, WidgetState,
+  AuthConfig, BackgroundConfig, BackgroundKind, BackgroundOverride, BatteryConfig, BatteryStyle,
+  BlurConfig, ButtonEffect, CalendarConfig, CaretStyle, ClockConfig, ClockStyle, Config,
+  DecorMotion, EnterFrom, EnterStyle, FieldConfig, GpuBackend, GpuConfig, GpuDevice, GpuFallback,
+  GpuPower, GpuPresent, HintConfig, HoverReveal, Issue, LayoutConfig, Location, LoginConfig,
+  MediaArt, MediaConfig, MediaLayout, MediaLook, MediaProgress, MotionConfig, PlateStyle,
+  PluginsConfig, PowerConfig, SecondHand, SessionRowConfig, SessionsConfig, SurfaceStyle,
+  SystemConfig, SystemField, SystemStyle, ThemeConfig, ThemePreset, UiConfig, WeekStart,
+  WidgetLayer, WidgetLook, WidgetPlate, WidgetState,
 };
 use crate::layout::{Anchor, Fit, Placement};
 
@@ -535,6 +536,235 @@ impl<'a> Validator<'a> {
       ),
     };
 
+    let calendar = CalendarConfig {
+      enabled: self.boolean(
+        raw.calendar.enabled.as_ref(),
+        "calendar.enabled",
+        defaults.calendar.enabled,
+      ),
+      placement: self.placement(
+        raw.calendar.anchor.as_ref(),
+        raw.calendar.offset.as_ref(),
+        raw.calendar.monitor.as_ref(),
+        raw.calendar.rotation.as_ref(),
+        "calendar",
+        &defaults.calendar.placement,
+      ),
+      size: self.range(
+        raw.calendar.size.as_ref(),
+        "calendar.size",
+        f64::from(defaults.calendar.size),
+        8.0,
+        48.0,
+      ) as f32,
+      width: self.range(
+        raw.calendar.width.as_ref(),
+        "calendar.width",
+        f64::from(defaults.calendar.width),
+        120.0,
+        800.0,
+      ) as f32,
+      week_start: self.choice(
+        raw.calendar.week_start.as_ref(),
+        "calendar.week_start",
+        defaults.calendar.week_start,
+        WeekStart::parse,
+        "monday or sunday",
+      ),
+      show_header: self.boolean(
+        raw.calendar.show_header.as_ref(),
+        "calendar.show_header",
+        defaults.calendar.show_header,
+      ),
+      color: self.color(
+        raw.calendar.color.as_ref(),
+        "calendar.color",
+        defaults.calendar.color,
+      ),
+      muted_color: self.color(
+        raw.calendar.muted_color.as_ref(),
+        "calendar.muted_color",
+        defaults.calendar.muted_color,
+      ),
+      today_color: self.color(
+        raw.calendar.today_color.as_ref(),
+        "calendar.today_color",
+        defaults.calendar.today_color,
+      ),
+      header_color: self.color(
+        raw.calendar.header_color.as_ref(),
+        "calendar.header_color",
+        defaults.calendar.header_color,
+      ),
+      layer: self.widget_layer(
+        raw.calendar.layer.as_ref(),
+        "calendar.layer",
+        defaults.calendar.layer,
+      ),
+      look: self.widget_look(
+        &raw.calendar.plate,
+        raw.calendar.motion.as_ref(),
+        raw.calendar.show_on.as_ref(),
+        raw.calendar.hide_on.as_ref(),
+        "calendar",
+      ),
+      draggable: self.boolean(
+        raw.calendar.draggable.as_ref(),
+        "calendar.draggable",
+        defaults.calendar.draggable,
+      ),
+    };
+
+    let battery = BatteryConfig {
+      enabled: self.boolean(
+        raw.battery.enabled.as_ref(),
+        "battery.enabled",
+        defaults.battery.enabled,
+      ),
+      placement: self.placement(
+        raw.battery.anchor.as_ref(),
+        raw.battery.offset.as_ref(),
+        raw.battery.monitor.as_ref(),
+        raw.battery.rotation.as_ref(),
+        "battery",
+        &defaults.battery.placement,
+      ),
+      size: self.range(
+        raw.battery.size.as_ref(),
+        "battery.size",
+        f64::from(defaults.battery.size),
+        8.0,
+        48.0,
+      ) as f32,
+      width: self.range(
+        raw.battery.width.as_ref(),
+        "battery.width",
+        f64::from(defaults.battery.width),
+        120.0,
+        800.0,
+      ) as f32,
+      style: self.choice(
+        raw.battery.style.as_ref(),
+        "battery.style",
+        defaults.battery.style,
+        BatteryStyle::parse,
+        "ring, bar, or pill",
+      ),
+      color: self.color(
+        raw.battery.color.as_ref(),
+        "battery.color",
+        defaults.battery.color,
+      ),
+      low_color: self.color(
+        raw.battery.low_color.as_ref(),
+        "battery.low_color",
+        defaults.battery.low_color,
+      ),
+      charging_color: self.color(
+        raw.battery.charging_color.as_ref(),
+        "battery.charging_color",
+        defaults.battery.charging_color,
+      ),
+      low_at: self.integer_range(
+        raw.battery.low_at.as_ref(),
+        "battery.low_at",
+        u64::from(defaults.battery.low_at),
+        0,
+        100,
+      ) as u8,
+      show_percent: self.boolean(
+        raw.battery.show_percent.as_ref(),
+        "battery.show_percent",
+        defaults.battery.show_percent,
+      ),
+      layer: self.widget_layer(
+        raw.battery.layer.as_ref(),
+        "battery.layer",
+        defaults.battery.layer,
+      ),
+      look: self.widget_look(
+        &raw.battery.plate,
+        raw.battery.motion.as_ref(),
+        raw.battery.show_on.as_ref(),
+        raw.battery.hide_on.as_ref(),
+        "battery",
+      ),
+      draggable: self.boolean(
+        raw.battery.draggable.as_ref(),
+        "battery.draggable",
+        defaults.battery.draggable,
+      ),
+    };
+
+    let system = SystemConfig {
+      enabled: self.boolean(
+        raw.system.enabled.as_ref(),
+        "system.enabled",
+        defaults.system.enabled,
+      ),
+      placement: self.placement(
+        raw.system.anchor.as_ref(),
+        raw.system.offset.as_ref(),
+        raw.system.monitor.as_ref(),
+        raw.system.rotation.as_ref(),
+        "system",
+        &defaults.system.placement,
+      ),
+      size: self.range(
+        raw.system.size.as_ref(),
+        "system.size",
+        f64::from(defaults.system.size),
+        8.0,
+        48.0,
+      ) as f32,
+      width: self.range(
+        raw.system.width.as_ref(),
+        "system.width",
+        f64::from(defaults.system.width),
+        120.0,
+        800.0,
+      ) as f32,
+      style: self.choice(
+        raw.system.style.as_ref(),
+        "system.style",
+        defaults.system.style,
+        SystemStyle::parse,
+        "rows or sparkline",
+      ),
+      fields: self.system_fields(
+        raw.system.fields.as_ref(),
+        "system.fields",
+        &defaults.system.fields,
+      ),
+      color: self.color(
+        raw.system.color.as_ref(),
+        "system.color",
+        defaults.system.color,
+      ),
+      label_color: self.color(
+        raw.system.label_color.as_ref(),
+        "system.label_color",
+        defaults.system.label_color,
+      ),
+      layer: self.widget_layer(
+        raw.system.layer.as_ref(),
+        "system.layer",
+        defaults.system.layer,
+      ),
+      look: self.widget_look(
+        &raw.system.plate,
+        raw.system.motion.as_ref(),
+        raw.system.show_on.as_ref(),
+        raw.system.hide_on.as_ref(),
+        "system",
+      ),
+      draggable: self.boolean(
+        raw.system.draggable.as_ref(),
+        "system.draggable",
+        defaults.system.draggable,
+      ),
+    };
+
     let background = BackgroundConfig {
       kind: self.background_kind(
         raw.background.kind.as_ref(),
@@ -782,6 +1012,9 @@ impl<'a> Validator<'a> {
       login,
       clock,
       media,
+      calendar,
+      battery,
+      system,
       background,
       theme,
       motion,
@@ -1542,6 +1775,61 @@ impl<'a> Validator<'a> {
       }
     }
     states
+  }
+
+  /// Parses the ordered `system.fields` list.
+  ///
+  /// We keep the author's order so a theme can put memory first. Unknown names
+  /// and duplicates are reported once and skipped, which is the same degrade
+  /// one field at a time rule the rest of the config uses. An empty list is
+  /// allowed: the sparkline style still has something to draw, and the text
+  /// rows simply disappear.
+  fn system_fields(
+    &mut self,
+    field: Option<&Field>,
+    key: &str,
+    default: &[SystemField],
+  ) -> Vec<SystemField> {
+    let Some(field) = field else {
+      return default.to_vec();
+    };
+    let Some(values) = field.get_ref().as_array() else {
+      self.issue(
+        key,
+        Some(field),
+        "expected an array of field names such as [\"hostname\", \"kernel\"]",
+      );
+      return default.to_vec();
+    };
+    if values.len() > 6 {
+      self.issue(key, Some(field), "accepts at most 6 fields");
+    }
+    let mut fields = Vec::new();
+    let mut reported = Vec::new();
+    for value in values.iter().take(6) {
+      let Some(text) = value.as_str() else {
+        self.issue(key, Some(field), "every field must be a string");
+        continue;
+      };
+      match SystemField::parse(text) {
+        Some(parsed) => {
+          if !fields.contains(&parsed) {
+            fields.push(parsed);
+          }
+        }
+        None => {
+          if !reported.contains(&text) {
+            self.issue(
+              key,
+              Some(field),
+              format!("unknown field {text:?}; use hostname, kernel, uptime, load, or memory"),
+            );
+            reported.push(text);
+          }
+        }
+      }
+    }
+    fields
   }
 
   /// Resolves the whole presentation block for one built-in widget.

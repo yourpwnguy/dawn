@@ -6,6 +6,8 @@
 //! is plain data and already safe to display: the password is passed as its
 //! masked string, never as the real value.
 
+use crate::sysinfo::{BatterySnapshot, SystemSnapshot};
+
 /// Which control currently owns the keyboard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Focus {
@@ -81,6 +83,11 @@ pub struct View {
   /// user data (the media widget in particular) must stay inert until this is
   /// set, because the greeter is a pre-login surface.
   pub authenticated: bool,
+  /// Last local battery reading. `present = false` on a desktop.
+  pub battery: BatterySnapshot,
+  /// Last local system reading. The renderer reads `load_history` for the
+  /// sparkline; the app is the only writer.
+  pub system: SystemSnapshot,
 }
 
 impl View {

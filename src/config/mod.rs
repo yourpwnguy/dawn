@@ -92,6 +92,12 @@ pub struct Config {
   pub login: LoginConfig,
   pub clock: ClockConfig,
   pub media: MediaConfig,
+  /// Month grid. Disabled by default so an existing theme is unchanged.
+  pub calendar: CalendarConfig,
+  /// Local battery indicator. Disabled by default.
+  pub battery: BatteryConfig,
+  /// Local system monitor. Disabled by default.
+  pub system: SystemConfig,
   pub background: BackgroundConfig,
   pub theme: ThemeConfig,
   pub motion: MotionConfig,
@@ -1123,6 +1129,176 @@ pub struct WidgetLook {
   pub hide_on: Vec<WidgetState>,
 }
 
+/// Which day starts a week in the calendar grid.
+///
+/// The default is Monday because that is what most desktop calendars use. A
+/// theme can switch to Sunday without changing anything else in the grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WeekStart {
+  #[default]
+  Monday,
+  Sunday,
+}
+
+impl WeekStart {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "monday" => Some(Self::Monday),
+      "sunday" => Some(Self::Sunday),
+      _ => None,
+    }
+  }
+}
+
+/// How the battery widget draws its remaining charge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BatteryStyle {
+  /// A ring of sixty radial segments with the percentage in the middle.
+  #[default]
+  Ring,
+  /// A horizontal rounded bar with the percentage to the right.
+  Bar,
+  /// A battery body with a terminal nub and a filled portion.
+  Pill,
+}
+
+impl BatteryStyle {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "ring" => Some(Self::Ring),
+      "bar" => Some(Self::Bar),
+      "pill" => Some(Self::Pill),
+      _ => None,
+    }
+  }
+}
+
+/// How the system monitor lays out its readings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SystemStyle {
+  /// One label and value per row.
+  #[default]
+  Rows,
+  /// A compact load sparkline above the text rows.
+  Sparkline,
+}
+
+impl SystemStyle {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "rows" => Some(Self::Rows),
+      "sparkline" => Some(Self::Sparkline),
+      _ => None,
+    }
+  }
+}
+
+/// One reading the system monitor may show.
+///
+/// The order in the config is preserved, so a theme can put memory first. The
+/// validator drops unknown names and duplicates instead of rejecting the whole
+/// widget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SystemField {
+  #[default]
+  Hostname,
+  Kernel,
+  Uptime,
+  Load,
+  Memory,
+}
+
+impl SystemField {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "hostname" => Some(Self::Hostname),
+      "kernel" => Some(Self::Kernel),
+      "uptime" => Some(Self::Uptime),
+      "load" => Some(Self::Load),
+      "memory" => Some(Self::Memory),
+      _ => None,
+    }
+  }
+}
+
+/// The month grid widget.
+///
+/// It draws the current month from the system clock, with the current day in a
+/// filled cell. There are no event files and no network access: the calendar is
+/// a read-only view of the local date.
+#[derive(Debug, Clone)]
+pub struct CalendarConfig {
+  pub enabled: bool,
+  pub placement: Placement,
+  /// Day number font size. The cell height is twice this value.
+  pub size: f32,
+  /// Total content width. The seven columns divide it evenly.
+  pub width: f32,
+  pub week_start: WeekStart,
+  /// Draw the month and year above the weekday row.
+  pub show_header: bool,
+  /// Colour for ordinary day numbers.
+  pub color: Rgb,
+  /// Colour for weekday labels, empty cells, and secondary text.
+  pub muted_color: Rgb,
+  /// Fill behind the current day.
+  pub today_color: Rgb,
+  pub header_color: Rgb,
+  pub layer: WidgetLayer,
+  /// Plate, motion, and state visibility for this widget.
+  pub look: WidgetLook,
+  pub draggable: bool,
+}
+
+/// The local battery indicator.
+///
+/// It reads `/sys/class/power_supply` once every two seconds on the UI tick.
+/// The widget never writes to the battery and never asks the network for
+/// anything.
+#[derive(Debug, Clone)]
+pub struct BatteryConfig {
+  pub enabled: bool,
+  pub placement: Placement,
+  pub size: f32,
+  pub width: f32,
+  pub style: BatteryStyle,
+  pub color: Rgb,
+  /// Colour used at or below `low_at`.
+  pub low_color: Rgb,
+  /// Colour used while the battery reports `Charging`.
+  pub charging_color: Rgb,
+  /// Threshold for `low_color`, 0 to 100.
+  pub low_at: u8,
+  pub show_percent: bool,
+  pub layer: WidgetLayer,
+  pub look: WidgetLook,
+  pub draggable: bool,
+}
+
+/// The local system monitor.
+///
+/// Hostname, kernel, uptime, load average, and memory all come from `/proc` on
+/// the local machine. Nothing is sent anywhere and no file is written.
+#[derive(Debug, Clone)]
+pub struct SystemConfig {
+  pub enabled: bool,
+  pub placement: Placement,
+  pub size: f32,
+  pub width: f32,
+  pub style: SystemStyle,
+  /// Readings to show, in order. At most six, duplicates removed at load time.
+  pub fields: Vec<SystemField>,
+  pub color: Rgb,
+  pub label_color: Rgb,
+  pub layer: WidgetLayer,
+  pub look: WidgetLook,
+  pub draggable: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct ClockConfig {
   pub enabled: bool,
@@ -2060,6 +2236,70 @@ impl Default for Config {
         color: None,
         show_before_login: true,
         keep_last: true,
+        draggable: true,
+      },
+      calendar: CalendarConfig {
+        enabled: false,
+        placement: Placement {
+          anchor: Anchor::TopRight,
+          offset: (40, 40),
+          monitor: None,
+          rotation: 0.0,
+        },
+        size: 13.0,
+        width: 260.0,
+        week_start: WeekStart::Monday,
+        show_header: true,
+        color: Rgb::solid(0xF7, 0xF3, 0xE9),
+        muted_color: Rgb::solid(0x8A, 0x8D, 0x80),
+        today_color: Rgb::solid(0xE2, 0x73, 0x4F),
+        header_color: Rgb::solid(0xE7, 0xDA, 0x19),
+        layer: WidgetLayer::Behind,
+        look: WidgetLook::default(),
+        draggable: true,
+      },
+      battery: BatteryConfig {
+        enabled: false,
+        placement: Placement {
+          anchor: Anchor::BottomRight,
+          offset: (40, 40),
+          monitor: None,
+          rotation: 0.0,
+        },
+        size: 14.0,
+        width: 220.0,
+        style: BatteryStyle::Ring,
+        color: Rgb::solid(0xF7, 0xF3, 0xE9),
+        low_color: Rgb::solid(0xE2, 0x73, 0x4F),
+        charging_color: Rgb::solid(0xC6, 0xD6, 0x2B),
+        low_at: 20,
+        show_percent: true,
+        layer: WidgetLayer::Behind,
+        look: WidgetLook::default(),
+        draggable: true,
+      },
+      system: SystemConfig {
+        enabled: false,
+        placement: Placement {
+          anchor: Anchor::TopLeft,
+          offset: (40, 40),
+          monitor: None,
+          rotation: 0.0,
+        },
+        size: 12.0,
+        width: 280.0,
+        style: SystemStyle::Rows,
+        fields: vec![
+          SystemField::Hostname,
+          SystemField::Kernel,
+          SystemField::Uptime,
+          SystemField::Load,
+          SystemField::Memory,
+        ],
+        color: Rgb::solid(0xF7, 0xF3, 0xE9),
+        label_color: Rgb::solid(0x4E, 0x51, 0x48),
+        layer: WidgetLayer::Behind,
+        look: WidgetLook::default(),
         draggable: true,
       },
       background: BackgroundConfig {
@@ -3221,6 +3461,22 @@ fps = 500
     assert!(config.plugins.dirs.iter().any(|dir| dir.is_absolute()));
     assert!(config.clock.enabled);
     assert!(config.media.enabled);
+    assert!(!config.calendar.enabled);
+    assert!(!config.battery.enabled);
+    assert!(!config.system.enabled);
+    assert_eq!(config.calendar.week_start, super::WeekStart::Monday);
+    assert_eq!(config.battery.style, super::BatteryStyle::Ring);
+    assert_eq!(config.system.style, super::SystemStyle::Rows);
+    assert_eq!(
+      config.system.fields,
+      [
+        super::SystemField::Hostname,
+        super::SystemField::Kernel,
+        super::SystemField::Uptime,
+        super::SystemField::Load,
+        super::SystemField::Memory
+      ]
+    );
     assert!(config.motion.enabled);
     assert!(!config.power.low_power);
   }
@@ -3248,6 +3504,148 @@ fps = 500
     );
     // The invalid override falls back without discarding the valid base.
     assert_eq!(loaded.config.background.fit, crate::layout::Fit::Cover);
+  }
+
+  #[test]
+  fn calendar_battery_and_system_parse_their_choices() {
+    let path = temp_config(
+      "new-widgets",
+      r##"
+[calendar]
+enabled = true
+anchor = "bottom-left"
+offset = [11, 22]
+monitor = "DP-2"
+rotation = 3
+size = 15
+width = 300
+week_start = "sunday"
+show_header = false
+color = "#112233"
+muted_color = "#445566"
+today_color = "#778899"
+header_color = "#aabbcc"
+layer = "front"
+draggable = false
+
+[battery]
+enabled = true
+style = "pill"
+size = 16
+width = 240
+color = "#010203"
+low_color = "#040506"
+charging_color = "#070809"
+low_at = 15
+show_percent = false
+
+[system]
+enabled = true
+style = "sparkline"
+size = 11
+width = 320
+fields = ["memory", "hostname", "load"]
+color = "#0a0b0c"
+label_color = "#0d0e0f"
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    let calendar = &loaded.config.calendar;
+    assert!(calendar.enabled);
+    assert_eq!(calendar.placement.anchor, Anchor::BottomLeft);
+    assert_eq!(calendar.placement.offset, (11, 22));
+    assert_eq!(calendar.placement.monitor.as_deref(), Some("DP-2"));
+    assert_eq!(calendar.placement.rotation, 3.0);
+    assert_eq!(calendar.size, 15.0);
+    assert_eq!(calendar.width, 300.0);
+    assert_eq!(calendar.week_start, super::WeekStart::Sunday);
+    assert!(!calendar.show_header);
+    assert_eq!(calendar.color, crate::color::Rgb::solid(0x11, 0x22, 0x33));
+    assert_eq!(calendar.layer, super::WidgetLayer::Front);
+    assert!(!calendar.draggable);
+
+    let battery = &loaded.config.battery;
+    assert!(battery.enabled);
+    assert_eq!(battery.style, super::BatteryStyle::Pill);
+    assert_eq!(battery.low_at, 15);
+    assert!(!battery.show_percent);
+    assert_eq!(
+      battery.charging_color,
+      crate::color::Rgb::solid(0x07, 0x08, 0x09)
+    );
+
+    let system = &loaded.config.system;
+    assert!(system.enabled);
+    assert_eq!(system.style, super::SystemStyle::Sparkline);
+    assert_eq!(
+      system.fields,
+      [
+        super::SystemField::Memory,
+        super::SystemField::Hostname,
+        super::SystemField::Load
+      ]
+    );
+    assert_eq!(system.width, 320.0);
+    assert_eq!(
+      system.label_color,
+      crate::color::Rgb::solid(0x0d, 0x0e, 0x0f)
+    );
+  }
+
+  #[test]
+  fn bad_new_widget_values_fall_back_with_issues() {
+    let path = temp_config(
+      "new-widgets-bad",
+      r##"
+[calendar]
+week_start = "tuesday"
+size = 400
+width = 9
+layer = "middle"
+
+[battery]
+style = "saucer"
+low_at = 400
+
+[system]
+fields = ["hostname", "hostname", "bogus", "memory", "kernel", "uptime", "load"]
+style = "chart"
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert_eq!(loaded.config.calendar.week_start, super::WeekStart::Monday);
+    assert_eq!(loaded.config.calendar.size, 13.0);
+    assert_eq!(loaded.config.calendar.width, 260.0);
+    assert_eq!(loaded.config.calendar.layer, super::WidgetLayer::Behind);
+    assert_eq!(loaded.config.battery.style, super::BatteryStyle::Ring);
+    assert_eq!(loaded.config.battery.low_at, 20);
+    assert_eq!(loaded.config.system.style, super::SystemStyle::Rows);
+    assert_eq!(
+      loaded.config.system.fields,
+      [
+        super::SystemField::Hostname,
+        super::SystemField::Memory,
+        super::SystemField::Kernel,
+        super::SystemField::Uptime
+      ]
+    );
+    for key in [
+      "calendar.week_start",
+      "calendar.size",
+      "calendar.width",
+      "calendar.layer",
+      "battery.style",
+      "battery.low_at",
+      "system.style",
+      "system.fields",
+    ] {
+      assert!(
+        loaded.issues.iter().any(|issue| issue.key == key),
+        "missing issue for {key}: {:?}",
+        loaded.issues
+      );
+    }
   }
 
   #[test]

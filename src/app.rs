@@ -20,8 +20,9 @@
 //! - `Up` / `Down`: choose a session in the picker.
 //! - `Escape`: cancel a login in flight, otherwise clear the current field.
 
+use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tracing::{info, warn};
 
@@ -30,6 +31,7 @@ use crate::auth::worker::{Event, WorkerHandle};
 use crate::config::Config;
 use crate::plugin::{self, Plugin};
 use crate::session::Session;
+use crate::sysinfo::{BatterySnapshot, SystemSnapshot};
 use crate::ui::input::TextInput;
 use crate::ui::media::MediaState;
 use crate::ui::motion::{Motion, MotionFrame};
@@ -38,6 +40,10 @@ use crate::ui::view::{Focus, Line, View};
 
 const MAX_USERNAME_CHARS: usize = 256;
 const MAX_ANSWER_CHARS: usize = 1024;
+/// How often the local `/sys` and `/proc` snapshots are refreshed.
+const SYSINFO_REFRESH: Duration = Duration::from_secs(2);
+/// Number of load samples kept for the system sparkline.
+const MAX_LOAD_HISTORY: usize = 32;
 
 /// A key the window or the TTY frontend recognised. Text keys are separate from
 /// control keys so each frontend only has to map its own key codes once.
@@ -87,6 +93,10 @@ pub struct App {
   signature: String,
   plugins: Vec<Plugin>,
   media: Vec<Arc<MediaState>>,
+  /// Last local battery reading and the time that read happened.
+  battery: BatterySnapshot,
+  system: SystemSnapshot,
+  sysinfo_at: Instant,
   motion: Motion,
   authenticated: bool,
   finished: Option<Finish>,
@@ -117,6 +127,12 @@ impl App {
       .is_empty()
       .then(|| Line::error(config.login.no_sessions.clone()));
     let motion = Motion::new(&config.motion, config.power.low_power);
+    // Read the local hardware once here so the very first frame is complete.
+    // Later refreshes happen on the UI tick; there is no background thread.
+    let battery = BatterySnapshot::read(Path::new("/"));
+    let mut system = SystemSnapshot::read(Path::new("/"));
+    system.load_history.push(system.load[0]);
+    let sysinfo_at = Instant::now();
 
     Self {
       theme,
@@ -137,6 +153,9 @@ impl App {
       signature: String::new(),
       plugins,
       media,
+      battery,
+      system,
+      sysinfo_at,
       motion,
       authenticated: false,
       finished: None,
@@ -169,6 +188,7 @@ impl App {
   /// Recomputes every widget's visible signature. Returns true when something
   /// changed, which is the only reason an otherwise idle greeter redraws.
   pub fn tick(&mut self, now: &jiff::Zoned) -> bool {
+    let sysinfo_changed = self.refresh_sysinfo(Instant::now());
     let mut signature = String::new();
     for plugin in &self.plugins {
       for widget in &plugin.widgets {
@@ -178,6 +198,41 @@ impl App {
     }
     let changed = signature != self.signature;
     self.signature = signature;
+    changed || sysinfo_changed
+  }
+
+  /// Refreshes the battery and system snapshots at most once per
+  /// [`SYSINFO_REFRESH`].
+  ///
+  /// The refresh is deliberately synchronous. Reading a handful of tiny proc
+  /// files costs far less than spawning a thread and waking it forever, and the
+  /// UI tick already exists. We compare the visible fields before assigning the
+  /// new snapshot so a new sparkline sample alone does not mark the whole UI
+  /// dirty; the sample is appended after the comparison.
+  fn refresh_sysinfo(&mut self, now: Instant) -> bool {
+    if now.saturating_duration_since(self.sysinfo_at) < SYSINFO_REFRESH {
+      return false;
+    }
+    self.sysinfo_at = now;
+    let battery = BatterySnapshot::read(Path::new("/"));
+    let next = SystemSnapshot::read(Path::new("/"));
+    let changed = battery != self.battery
+      || next.hostname != self.system.hostname
+      || next.kernel != self.system.kernel
+      || next.uptime != self.system.uptime
+      || next.load != self.system.load
+      || next.mem_used != self.system.mem_used
+      || next.mem_total != self.system.mem_total;
+    let mut system = next;
+    system.load_history = self.system.load_history.clone();
+    let sample = system.load[0];
+    system.load_history.push(sample);
+    if system.load_history.len() > MAX_LOAD_HISTORY {
+      let excess = system.load_history.len() - MAX_LOAD_HISTORY;
+      system.load_history.drain(..excess);
+    }
+    self.battery = battery;
+    self.system = system;
     changed
   }
 
@@ -354,6 +409,8 @@ impl App {
       warning: self.warning.clone(),
       busy: self.busy,
       authenticated: self.authenticated,
+      battery: self.battery.clone(),
+      system: self.system.clone(),
     }
   }
 

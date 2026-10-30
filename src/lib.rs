@@ -31,6 +31,7 @@ pub mod layout;
 pub mod plugin;
 pub mod secret;
 pub mod session;
+pub mod sysinfo;
 pub mod theme;
 pub mod tty;
 pub mod ui;

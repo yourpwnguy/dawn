@@ -29,6 +29,12 @@ pub struct RawConfig {
   #[serde(default)]
   pub media: RawMedia,
   #[serde(default)]
+  pub calendar: RawCalendar,
+  #[serde(default)]
+  pub battery: RawBattery,
+  #[serde(default)]
+  pub system: RawSystem,
+  #[serde(default)]
   pub background: RawBackground,
   #[serde(default)]
   pub theme: RawTheme,
@@ -545,6 +551,131 @@ pub struct RawMedia {
   pub show_before_login: Option<Field>,
   #[serde(default)]
   pub keep_last: Option<Field>,
+  #[serde(default)]
+  pub draggable: Option<Field>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawCalendar {
+  #[serde(default)]
+  pub enabled: Option<Field>,
+  #[serde(default)]
+  pub layer: Option<Field>,
+  #[serde(default)]
+  pub plate: RawWidgetPlate,
+  #[serde(default)]
+  pub motion: Option<RawDecorMotion>,
+  #[serde(default)]
+  pub show_on: Option<Field>,
+  #[serde(default)]
+  pub hide_on: Option<Field>,
+  #[serde(default)]
+  pub anchor: Option<Field>,
+  #[serde(default)]
+  pub offset: Option<Field>,
+  #[serde(default)]
+  pub monitor: Option<Field>,
+  #[serde(default)]
+  pub rotation: Option<Field>,
+  #[serde(default)]
+  pub size: Option<Field>,
+  #[serde(default)]
+  pub width: Option<Field>,
+  #[serde(default)]
+  pub week_start: Option<Field>,
+  #[serde(default)]
+  pub show_header: Option<Field>,
+  #[serde(default)]
+  pub color: Option<Field>,
+  #[serde(default)]
+  pub muted_color: Option<Field>,
+  #[serde(default)]
+  pub today_color: Option<Field>,
+  #[serde(default)]
+  pub header_color: Option<Field>,
+  #[serde(default)]
+  pub draggable: Option<Field>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawBattery {
+  #[serde(default)]
+  pub enabled: Option<Field>,
+  #[serde(default)]
+  pub layer: Option<Field>,
+  #[serde(default)]
+  pub plate: RawWidgetPlate,
+  #[serde(default)]
+  pub motion: Option<RawDecorMotion>,
+  #[serde(default)]
+  pub show_on: Option<Field>,
+  #[serde(default)]
+  pub hide_on: Option<Field>,
+  #[serde(default)]
+  pub anchor: Option<Field>,
+  #[serde(default)]
+  pub offset: Option<Field>,
+  #[serde(default)]
+  pub monitor: Option<Field>,
+  #[serde(default)]
+  pub rotation: Option<Field>,
+  #[serde(default)]
+  pub size: Option<Field>,
+  #[serde(default)]
+  pub width: Option<Field>,
+  #[serde(default)]
+  pub style: Option<Field>,
+  #[serde(default)]
+  pub color: Option<Field>,
+  #[serde(default)]
+  pub low_color: Option<Field>,
+  #[serde(default)]
+  pub charging_color: Option<Field>,
+  #[serde(default)]
+  pub low_at: Option<Field>,
+  #[serde(default)]
+  pub show_percent: Option<Field>,
+  #[serde(default)]
+  pub draggable: Option<Field>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawSystem {
+  #[serde(default)]
+  pub enabled: Option<Field>,
+  #[serde(default)]
+  pub layer: Option<Field>,
+  #[serde(default)]
+  pub plate: RawWidgetPlate,
+  #[serde(default)]
+  pub motion: Option<RawDecorMotion>,
+  #[serde(default)]
+  pub show_on: Option<Field>,
+  #[serde(default)]
+  pub hide_on: Option<Field>,
+  #[serde(default)]
+  pub anchor: Option<Field>,
+  #[serde(default)]
+  pub offset: Option<Field>,
+  #[serde(default)]
+  pub monitor: Option<Field>,
+  #[serde(default)]
+  pub rotation: Option<Field>,
+  #[serde(default)]
+  pub size: Option<Field>,
+  #[serde(default)]
+  pub width: Option<Field>,
+  #[serde(default)]
+  pub style: Option<Field>,
+  #[serde(default)]
+  pub fields: Option<Field>,
+  #[serde(default)]
+  pub color: Option<Field>,
+  #[serde(default)]
+  pub label_color: Option<Field>,
   #[serde(default)]
   pub draggable: Option<Field>,
 }
