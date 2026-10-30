@@ -26,7 +26,7 @@ by what they affect, not by implementation detail:
 - `[clock]` and `[media]` are the first-party overlay widgets.
 - `[background]` selects a solid, gradient, image, GIF/WebP, or video wallpaper.
 - `[layout]` controls dragging and where positions are remembered.
-- `[sessions]`, `[plugins]`, `[auth]`, and `[power]` are runtime concerns.
+- `[sessions]`, `[plugins]`, `[auth]`, `[gpu]`, and `[power]` are runtime concerns.
 
 Every key is optional, and a section only needs the values you want to change.
 That is the rule that keeps a complete-looking config short: write
@@ -225,10 +225,11 @@ inside the card. Items paint after the card surface and before the form, in
 list order, so a later item covers an earlier one and no item can cover an
 input or the submit button. The built-in clock and media widgets paint behind
 decor by default; set `layer = "front"` on `[clock]` or `[media]` to paint them
-after the decor but still before the form. A front widget joins the card's
-coordinate system: its anchor is the card, and its offset and size scale with
-the card just like decor. Images are decoded once at startup; a missing image is
-logged and skipped. Anchors are relative to the card.
+after the decor but still before the form. A plugin widget chooses its own
+`layer` in the manifest and follows the same rule. A front widget joins the
+card's coordinate system: its anchor is the card, and its offset and size scale
+with the card just like decor. Images are decoded once at startup; a missing
+image is logged and skipped. Anchors are relative to the card.
 
 ```toml
 [[login.decor]]
@@ -391,8 +392,8 @@ rules, and renderer as a plugin clock.
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Draw the clock. |
-| `layer` | string | `"behind"` | `behind` paints in screen space before decor; `front` paints after decor but before the form and places the widget in card space, so both its offset and size scale with the card. Only built-in widgets support this in v0.3. |
-| `style` | string | `"digital"` | `digital` or `analog`. For analog, `size` is the dial diameter. |
+| `layer` | string | `"behind"` | `behind` paints in screen space before decor; `front` paints after decor but before the form and places the widget in card space, so both its offset and size scale with the card. Plugin widgets choose their own layer in the manifest. |
+| `style` | string | `"digital"` | `digital`, `analog`, `flip`, or `segment`. For analog, `size` is the dial diameter. `flip` and `segment` use the same time string as `digital`. |
 | `time_format` | string | `"%H:%M"` | strftime pattern, validated at load time. Invalid patterns fall back. |
 | `date_format` | string | `"%A, %B %d"` | Empty hides the date line. |
 | `hour12` | bool | `false` | Rewrites `%H` to `%I` and appends `%p`. An explicit `%I`, `%l`, or `%r` wins. |
@@ -407,7 +408,16 @@ rules, and renderer as a plugin clock.
 | `date_size` | number | `18` | Date font size, 8 to 48. |
 | `color` | colour | theme text | Optional clock colour override. |
 | `date_color` | colour | theme muted | Optional date colour override. |
+| `ghost` | bool | `false` | `segment` only: draw the unused segments at low alpha, like an unlit LCD. |
+| `glow` | colour | unset | `segment` only: halo colour for the active segments. |
+| `glow_size` | number | `0` | Halo spread in logical pixels, 0 to 32. Zero disables it even when `glow` is set. |
+| `colon_blink_ms` | number | `0` | Full on/off period for the colon, 0 to 5000 ms. Zero is steady. Applies to `flip` and `segment`. |
+| `second_hand` | string | `"tick"` | `analog` only: `tick` jumps once per second, `sweep` follows the subsecond clock. |
 | `draggable` | bool | `true` | Let the pointer move the clock. Saved by `[layout]`. |
+| `plate` | table | see below | Backplate style, colour, border, glow, shadow, padding, radius, and opacity. |
+| `motion` | table | static | Animated decor motion applied to the whole widget. |
+| `show_on` | array | empty | States that may show the clock. Empty means every state. |
+| `hide_on` | array | empty | States that hide the clock. Wins over `show_on`. |
 
 Formats use [jiff's strftime implementation](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html),
 which covers the usual `%H`, `%M`, `%S`, `%A`, `%B`, `%d`, and `%Z` specifiers.
@@ -417,12 +427,38 @@ POSIX/C forms. There is no full per-locale translation layer in v0.2.0.
 The clock asks for a redraw only when its visible strings change. A minute clock
 does not wake the renderer sixty times a minute.
 
+The flip face paints one split-flap card per character, using the widget plate
+as the card material. It is a good fit for a compact HUD clock:
+
+```toml
+[clock]
+style = "flip"
+time_format = "%H:%M"
+seconds = false
+size = 42
+color = "#F5F3FF"
+colon_blink_ms = 1000
+```
+
+The segment face draws real seven-segment digits. `ghost` shows the unlit
+segments, and `glow` adds a halo behind the active ones:
+
+```toml
+[clock]
+style = "segment"
+size = 48
+color = "#22D3EE"
+ghost = true
+glow = "#22D3EE"
+glow_size = 6
+```
+
 `layer = "front"` paints the clock after the login decor and before the form.
 Its placement then uses the card's coordinate system, exactly like decor: the
 anchor is relative to the card, and both `offset` and `size` scale with the
 card. That keeps the digits inside a HUD bar that shrank on a smaller display.
-The form still paints on top. Plugin clock widgets always stay behind, so they
-keep screen-space placement.
+The form still paints on top. Plugin clock widgets choose their own `layer` in
+the manifest; when it is `front` they join the same card-space frame.
 
 ## `[media]`
 
@@ -433,17 +469,26 @@ UI or the greetd socket.
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Show the media widget. |
-| `layer` | string | `"behind"` | `behind` paints in screen space before decor; `front` paints after decor but before the form and places the widget in card space, so both its offset and size scale with the card. Only built-in widgets support this in v0.3. |
+| `layer` | string | `"behind"` | `behind` paints in screen space before decor; `front` paints after decor but before the form and places the widget in card space, so both its offset and size scale with the card. Plugin widgets choose their own layer in the manifest. |
 | `anchor` | string | `"bottom-left"` | Placement anchor. |
 | `offset` | `[x, y]` | `[32, 32]` | Logical pixel margin. |
 | `monitor` | string | unset | Output name restriction. |
 | `rotation` | number | `0` | Rotate the media widget in degrees (-360 to 360). |
 | `size` | number | `16` | Text size, 8 to 48. |
 | `show_art` | bool | `true` | Show local `file://` album art. Network URLs are never fetched. |
+| `layout` | string | `"card"` | `card` (art left, text right), `compact` (one tight row), or `vinyl` (circle with centred text). |
+| `art` | string | `"cover"` | `cover` keeps the square crop, `disc` masks it into a circle at load time, `none` hides it. |
+| `progress` | string | `"line"` | `line`, `segments` (twelve blocks), or `wave` (a decorative sine). The wave is deterministic and does not use audio data. |
+| `controls` | bool | `false` | Draw previous, play/pause, and next glyphs. Visual only for now: they are not clickable and send no player command. |
+| `tint_from_art` | bool | `false` | Derive the progress colour and plate border/glow from the dominant album-art colour, falling back to the theme accent. |
 | `color` | colour | theme text | Optional title colour override. |
 | `show_before_login` | bool | `true` | Draw the last visible track before authentication. Set `false` on shared machines where even the track name is private. |
 | `keep_last` | bool | `true` | Keep the last track when the player pauses, stops, or disappears. The widget labels it `Last played`. |
 | `draggable` | bool | `true` | Let the pointer move the media widget. |
+| `plate` | table | see below | Backplate style, colour, border, glow, shadow, padding, radius, and opacity. |
+| `motion` | table | static | Animated decor motion applied to the whole widget. |
+| `show_on` | array | empty | States that may show the media widget. Empty means every state. |
+| `hide_on` | array | empty | States that hide the media widget. Wins over `show_on`. |
 
 The greeter runs before the user's session exists. In practice the user's player
 is not on the bus dawn can reach, so the widget shows a calm `No media` state.
@@ -454,8 +499,106 @@ until greetd accepts authentication.
 
 `layer = "front"` works the same way as it does for the clock: media paints after
 decor and before the form, using the card's coordinate system so its offset and
-size scale with the card. Plugin media widgets always stay behind and keep
-screen-space placement.
+size scale with the card. A plugin media widget uses its manifest `layer`, so it
+can also paint in the front layer while the form still stays on top.
+
+The default card layout is the original composition. A compact corner widget
+looks like this:
+
+```toml
+[media]
+layout = "compact"
+art = "cover"
+progress = "line"
+size = 15
+```
+
+The vinyl layout masks the cover into a disc once at load time and draws the
+line progress as a ring around it. `tint_from_art` takes the dominant cover
+colour for the ring and the plate border:
+
+```toml
+[media]
+layout = "vinyl"
+art = "disc"
+progress = "line"
+tint_from_art = true
+size = 18
+[media.plate]
+border = "#FFFFFF22"
+glow = "#FFFFFF"
+glow_size = 8
+```
+
+`controls = true` adds a transport row under the progress. Those glyphs are
+visual only in this release; pointer hit testing and the MPRIS control messages
+arrive in a later change.
+
+#### Widget plates
+
+`[clock.plate]` and `[media.plate]` replace the fixed scrim with a themed
+backplate. The defaults reproduce the old pill exactly: a glass tint, a 14 px
+radius, 12 px padding, full opacity, and no glow or shadow. The plate wraps the
+entire widget, including album art and the progress bar, and it scales with the
+output just like the widget content.
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `style` | string | `"tint"` | `none`, `tint`, `solid`, or `gradient`. `none` draws no plate, border, glow, or shadow. `tint` is the historical scrim. |
+| `color` | colour | theme tint | Fill colour for `solid` and the first stop for `gradient`. |
+| `color_end` | colour | transparent | Second gradient stop. Unset fades to nothing. |
+| `gradient_angle` | number | `0` | Gradient direction in degrees, -360 to 360. Zero goes left to right. |
+| `radius` | number | `14` | Corner radius in logical pixels, 0 to 64. |
+| `border` | colour | unset | One-pixel stroke. `tint` already has a faint theme border; setting this overrides it. |
+| `padding` | number | `12` | Space between the content and the plate edge, 0 to 64. |
+| `glow` | colour | unset | Outer halo colour. |
+| `glow_size` | number | `0` | Halo spread in logical pixels, 0 to 48. Zero disables it. |
+| `shadow` | bool | `false` | Draw a soft drop shadow under the plate. |
+| `opacity` | number | `1` | Overall opacity for the widget and its plate, 0 to 1. |
+
+```toml
+[clock.plate]
+style = "gradient"
+color = "#17191CE6"
+color_end = "#17191C00"
+gradient_angle = 90
+radius = 10
+padding = 14
+border = "#22D3EE66"
+glow = "#22D3EE"
+glow_size = 10
+shadow = true
+opacity = 0.9
+```
+
+`[clock.motion]` and `[media.motion]` reuse the animated-decor table above
+verbatim: `spin`, `sway`, `float`, `pulse`, `fade`, `phase`, and `blink_ms`.
+The transform applies to the whole widget, plate included. `typer_ms` and the
+ticker keys only make sense for a text run and are ignored here.
+`[motion].reduced` and `[power].low_power` pin the sample at its neutral pose,
+so a configured widget never disappears when animation is turned off.
+
+`show_on` and `hide_on` accept up to eight state names. Omitting `show_on` means
+"show in every state"; `hide_on` wins whenever both lists match. Exactly one
+state is current per frame, chosen in this priority order:
+
+| State | When |
+| --- | --- |
+| `busy` | An authentication request is in flight. |
+| `error` | The status line is showing an error. |
+| `authenticated` | greetd accepted the credentials. |
+| `typing` | The username or password field has content. |
+| `idle` | None of the above. |
+
+```toml
+[clock]
+show_on = ["idle", "typing", "error"]
+hide_on = ["busy", "authenticated"]
+```
+
+Plugin widgets do not have a plate or motion table yet. They choose a paint
+layer per widget with `layer = "behind" | "front"`, and the form still paints
+after both layers. See [the plugin API](plugins.md#layers).
 
 ## `[background]`
 
@@ -589,9 +732,10 @@ than once per frame.
 
 Text colours are checked against the glass tint and adjusted to black or white
 when the configured colour would miss the contrast target. The clock and media
-widgets sit directly on the wallpaper, so they get a theme-tinted scrim behind
-their text. Focus rings are drawn with the accent colour and are never the only
-indicator of focus: the caret and selected row change too.
+widgets sit directly on the wallpaper, so they get a theme-tinted plate behind
+their content by default. `[clock.plate]` and `[media.plate]` can recolour,
+reshape, or remove it. Focus rings are drawn with the accent colour and are
+never the only indicator of focus: the caret and selected row change too.
 
 ## `[motion]`
 
@@ -632,6 +776,40 @@ disable one of them.
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `low_power` | bool | `false` | Freeze wallpaper animation and disable motion. Intended for battery-powered or remote greeter hardware. It never affects login responsiveness. |
+
+## `[gpu]`
+
+This table only controls the live window's GPU compositor. `--screenshot` and
+the CPU compositor always run on tiny-skia, so a GPU setting can never change
+the pixels in a screenshot.
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `enabled` | bool | `true` | Set to `false` to use softbuffer without touching a driver. `DAWN_GPU=0` is the environment equivalent. |
+| `backend` | string | `"auto"` | `"auto"` enables Vulkan and GL, `"vulkan"` or `"gl"` picks one, and `"software"` keeps the GPU pipeline but forces a CPU adapter. |
+| `adapter` | string | `"auto"` | `"auto"`, `"index:N"`, or a case-insensitive substring of the adapter name or driver. |
+| `device` | string | `"auto"` | `"auto"`, `"discrete"`, `"integrated"`, `"virtual"`, or `"cpu"`. A non-auto value is a hard filter. |
+| `power` | string | `"low"` | Ranking for `adapter = "auto"`: `"low"`, `"high"`, or `"default"`. |
+| `present` | string | `"fifo"` | `"fifo"`, `"mailbox"`, or `"immediate"`. A mode the surface does not offer is ignored with a warning. |
+| `fallback` | string | `"chain"` | `"chain"` tries the configured adapter, then a software adapter, then softbuffer. `"software"` stops after the software adapter, `"cpu"` skips the GPU, and `"none"` sends a failure to the terminal fallback. |
+
+`index:N` numbers the adapters that match the backend and device filter, in the
+same order `dawn --list-gpus` prints them, before any power ranking. An index
+that does not exist at runtime produces a readable error and follows
+`fallback`; it is not a config error. A name that matches nothing at runtime
+also falls through the same way, because the adapter may only exist on the
+machine that actually runs the greeter. Run `dawn --list-gpus` to see the
+indices, names, backends, device classes, and which one this config selects.
+
+### Host-only rule
+
+`[gpu]` always comes from the host config, even when `--theme ID` replaces the
+rest of the file. A theme bundle cannot change which adapter the greeter uses.
+When `--config PATH` is passed without a theme, that file is the host config and
+its `[gpu]` table applies. `DAWN_GPU` is applied after the host table is chosen:
+`0` or `cpu` disables the GPU, `vulkan`, `gl`, or `software` selects a backend,
+`auto` resets `adapter` to `"auto"`, and any other value is treated as an
+adapter name.
 
 ## `[sessions]`
 

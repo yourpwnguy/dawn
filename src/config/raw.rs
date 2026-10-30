@@ -37,6 +37,8 @@ pub struct RawConfig {
   #[serde(default)]
   pub power: RawPower,
   #[serde(default)]
+  pub gpu: RawGpu,
+  #[serde(default)]
   pub layout: RawLayout,
   #[serde(default)]
   pub sessions: RawSessions,
@@ -390,6 +392,35 @@ pub struct RawUi {
   pub greeting: Option<Field>,
 }
 
+/// Plate subtable for a built-in clock or media widget. Every key is optional,
+/// and the resolved defaults reproduce the historical scrim.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawWidgetPlate {
+  #[serde(default)]
+  pub style: Option<Field>,
+  #[serde(default)]
+  pub color: Option<Field>,
+  #[serde(default)]
+  pub color_end: Option<Field>,
+  #[serde(default)]
+  pub gradient_angle: Option<Field>,
+  #[serde(default)]
+  pub radius: Option<Field>,
+  #[serde(default)]
+  pub border: Option<Field>,
+  #[serde(default)]
+  pub padding: Option<Field>,
+  #[serde(default)]
+  pub glow: Option<Field>,
+  #[serde(default)]
+  pub glow_size: Option<Field>,
+  #[serde(default)]
+  pub shadow: Option<Field>,
+  #[serde(default)]
+  pub opacity: Option<Field>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawClock {
@@ -399,6 +430,14 @@ pub struct RawClock {
   pub style: Option<Field>,
   #[serde(default)]
   pub layer: Option<Field>,
+  #[serde(default)]
+  pub plate: RawWidgetPlate,
+  #[serde(default)]
+  pub motion: Option<RawDecorMotion>,
+  #[serde(default)]
+  pub show_on: Option<Field>,
+  #[serde(default)]
+  pub hide_on: Option<Field>,
   #[serde(default)]
   pub time_format: Option<Field>,
   #[serde(default)]
@@ -428,6 +467,16 @@ pub struct RawClock {
   #[serde(default)]
   pub date_color: Option<Field>,
   #[serde(default)]
+  pub ghost: Option<Field>,
+  #[serde(default)]
+  pub glow: Option<Field>,
+  #[serde(default)]
+  pub glow_size: Option<Field>,
+  #[serde(default)]
+  pub colon_blink_ms: Option<Field>,
+  #[serde(default)]
+  pub second_hand: Option<Field>,
+  #[serde(default)]
   pub draggable: Option<Field>,
 }
 
@@ -438,6 +487,14 @@ pub struct RawMedia {
   pub enabled: Option<Field>,
   #[serde(default)]
   pub layer: Option<Field>,
+  #[serde(default)]
+  pub plate: RawWidgetPlate,
+  #[serde(default)]
+  pub motion: Option<RawDecorMotion>,
+  #[serde(default)]
+  pub show_on: Option<Field>,
+  #[serde(default)]
+  pub hide_on: Option<Field>,
   #[serde(default)]
   pub anchor: Option<Field>,
   #[serde(default)]
@@ -452,6 +509,16 @@ pub struct RawMedia {
   pub show_art: Option<Field>,
   #[serde(default)]
   pub color: Option<Field>,
+  #[serde(default)]
+  pub layout: Option<Field>,
+  #[serde(default)]
+  pub art: Option<Field>,
+  #[serde(default)]
+  pub progress: Option<Field>,
+  #[serde(default)]
+  pub controls: Option<Field>,
+  #[serde(default)]
+  pub tint_from_art: Option<Field>,
   #[serde(default)]
   pub show_before_login: Option<Field>,
   #[serde(default)]
@@ -609,6 +676,27 @@ pub struct RawMotion {
 pub struct RawPower {
   #[serde(default)]
   pub low_power: Option<Field>,
+}
+
+/// The `[gpu]` table. Each key stays a raw spanned value so a bad choice string
+/// can report its own line and fall back without disturbing the rest.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawGpu {
+  #[serde(default)]
+  pub enabled: Option<Field>,
+  #[serde(default)]
+  pub backend: Option<Field>,
+  #[serde(default)]
+  pub adapter: Option<Field>,
+  #[serde(default)]
+  pub device: Option<Field>,
+  #[serde(default)]
+  pub power: Option<Field>,
+  #[serde(default)]
+  pub present: Option<Field>,
+  #[serde(default)]
+  pub fallback: Option<Field>,
 }
 
 #[derive(Debug, Default, Deserialize)]

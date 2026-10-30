@@ -39,7 +39,7 @@ use winit::window::{CursorIcon, Fullscreen, Window, WindowId};
 use crate::app::{App, Finish, Key};
 use crate::auth::worker::{self, Event, Mode};
 use crate::color::Rgb;
-use crate::config::Config;
+use crate::config::{Config, GpuBackend, GpuConfig, GpuDevice, GpuFallback};
 use crate::plugin::Plugin;
 use crate::session::Session;
 use crate::ui::background::{BackgroundView, LoadedBackground};
@@ -120,6 +120,10 @@ pub fn run(
   let frame_pending = Arc::new(AtomicBool::new(false));
   let started = Instant::now();
   let text = TextEngine::new(&config.ui.font);
+  // `[gpu]` belongs to the presenter, not to the scene, so take it before the
+  // config is moved into App. The main entry point has already applied
+  // DAWN_GPU to this value.
+  let gpu = config.gpu.clone();
   let app = App::new(config, sessions, plugins, Some(worker), warning, dry_run);
 
   let mut media = Vec::new();
@@ -135,6 +139,7 @@ pub fn run(
     background,
     glass: GlassCache::new(),
     text,
+    gpu,
     fullscreen,
     window: None,
     presenter: None,
@@ -215,6 +220,9 @@ struct Handler {
   background: BackgroundView,
   glass: GlassCache,
   text: TextEngine,
+  /// Adapter and fallback policy for the live window. Screenshots never read
+  /// this; they always use the CPU renderer.
+  gpu: GpuConfig,
   fullscreen: bool,
   window: Option<Arc<Window>>,
   presenter: Option<Presenter>,
@@ -280,26 +288,26 @@ impl Handler {
         .map_err(|error| WindowError::Graphics(error.to_string()))?,
     );
     let size = window.inner_size();
-    // A developer escape hatch for comparing the two paths and for drivers
-    // that report a device but render incorrectly. Normal users should leave
-    // it unset.
-    let force_cpu = std::env::var_os("DAWN_GPU").is_some_and(|value| value == "0");
-    let presenter = if force_cpu {
-      tracing::info!("GPU compositor disabled by DAWN_GPU=0");
+    let presenter = if !self.gpu.enabled {
+      tracing::info!("GPU compositor disabled in [gpu]");
+      Self::cpu_presenter(&window)?
+    } else if self.gpu.fallback == GpuFallback::Cpu {
+      tracing::info!("GPU compositor disabled by gpu.fallback = \"cpu\"");
       Self::cpu_presenter(&window)?
     } else {
       match gpu::GpuRenderer::new(
         Arc::clone(&window),
         event_loop.owned_display_handle(),
         (size.width, size.height),
+        &self.gpu,
       ) {
         Ok(renderer) => {
           tracing::info!("using GPU compositor");
           Presenter::Gpu(Box::new(renderer))
         }
         Err(error) => {
-          tracing::warn!(%error, "GPU compositor unavailable, using software presentation");
-          Self::cpu_presenter(&window)?
+          tracing::warn!(%error, "GPU compositor unavailable");
+          self.gpu_presenter_after_failure(&window, event_loop, size, error)?
         }
       }
     };
@@ -317,6 +325,62 @@ impl Handler {
     let surface = softbuffer::Surface::new(&context, Arc::clone(window))
       .map_err(|error| WindowError::Graphics(error.to_string()))?;
     Ok(Presenter::Cpu(surface))
+  }
+
+  /// Applies `[gpu].fallback` after the configured adapter failed.
+  ///
+  /// The software retry rebuilds a copy with `backend = "software"`,
+  /// `device = "cpu"`, and `adapter = "auto"` on purpose. A name or index that
+  /// only made sense for the adapter that just failed should not stop the last
+  /// chance from trying lavapipe or llvmpipe. `chain` then degrades to
+  /// softbuffer; `software` and `none` return an error so main can reach the
+  /// terminal fallback.
+  fn gpu_presenter_after_failure(
+    &self,
+    window: &Arc<Window>,
+    event_loop: &ActiveEventLoop,
+    size: winit::dpi::PhysicalSize<u32>,
+    error: String,
+  ) -> Result<Presenter, WindowError> {
+    if matches!(
+      self.gpu.fallback,
+      GpuFallback::Chain | GpuFallback::Software
+    ) {
+      let mut fallback = self.gpu.clone();
+      fallback.backend = GpuBackend::Software;
+      fallback.device = GpuDevice::Cpu;
+      fallback.adapter = "auto".to_string();
+      match gpu::GpuRenderer::new(
+        Arc::clone(window),
+        event_loop.owned_display_handle(),
+        (size.width, size.height),
+        &fallback,
+      ) {
+        Ok(renderer) => {
+          tracing::info!("using software GPU compositor");
+          return Ok(Presenter::Gpu(Box::new(renderer)));
+        }
+        Err(software_error) => {
+          if self.gpu.fallback == GpuFallback::Chain {
+            tracing::warn!(
+              %software_error,
+              "software GPU compositor unavailable, using softbuffer"
+            );
+            return Self::cpu_presenter(window);
+          }
+          return Err(WindowError::Graphics(format!(
+            "GPU compositor failed ({error}); software retry failed ({software_error})"
+          )));
+        }
+      }
+    }
+    if self.gpu.fallback == GpuFallback::Cpu {
+      // `cpu` is handled before the first attempt; keep this defensive branch
+      // so a future call site cannot accidentally try a GPU here.
+      tracing::info!("GPU compositor disabled by gpu.fallback = \"cpu\"");
+      return Self::cpu_presenter(window);
+    }
+    Err(WindowError::Graphics(error))
   }
 
   /// Refreshes the cached output name. `current_monitor` is a round trip on

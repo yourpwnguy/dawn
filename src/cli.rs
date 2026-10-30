@@ -55,6 +55,10 @@ pub struct Cli {
   #[arg(long)]
   pub check_config: bool,
 
+  /// List GPU adapters and the one this config selects
+  #[arg(long)]
+  pub list_gpus: bool,
+
   /// Render one frame to a PNG and exit
   #[arg(long, value_name = "PATH", conflicts_with_all = ["tty", "check_config"])]
   pub screenshot: Option<PathBuf>,
@@ -294,5 +298,11 @@ mod tests {
   #[test]
   fn size_requires_screenshot() {
     assert!(parse(&["--size", "800x600"]).is_err());
+  }
+
+  #[test]
+  fn parses_list_gpus() {
+    assert!(run(&["--list-gpus"]).list_gpus);
+    assert!(!run(&[]).list_gpus);
   }
 }

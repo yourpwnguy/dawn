@@ -96,6 +96,8 @@ pub struct Config {
   pub theme: ThemeConfig,
   pub motion: MotionConfig,
   pub power: PowerConfig,
+  /// Adapter, backend, and fallback policy for the live GPU compositor.
+  pub gpu: GpuConfig,
   /// Dragging and where the dragged positions are remembered.
   pub layout: LayoutConfig,
   pub sessions: SessionsConfig,
@@ -760,11 +762,20 @@ impl LayoutConfig {
 }
 
 /// Visual style of the built-in clock.
+///
+/// `Digital` and `Analog` are the historical faces. `Flip` and `Segment` are
+/// decorative faces for a HUD theme: both are drawn from the same formatted
+/// time string, so the usual `time_format`, `hour12`, and `seconds` keys keep
+/// working exactly as they do for the digital face.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ClockStyle {
   #[default]
   Digital,
   Analog,
+  /// Split-flap cards, one per character.
+  Flip,
+  /// Seven-segment digits, with optional ghost segments and a glow pass.
+  Segment,
 }
 
 impl ClockStyle {
@@ -773,6 +784,33 @@ impl ClockStyle {
     match value {
       "digital" => Some(Self::Digital),
       "analog" => Some(Self::Analog),
+      "flip" => Some(Self::Flip),
+      "segment" => Some(Self::Segment),
+      _ => None,
+    }
+  }
+}
+
+/// How the analog second hand advances.
+///
+/// `Tick` is the traditional one-step-per-second motion and `Sweep` follows the
+/// subsecond clock, which looks smoother but asks the renderer for more frames.
+/// This only matters when the analog face is showing seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SecondHand {
+  /// Jump to each whole second.
+  #[default]
+  Tick,
+  /// Move continuously using the subsecond part of the time.
+  Sweep,
+}
+
+impl SecondHand {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "tick" => Some(Self::Tick),
+      "sweep" => Some(Self::Sweep),
       _ => None,
     }
   }
@@ -804,14 +842,151 @@ impl WidgetLayer {
   }
 }
 
+/// How the built-in widget's backplate is filled.
+///
+/// This is the same vocabulary the decor panel uses, so a theme can make a
+/// clock plate and a HUD bar out of one palette. `Tint` is the default because
+/// it reproduces the plain scrim every existing config already gets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlateStyle {
+  /// No plate, border, glow, or shadow. The widget floats on the wallpaper.
+  None,
+  /// The theme glass tint. This is the historical scrim.
+  #[default]
+  Tint,
+  /// A single flat fill from `plate.color`, falling back to the theme tint.
+  Solid,
+  /// A linear gradient from `plate.color` to `plate.color_end`.
+  Gradient,
+}
+
+impl PlateStyle {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "none" | "transparent" => Some(Self::None),
+      "tint" | "glass" => Some(Self::Tint),
+      "solid" => Some(Self::Solid),
+      "gradient" => Some(Self::Gradient),
+      _ => None,
+    }
+  }
+}
+
+/// The plate painted behind a built-in clock or media widget.
+///
+/// The defaults deliberately match the old fixed scrim: a tinted pill with a
+/// 14 px radius, 12 px padding, and full opacity. A theme that only wants to
+/// recolour the pill can set `color` on a `Tint` plate and leave the rest
+/// alone. Radius and padding are logical pixels and scale with the output, just
+/// like the widget itself.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WidgetPlate {
+  pub style: PlateStyle,
+  /// Fill colour for `Solid` and `Gradient`. `None` follows the theme tint.
+  pub color: Option<Rgb>,
+  /// Second gradient stop. `None` ends in a fully transparent colour.
+  pub color_end: Option<Rgb>,
+  /// Gradient direction in degrees, -360 to 360. Zero goes left to right.
+  pub gradient_angle: f32,
+  /// Corner radius in logical pixels, 0 to 64.
+  pub radius: f32,
+  /// Optional one-pixel stroke. `Tint` already has a faint theme border, so
+  /// this overrides it only when set.
+  pub border: Option<Rgb>,
+  /// Space between the widget content and the plate edge, 0 to 64.
+  pub padding: f32,
+  /// Optional outer halo colour.
+  pub glow: Option<Rgb>,
+  /// Halo spread in logical pixels, 0 to 48. Zero disables it even when a
+  /// colour is set.
+  pub glow_size: f32,
+  /// Draw a soft drop shadow under the plate.
+  pub shadow: bool,
+  /// Overall opacity for the widget, plate included, 0 to 1.
+  pub opacity: f32,
+}
+
+impl Default for WidgetPlate {
+  fn default() -> Self {
+    Self {
+      style: PlateStyle::Tint,
+      color: None,
+      color_end: None,
+      gradient_angle: 0.0,
+      radius: 14.0,
+      border: None,
+      padding: 12.0,
+      glow: None,
+      glow_size: 0.0,
+      shadow: false,
+      opacity: 1.0,
+    }
+  }
+}
+
+/// A login state a widget can react to.
+///
+/// The renderer derives exactly one state per frame, in priority order: busy,
+/// error, authenticated, typing, idle. A theme can therefore show the clock
+/// while the user types and hide it during authentication, without any extra
+/// event plumbing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WidgetState {
+  /// Nothing typed, no request in flight, no error.
+  #[default]
+  Idle,
+  /// The username or password field has content.
+  Typing,
+  /// An authentication request is in flight.
+  Busy,
+  /// The status line is showing an error.
+  Error,
+  /// greetd accepted the credentials.
+  Authenticated,
+}
+
+impl WidgetState {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "idle" => Some(Self::Idle),
+      "typing" => Some(Self::Typing),
+      "busy" => Some(Self::Busy),
+      "error" => Some(Self::Error),
+      "authenticated" => Some(Self::Authenticated),
+      _ => None,
+    }
+  }
+}
+
+/// Presentation for one built-in widget: its plate, motion, and state rules.
+///
+/// `show_on` empty means "always show". `hide_on` always wins, which is what
+/// lets a theme say "show while typing, except when busy" without ordering the
+/// lists. Both lists are capped at eight states and deduplicated at load time.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WidgetLook {
+  pub plate: WidgetPlate,
+  /// Movement applied to the whole widget, including its plate and progress
+  /// bar. The default is static, so an unconfigured widget does not move.
+  pub motion: DecorMotion,
+  /// States that may show the widget. Empty means every state.
+  pub show_on: Vec<WidgetState>,
+  /// States that hide the widget. Takes precedence over `show_on`.
+  pub hide_on: Vec<WidgetState>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ClockConfig {
   pub enabled: bool,
   pub style: ClockStyle,
   /// Draw order relative to the login decor. Built-in widgets default to
   /// `Behind`; `Front` lets a clock sit inside a themed HUD bar. Plugin
-  /// widgets always stay behind.
+  /// widgets have their own `layer` in the manifest.
   pub layer: WidgetLayer,
+  /// Plate, motion, and state visibility for this widget.
+  pub look: WidgetLook,
   /// jiff/strftime format. Validated at load time so a bad format cannot
   /// produce an empty or panicking clock at draw time.
   pub time_format: String,
@@ -831,8 +1006,115 @@ pub struct ClockConfig {
   /// Optional colour override. `None` follows the theme.
   pub color: Option<Rgb>,
   pub date_color: Option<Rgb>,
+  /// Draw the unused segments on a seven-segment face at low alpha. The
+  /// digital, analog, and flip faces ignore it.
+  pub ghost: bool,
+  /// Halo colour for the active segments of a seven-segment face.
+  pub glow: Option<Rgb>,
+  /// Halo spread in logical pixels, 0 to 32. Zero disables the glow even when
+  /// `glow` is set.
+  pub glow_size: f32,
+  /// The colon turns off for half of this period, in milliseconds. Zero keeps
+  /// it steady. Applies to the flip and segment faces.
+  pub colon_blink_ms: f32,
+  /// Motion of the analog second hand.
+  pub second_hand: SecondHand,
   /// Lets the pointer move this widget. The position can be saved by `[layout]`.
   pub draggable: bool,
+}
+
+/// How the media widget arranges its art and text.
+///
+/// `Card` is the original composition: square art on the left and the title,
+/// artist, and progress on the right. `Compact` is a single tight row for a
+/// corner widget, and `Vinyl` puts a circular record above centred text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MediaLayout {
+  #[default]
+  Card,
+  Compact,
+  Vinyl,
+}
+
+impl MediaLayout {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "card" => Some(Self::Card),
+      "compact" => Some(Self::Compact),
+      "vinyl" => Some(Self::Vinyl),
+      _ => None,
+    }
+  }
+}
+
+/// The shape used for album art.
+///
+/// `Cover` keeps the original square crop. `Disc` uses a circle masked at load
+/// time, so the expensive per-pixel work happens once per track rather than on
+/// every frame. `None` hides the art and lets the text use the full width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MediaArt {
+  #[default]
+  Cover,
+  Disc,
+  None,
+}
+
+impl MediaArt {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "cover" => Some(Self::Cover),
+      "disc" => Some(Self::Disc),
+      "none" => Some(Self::None),
+      _ => None,
+    }
+  }
+}
+
+/// The shape of the media progress indicator.
+///
+/// `Line` is the original thin bar. `Segments` draws twelve blocks and `Wave`
+/// draws a decorative sine polyline. Neither needs audio data: the wave is
+/// deterministic and only encodes the playback fraction, so it never pretends
+/// to be a real spectrum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MediaProgress {
+  #[default]
+  Line,
+  Segments,
+  Wave,
+}
+
+impl MediaProgress {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "line" => Some(Self::Line),
+      "segments" => Some(Self::Segments),
+      "wave" => Some(Self::Wave),
+      _ => None,
+    }
+  }
+}
+
+/// Presentation choices for the media widget.
+///
+/// The art, progress, and tint flags are purely visual. `controls` draws a
+/// transport row, but those glyphs are deliberately not clickable yet: pointer
+/// hit regions and the D-Bus control wiring are a separate change, and a
+/// greeter must never expose a control it cannot actually drive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MediaLook {
+  pub layout: MediaLayout,
+  pub art: MediaArt,
+  pub progress: MediaProgress,
+  /// Draw previous, play/pause, and next glyphs under the progress. Visual
+  /// only for now.
+  pub controls: bool,
+  /// Derive the progress and plate accent from the dominant album-art colour.
+  pub tint_from_art: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -841,8 +1123,14 @@ pub struct MediaConfig {
   pub placement: Placement,
   pub size: f32,
   pub show_art: bool,
+  /// Layout, art shape, progress style, and art tinting.
+  pub look: MediaLook,
   /// Draw order relative to the login decor. See [`ClockConfig::layer`].
   pub layer: WidgetLayer,
+  /// Plate, motion, and state visibility for this widget. This is the same
+  /// shape the clock uses under `clock.look`; media keeps it under
+  /// `presentation` because `look` now selects the media composition.
+  pub presentation: WidgetLook,
   /// Optional colour override. `None` follows the theme.
   pub color: Option<Rgb>,
   /// Show MPRIS metadata before authentication. This is what makes the widget
@@ -1167,6 +1455,312 @@ pub struct PowerConfig {
   pub low_power: bool,
 }
 
+/// Which graphics API the live compositor may use.
+///
+/// This is deliberately separate from the software compositor used for
+/// screenshots and the terminal fallback: `[gpu]` only influences the window's
+/// GPU path. A driver that enumerates but cannot present still falls back to
+/// softbuffer, so a bad value here can never stop a login.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GpuBackend {
+  /// Try Vulkan and then GL, whichever can present to the window.
+  #[default]
+  Auto,
+  /// Vulkan only. Useful when a broken GL driver wins the automatic order.
+  Vulkan,
+  /// OpenGL only. The usual rescue on older hardware and some remote sessions.
+  Gl,
+  /// Keep the GPU pipeline but restrict it to CPU adapters such as lavapipe or
+  /// llvmpipe. The caller still falls back to softbuffer if none is present.
+  Software,
+}
+
+impl GpuBackend {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "auto" => Some(Self::Auto),
+      "vulkan" | "vk" => Some(Self::Vulkan),
+      "gl" | "opengl" | "gles" => Some(Self::Gl),
+      "software" | "sw" => Some(Self::Software),
+      _ => None,
+    }
+  }
+
+  #[must_use]
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Auto => "auto",
+      Self::Vulkan => "vulkan",
+      Self::Gl => "gl",
+      Self::Software => "software",
+    }
+  }
+}
+
+/// Which class of adapter the compositor should prefer.
+///
+/// `Auto` keeps every surface-capable adapter. The other values are a hard
+/// filter, not a hint: `device = "discrete"` on a laptop with only integrated
+/// graphics produces a readable error instead of silently using the iGPU.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GpuDevice {
+  /// Keep every surface-capable adapter and let `power` decide the order.
+  #[default]
+  Auto,
+  /// A graphics card with its own memory, usually the fastest option.
+  Discrete,
+  /// Shared-memory graphics built into the CPU package.
+  Integrated,
+  /// A virtualised or hosted GPU, common inside VMs.
+  Virtual,
+  /// A CPU implementation such as lavapipe or llvmpipe.
+  Cpu,
+}
+
+impl GpuDevice {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "auto" => Some(Self::Auto),
+      "discrete" => Some(Self::Discrete),
+      "integrated" => Some(Self::Integrated),
+      "virtual" => Some(Self::Virtual),
+      "cpu" | "software" => Some(Self::Cpu),
+      _ => None,
+    }
+  }
+
+  #[must_use]
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Auto => "auto",
+      Self::Discrete => "discrete",
+      Self::Integrated => "integrated",
+      Self::Virtual => "virtual",
+      Self::Cpu => "cpu",
+    }
+  }
+}
+
+/// How the compositor ranks adapters when `adapter = "auto"`.
+///
+/// Low power is the default because a greeter spends almost all its life idle.
+/// It is a preference, not a filter: when the preferred class is missing the
+/// next one in the ranking is still used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GpuPower {
+  /// Prefer integrated, then other, virtual, discrete, and finally CPU.
+  #[default]
+  Low,
+  /// Prefer discrete, then integrated, virtual, other, and finally CPU.
+  High,
+  /// Keep the order the backend enumerated, which is useful for debugging.
+  Default,
+}
+
+impl GpuPower {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "low" => Some(Self::Low),
+      "high" => Some(Self::High),
+      "default" => Some(Self::Default),
+      _ => None,
+    }
+  }
+
+  #[must_use]
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Low => "low",
+      Self::High => "high",
+      Self::Default => "default",
+    }
+  }
+}
+
+/// The swapchain presentation mode requested from the surface.
+///
+/// `Fifo` is the only mode every backend must support, so it is the default.
+/// A mode the adapter does not advertise is ignored with a warning rather than
+/// turning into a startup failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GpuPresent {
+  /// Vsync-style queueing with no tearing.
+  #[default]
+  Fifo,
+  /// Tear-free but replaces the queued frame instead of blocking, when offered.
+  Mailbox,
+  /// Present immediately and allow tearing, when offered.
+  Immediate,
+}
+
+impl GpuPresent {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "fifo" | "vsync" => Some(Self::Fifo),
+      "mailbox" => Some(Self::Mailbox),
+      "immediate" | "tearing" => Some(Self::Immediate),
+      _ => None,
+    }
+  }
+
+  #[must_use]
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Fifo => "fifo",
+      Self::Mailbox => "mailbox",
+      Self::Immediate => "immediate",
+    }
+  }
+}
+
+/// What to do when the requested GPU path cannot start.
+///
+/// The default chain is the safe policy for a greeter: try the configured
+/// adapter, then the software adapter, then softbuffer. `None` is for admins
+/// who would rather drop to the terminal than show a CPU-painted window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GpuFallback {
+  /// Configured adapter, then software GPU, then softbuffer.
+  #[default]
+  Chain,
+  /// Configured adapter, then software GPU, then fail to the terminal.
+  Software,
+  /// Skip the GPU entirely and use softbuffer immediately.
+  Cpu,
+  /// No fallback: a GPU failure goes straight to the terminal fallback.
+  None,
+}
+
+impl GpuFallback {
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "chain" => Some(Self::Chain),
+      "software" => Some(Self::Software),
+      "cpu" => Some(Self::Cpu),
+      "none" => Some(Self::None),
+      _ => None,
+    }
+  }
+
+  #[must_use]
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Chain => "chain",
+      Self::Software => "software",
+      Self::Cpu => "cpu",
+      Self::None => "none",
+    }
+  }
+}
+
+/// How the live window chooses and initialises its GPU compositor.
+///
+/// Screenshots and the CPU compositor still run on tiny-skia, so this table
+/// never changes the pixels in a `--screenshot` file. It only decides which
+/// adapter the interactive window uses and what happens when that choice is
+/// unavailable at runtime.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuConfig {
+  /// Set false to use softbuffer without touching a driver. `DAWN_GPU=0` is
+  /// the environment equivalent.
+  pub enabled: bool,
+  /// Graphics API to enable during adapter enumeration.
+  pub backend: GpuBackend,
+  /// `"auto"`, `"index:N"` into the filtered adapter list, or a
+  /// case-insensitive substring of the adapter name or driver.
+  pub adapter: String,
+  /// Adapter class filter. `backend = "software"` forces this to `Cpu`.
+  pub device: GpuDevice,
+  /// Ranking preference when `adapter = "auto"`.
+  pub power: GpuPower,
+  /// Requested swapchain mode. Unsupported modes fall back without failing.
+  pub present: GpuPresent,
+  /// What to try when the selected adapter cannot produce a device or surface.
+  pub fallback: GpuFallback,
+}
+
+impl Default for GpuConfig {
+  fn default() -> Self {
+    Self {
+      enabled: true,
+      backend: GpuBackend::Auto,
+      adapter: "auto".to_string(),
+      device: GpuDevice::Auto,
+      power: GpuPower::Low,
+      present: GpuPresent::Fifo,
+      fallback: GpuFallback::Chain,
+    }
+  }
+}
+
+impl GpuConfig {
+  /// Applies one `DAWN_GPU` value without touching the process environment.
+  ///
+  /// This exists as a pure method because `std::env::set_var` is unsafe in the
+  /// 2024 edition and tests should not race the rest of the test binary. The
+  /// accepted spellings are intentionally small: `0`/`cpu` disables the GPU,
+  /// a backend name selects that backend, `auto` clears a previous adapter
+  /// choice, and anything else is treated as an adapter name.
+  pub fn apply_env_value(&mut self, value: Option<&str>) {
+    let Some(value) = value else {
+      return;
+    };
+    let value = value.trim();
+    if value.is_empty() {
+      return;
+    }
+    if value == "0" || value.eq_ignore_ascii_case("cpu") {
+      self.enabled = false;
+      return;
+    }
+    if value.eq_ignore_ascii_case("auto") {
+      self.adapter = "auto".to_string();
+      return;
+    }
+    let normalised = value.to_ascii_lowercase();
+    if let Some(backend) = GpuBackend::parse(&normalised) {
+      self.backend = backend;
+      if backend == GpuBackend::Software {
+        self.device = GpuDevice::Cpu;
+        self.fallback = GpuFallback::Software;
+      }
+      return;
+    }
+    self.adapter = value.to_string();
+  }
+
+  /// Reads `DAWN_GPU` once and applies it with [`Self::apply_env_value`].
+  ///
+  /// Non-Unicode values are ignored on purpose: a broken environment variable
+  /// should not keep the greeter from starting.
+  pub fn apply_env(&mut self) {
+    let value = std::env::var("DAWN_GPU").ok();
+    self.apply_env_value(value.as_deref());
+  }
+
+  /// One-line lowercase summary shared by `--check-config` and `--list-gpus`.
+  /// Using the same method in both places keeps the admin-facing spelling in
+  /// sync with the values accepted in TOML.
+  #[must_use]
+  pub fn summary(&self) -> String {
+    format!(
+      "enabled={} backend={} adapter={} device={} power={} present={} fallback={}",
+      self.enabled,
+      self.backend.as_str(),
+      self.adapter,
+      self.device.as_str(),
+      self.power.as_str(),
+      self.present.as_str(),
+      self.fallback.as_str(),
+    )
+  }
+}
+
 #[derive(Debug, Clone)]
 pub struct SessionsConfig {
   pub dirs: Vec<PathBuf>,
@@ -1252,6 +1846,7 @@ impl Default for Config {
         enabled: true,
         style: ClockStyle::Digital,
         layer: WidgetLayer::Behind,
+        look: WidgetLook::default(),
         time_format: "%H:%M".to_string(),
         date_format: "%A, %B %d".to_string(),
         hour12: false,
@@ -1268,6 +1863,11 @@ impl Default for Config {
         date_size: 18.0,
         color: None,
         date_color: None,
+        ghost: false,
+        glow: None,
+        glow_size: 0.0,
+        colon_blink_ms: 0.0,
+        second_hand: SecondHand::Tick,
         draggable: true,
       },
       media: MediaConfig {
@@ -1280,7 +1880,9 @@ impl Default for Config {
         },
         size: 16.0,
         show_art: true,
+        look: MediaLook::default(),
         layer: WidgetLayer::Behind,
+        presentation: WidgetLook::default(),
         color: None,
         show_before_login: true,
         keep_last: true,
@@ -1302,6 +1904,7 @@ impl Default for Config {
       theme,
       motion: MotionConfig::default(),
       power: PowerConfig::default(),
+      gpu: GpuConfig::default(),
       layout: LayoutConfig {
         save: false,
         file: None,
@@ -2330,6 +2933,274 @@ layer = 3
   }
 
   #[test]
+  fn widget_looks_default_to_the_historical_scrim() {
+    let config = Config::default();
+    let look = &config.clock.look;
+    assert_eq!(look.plate.style, super::PlateStyle::Tint);
+    assert_eq!(look.plate.radius, 14.0);
+    assert_eq!(look.plate.padding, 12.0);
+    assert_eq!(look.plate.opacity, 1.0);
+    assert_eq!(look.plate.gradient_angle, 0.0);
+    assert_eq!(look.plate.glow_size, 0.0);
+    assert!(look.plate.color.is_none());
+    assert!(look.plate.color_end.is_none());
+    assert!(look.plate.border.is_none());
+    assert!(look.plate.glow.is_none());
+    assert!(!look.plate.shadow);
+    assert_eq!(look.motion, super::DecorMotion::default());
+    assert!(look.show_on.is_empty());
+    assert!(look.hide_on.is_empty());
+    // Media gets the same defaults, so an unconfigured widget of either kind
+    // looks exactly like it did before plates existed.
+    assert_eq!(config.media.presentation, config.clock.look);
+  }
+
+  #[test]
+  fn clock_plate_motion_and_state_lists_parse_into_the_look() {
+    let path = temp_config(
+      "clock-look",
+      r##"
+[clock]
+show_on = ["typing", "busy"]
+hide_on = ["idle"]
+
+[clock.plate]
+style = "gradient"
+color = "#112233"
+color_end = "#445566"
+gradient_angle = 45
+radius = 8
+border = "#ffffff"
+padding = 20
+glow = "#00ff00"
+glow_size = 12
+shadow = true
+opacity = 0.75
+
+[clock.motion]
+spin = 90
+float = [4, 2]
+blink_ms = 1000
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    let look = &loaded.config.clock.look;
+    assert_eq!(look.plate.style, super::PlateStyle::Gradient);
+    assert_eq!(
+      look.plate.color,
+      Some(crate::color::Rgb::solid(0x11, 0x22, 0x33))
+    );
+    assert_eq!(
+      look.plate.color_end,
+      Some(crate::color::Rgb::solid(0x44, 0x55, 0x66))
+    );
+    assert_eq!(look.plate.gradient_angle, 45.0);
+    assert_eq!(look.plate.radius, 8.0);
+    assert_eq!(
+      look.plate.border,
+      Some(crate::color::Rgb::solid(0xff, 0xff, 0xff))
+    );
+    assert_eq!(look.plate.padding, 20.0);
+    assert_eq!(
+      look.plate.glow,
+      Some(crate::color::Rgb::solid(0x00, 0xff, 0x00))
+    );
+    assert_eq!(look.plate.glow_size, 12.0);
+    assert!(look.plate.shadow);
+    assert_eq!(look.plate.opacity, 0.75);
+    assert_eq!(look.motion.spin, 90.0);
+    assert_eq!(look.motion.float, (4, 2));
+    assert_eq!(look.motion.blink_ms, 1000.0);
+    assert_eq!(
+      look.show_on,
+      [super::WidgetState::Typing, super::WidgetState::Busy]
+    );
+    assert_eq!(look.hide_on, [super::WidgetState::Idle]);
+  }
+
+  #[test]
+  fn invalid_plate_values_fall_back_with_issues() {
+    let path = temp_config(
+      "clock-plate-bad",
+      r##"
+[clock.plate]
+style = "fancy"
+radius = 99
+padding = -1
+gradient_angle = 999
+opacity = 2
+glow_size = 99
+"##,
+    );
+    let loaded = load(Some(&path));
+    let plate = &loaded.config.clock.look.plate;
+    assert_eq!(plate.style, super::PlateStyle::Tint);
+    assert_eq!(plate.radius, 14.0);
+    assert_eq!(plate.padding, 12.0);
+    assert_eq!(plate.gradient_angle, 0.0);
+    assert_eq!(plate.opacity, 1.0);
+    assert_eq!(plate.glow_size, 0.0);
+    for key in [
+      "clock.plate.style",
+      "clock.plate.radius",
+      "clock.plate.padding",
+      "clock.plate.gradient_angle",
+      "clock.plate.opacity",
+      "clock.plate.glow_size",
+    ] {
+      assert!(
+        loaded.issues.iter().any(|issue| issue.key == key),
+        "missing issue {key}: {:?}",
+        loaded.issues
+      );
+    }
+  }
+
+  #[test]
+  fn media_look_parses_and_bad_values_fall_back_with_issues() {
+    let path = temp_config(
+      "media-look",
+      r##"
+[media]
+layout = "vinyl"
+art = "disc"
+progress = "wave"
+controls = true
+tint_from_art = true
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    assert_eq!(loaded.config.media.look.layout, super::MediaLayout::Vinyl);
+    assert_eq!(loaded.config.media.look.art, super::MediaArt::Disc);
+    assert_eq!(
+      loaded.config.media.look.progress,
+      super::MediaProgress::Wave
+    );
+    assert!(loaded.config.media.look.controls);
+    assert!(loaded.config.media.look.tint_from_art);
+
+    let bad = temp_config(
+      "media-look-bad",
+      r##"
+[media]
+layout = "wall"
+art = "sleeve"
+progress = "bars"
+controls = "yes"
+tint_from_art = 3
+"##,
+    );
+    let loaded = load(Some(&bad));
+    let look = loaded.config.media.look;
+    assert_eq!(look.layout, super::MediaLayout::Card);
+    assert_eq!(look.art, super::MediaArt::Cover);
+    assert_eq!(look.progress, super::MediaProgress::Line);
+    assert!(!look.controls);
+    assert!(!look.tint_from_art);
+    for key in [
+      "media.layout",
+      "media.art",
+      "media.progress",
+      "media.controls",
+      "media.tint_from_art",
+    ] {
+      assert!(
+        loaded.issues.iter().any(|issue| issue.key == key),
+        "missing issue {key}: {:?}",
+        loaded.issues
+      );
+    }
+  }
+
+  #[test]
+  fn clock_decorative_keys_parse_and_fall_back() {
+    let path = temp_config(
+      "clock-faces",
+      r##"
+[clock]
+style = "segment"
+ghost = true
+glow = "#22D3EE"
+glow_size = 8
+colon_blink_ms = 900
+second_hand = "sweep"
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    assert_eq!(loaded.config.clock.style, super::ClockStyle::Segment);
+    assert!(loaded.config.clock.ghost);
+    assert!(loaded.config.clock.glow.is_some());
+    assert_eq!(loaded.config.clock.glow_size, 8.0);
+    assert_eq!(loaded.config.clock.colon_blink_ms, 900.0);
+    assert_eq!(loaded.config.clock.second_hand, super::SecondHand::Sweep);
+
+    let bad = temp_config(
+      "clock-faces-bad",
+      r##"
+[clock]
+style = "sundial"
+glow_size = 99
+colon_blink_ms = 9000
+second_hand = "wiggle"
+"##,
+    );
+    let loaded = load(Some(&bad));
+    assert_eq!(loaded.config.clock.style, super::ClockStyle::Digital);
+    assert_eq!(loaded.config.clock.glow_size, 0.0);
+    assert_eq!(loaded.config.clock.colon_blink_ms, 0.0);
+    assert_eq!(loaded.config.clock.second_hand, super::SecondHand::Tick);
+    for key in [
+      "clock.style",
+      "clock.glow_size",
+      "clock.colon_blink_ms",
+      "clock.second_hand",
+    ] {
+      assert!(
+        loaded.issues.iter().any(|issue| issue.key == key),
+        "missing issue {key}: {:?}",
+        loaded.issues
+      );
+    }
+  }
+
+  #[test]
+  fn widget_state_lists_dedupe_and_report_unknown_names() {
+    let path = temp_config(
+      "clock-states",
+      r##"
+[clock]
+show_on = ["typing", "typing", "napping"]
+hide_on = ["busy", "busy"]
+
+[media]
+show_on = "typing"
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert_eq!(
+      loaded.config.clock.look.show_on,
+      [super::WidgetState::Typing]
+    );
+    assert_eq!(loaded.config.clock.look.hide_on, [super::WidgetState::Busy]);
+    let unknown = loaded
+      .issues
+      .iter()
+      .filter(|issue| issue.key == "clock.show_on")
+      .count();
+    assert_eq!(unknown, 1, "{:?}", loaded.issues);
+    assert!(
+      loaded
+        .issues
+        .iter()
+        .any(|issue| issue.key == "media.show_on")
+    );
+    assert!(loaded.config.media.presentation.show_on.is_empty());
+  }
+
+  #[test]
   fn panel_decor_parses_its_plate_keys() {
     let path = temp_config(
       "panel",
@@ -2484,5 +3355,145 @@ stroke_width = 99
         .iter()
         .any(|issue| issue.key == "login.decor[1].stroke_width")
     );
+  }
+
+  #[test]
+  fn gpu_section_parses_and_defaults() {
+    let defaults = super::GpuConfig::default();
+    assert_eq!(Config::default().gpu, defaults);
+    assert!(defaults.enabled);
+    assert_eq!(defaults.backend, super::GpuBackend::Auto);
+    assert_eq!(defaults.adapter, "auto");
+    assert_eq!(defaults.device, super::GpuDevice::Auto);
+    assert_eq!(defaults.power, super::GpuPower::Low);
+    assert_eq!(defaults.present, super::GpuPresent::Fifo);
+    assert_eq!(defaults.fallback, super::GpuFallback::Chain);
+
+    let path = temp_config(
+      "gpu-section",
+      r##"
+[gpu]
+enabled = false
+backend = "vulkan"
+adapter = "index:2"
+device = "discrete"
+power = "high"
+present = "mailbox"
+fallback = "software"
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    assert_eq!(
+      loaded.config.gpu,
+      super::GpuConfig {
+        enabled: false,
+        backend: super::GpuBackend::Vulkan,
+        adapter: "index:2".to_string(),
+        device: super::GpuDevice::Discrete,
+        power: super::GpuPower::High,
+        present: super::GpuPresent::Mailbox,
+        fallback: super::GpuFallback::Software,
+      }
+    );
+  }
+
+  #[test]
+  fn invalid_gpu_choices_fall_back_with_issues() {
+    let path = temp_config(
+      "gpu-bad-choices",
+      r##"
+[gpu]
+backend = "metal"
+device = "toaster"
+power = "medium"
+present = "vsync-free"
+fallback = "pray"
+"##,
+    );
+    let loaded = load(Some(&path));
+    let gpu = &loaded.config.gpu;
+    assert_eq!(gpu.backend, super::GpuBackend::Auto);
+    assert_eq!(gpu.device, super::GpuDevice::Auto);
+    assert_eq!(gpu.power, super::GpuPower::Low);
+    assert_eq!(gpu.present, super::GpuPresent::Fifo);
+    assert_eq!(gpu.fallback, super::GpuFallback::Chain);
+    for key in [
+      "gpu.backend",
+      "gpu.device",
+      "gpu.power",
+      "gpu.present",
+      "gpu.fallback",
+    ] {
+      assert!(
+        loaded.issues.iter().any(|issue| issue.key == key),
+        "missing issue {key}: {:?}",
+        loaded.issues
+      );
+    }
+  }
+
+  #[test]
+  fn gpu_adapter_index_and_name_rules() {
+    let index = load(Some(&temp_config(
+      "gpu-adapter-index",
+      r#"
+[gpu]
+adapter = "index:2"
+"#,
+    )));
+    assert!(index.issues.is_empty(), "{:?}", index.issues);
+    assert_eq!(index.config.gpu.adapter, "index:2");
+
+    let bad = load(Some(&temp_config(
+      "gpu-adapter-bad-index",
+      r#"
+[gpu]
+adapter = "index:x"
+"#,
+    )));
+    assert_eq!(bad.config.gpu.adapter, "auto");
+    assert!(
+      bad.issues.iter().any(|issue| issue.key == "gpu.adapter"),
+      "{:?}",
+      bad.issues
+    );
+
+    let name = load(Some(&temp_config(
+      "gpu-adapter-name",
+      r#"
+[gpu]
+adapter = "RTX"
+"#,
+    )));
+    assert!(name.issues.is_empty(), "{:?}", name.issues);
+    assert_eq!(name.config.gpu.adapter, "RTX");
+  }
+
+  #[test]
+  fn gpu_env_override_is_pure() {
+    let mut gpu = super::GpuConfig::default();
+    gpu.apply_env_value(None);
+    assert_eq!(gpu, super::GpuConfig::default());
+
+    gpu.apply_env_value(Some("0"));
+    assert!(!gpu.enabled);
+
+    let mut gpu = super::GpuConfig::default();
+    gpu.apply_env_value(Some("vulkan"));
+    assert_eq!(gpu.backend, super::GpuBackend::Vulkan);
+
+    let mut gpu = super::GpuConfig::default();
+    gpu.apply_env_value(Some("software"));
+    assert_eq!(gpu.backend, super::GpuBackend::Software);
+    assert_eq!(gpu.device, super::GpuDevice::Cpu);
+    assert_eq!(gpu.fallback, super::GpuFallback::Software);
+
+    let mut gpu = super::GpuConfig::default();
+    gpu.apply_env_value(Some("NVIDIA"));
+    assert_eq!(gpu.adapter, "NVIDIA");
+
+    gpu.apply_env_value(Some("auto"));
+    assert_eq!(gpu.adapter, "auto");
   }
 }

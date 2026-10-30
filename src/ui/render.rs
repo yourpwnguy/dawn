@@ -5,17 +5,22 @@
 //! affordable because the window only redraws on input, a visible clock
 //! change, an auth event, or an animation deadline.
 //!
-//! Plugin widgets are painted before any core UI. A greeter cannot let a
-//! third-party widget cover the password field, so the ordering here is a
-//! security property, not a style choice.
+//! Plugin widgets default to painting before any core UI. A greeter cannot let
+//! a third-party widget cover the password field, so the form always paints
+//! last: a plugin may opt into the front layer, but only between decor and the
+//! form, never over it. That ordering is a security property, not a style
+//! choice.
 
+use std::f32::consts::TAU;
 use std::time::{Duration, Instant};
 
 use cosmic_text::Align;
 
 use crate::color::Rgb;
 use crate::config::{
-  ButtonConfig, ButtonEffect, CaretStyle, HoverReveal, LoginLayout, SurfaceStyle, WidgetLayer,
+  ButtonConfig, ButtonEffect, CaretStyle, DecorSample, HoverReveal, LoginLayout, MediaArt,
+  MediaLayout, MediaLook, MediaProgress, PlateStyle, SurfaceStyle, WidgetLayer, WidgetLook,
+  WidgetPlate, WidgetState,
 };
 use crate::plugin::{Plugin, Widget};
 use crate::ui::anim::{cycle, ease_out_cubic};
@@ -454,9 +459,8 @@ fn draw_card(
   }
 }
 
-/// Paints the built-in widgets that opted into the front layer. Plugin widgets
-/// never take this path: they always stay behind so a third-party widget
-/// cannot cover the login form.
+/// Paints the widgets that opted into the front layer. Both built-ins and
+/// plugins can take this path; the form paints afterwards either way.
 fn draw_front_widgets(
   canvas: &mut Canvas,
   text: &mut TextEngine,
@@ -2071,9 +2075,9 @@ fn widget_id(plugin: &Plugin, index: usize, widget: &Widget) -> String {
   format!("{}:{index}", plugin.id)
 }
 
-/// True when at least one built-in widget asked for the front layer and is
-/// visible on this output. The rotated card uses this to avoid allocating a
-/// second full-card layer when no widget will land between decor and form.
+/// True when at least one widget asked for the front layer and is visible on
+/// this output. The rotated card uses this to avoid allocating a second
+/// full-card layer when no widget will land between decor and form.
 fn has_front_widgets(scene: &Scene<'_>) -> bool {
   scene.plugins.iter().any(|plugin| {
     plugin.widgets.iter().any(|widget| {
@@ -2083,12 +2087,14 @@ fn has_front_widgets(scene: &Scene<'_>) -> bool {
   })
 }
 
-/// Resolves the paint layer for one widget. Only the built-in clock and media
-/// widgets read a config value; every plugin widget stays behind, so a theme
-/// cannot layer a third-party widget over the login form.
+/// Resolves the paint layer for one widget. The built-in clock and media use
+/// their `[clock]`/`[media]` layer so a theme can put them inside a HUD bar.
+/// Every plugin widget carries its own manifest layer, which defaults to
+/// `Behind`; the form still paints after both layers, so a plugin can never
+/// cover an input.
 fn widget_layer(scene: &Scene<'_>, plugin: &Plugin, widget: &Widget) -> WidgetLayer {
   if !plugin.builtin {
-    return WidgetLayer::Behind;
+    return widget.layer();
   }
   match widget {
     Widget::Clock { .. } => scene.theme.clock_layer,
@@ -2143,22 +2149,80 @@ impl WidgetFrame {
 
 /// Resolves a manifest offset plus the live drag offset in the frame's units.
 ///
+/// `configured` already includes any motion sample, because the sample is in
+/// logical pixels and has to join the offset before the scale multiplication.
 /// Card-space widgets round after adding the drag, matching decor, so a
 /// subpixel drag cannot drift by a pixel every frame. Screen-space widgets
 /// keep the old two-rounding rule, which is what leaves the behind layer
-/// byte-for-byte unchanged.
-fn widget_offset(frame: &WidgetFrame, configured: (i32, i32), drag: (f32, f32)) -> (i32, i32) {
+/// byte-for-byte unchanged when no motion is configured.
+fn widget_offset(frame: &WidgetFrame, configured: (f32, f32), drag: (f32, f32)) -> (i32, i32) {
   if frame.card_space {
     (
-      ((configured.0 as f32 + drag.0) * frame.scale).round() as i32,
-      ((configured.1 as f32 + drag.1) * frame.scale).round() as i32,
+      ((configured.0 + drag.0) * frame.scale).round() as i32,
+      ((configured.1 + drag.1) * frame.scale).round() as i32,
     )
   } else {
     (
-      (configured.0 as f32 * frame.scale).round() as i32 + (drag.0 * frame.scale).round() as i32,
-      (configured.1 as f32 * frame.scale).round() as i32 + (drag.1 * frame.scale).round() as i32,
+      (configured.0 * frame.scale).round() as i32 + (drag.0 * frame.scale).round() as i32,
+      (configured.1 * frame.scale).round() as i32 + (drag.1 * frame.scale).round() as i32,
     )
   }
+}
+
+/// The current login state for widget visibility rules.
+///
+/// The order matters when more than one flag is set. A request in flight is
+/// the most useful thing to react to, an error is next, and typing is only
+/// reported when nothing louder is happening. That keeps `show_on` rules
+/// predictable without asking a config author to think about combinations.
+fn current_widget_state(view: &View) -> WidgetState {
+  if view.busy {
+    WidgetState::Busy
+  } else if view
+    .status
+    .as_ref()
+    .is_some_and(|line| line.tone == Tone::Error)
+  {
+    WidgetState::Error
+  } else if view.authenticated {
+    WidgetState::Authenticated
+  } else if !view.username.is_empty() || !view.password.is_empty() {
+    WidgetState::Typing
+  } else {
+    WidgetState::Idle
+  }
+}
+
+/// Whether a state-gated widget should paint this frame. `hide_on` wins over
+/// `show_on`; an empty `show_on` means the widget is visible in every state.
+fn widget_visible(show_on: &[WidgetState], hide_on: &[WidgetState], view: &View) -> bool {
+  let state = current_widget_state(view);
+  if hide_on.contains(&state) {
+    return false;
+  }
+  show_on.is_empty() || show_on.contains(&state)
+}
+
+/// Seconds of widget motion for this frame. Reduced motion and low-power mode
+/// pin it to zero, which is the neutral pose. The clock also uses this for its
+/// colon blink, so a screenshot (`started == frame_now`) always captures the
+/// lit phase.
+fn widget_elapsed(scene: &Scene<'_>) -> f32 {
+  if scene.theme.motion.reduced || scene.theme.low_power {
+    return 0.0;
+  }
+  scene
+    .frame_now
+    .saturating_duration_since(scene.started)
+    .as_secs_f32()
+}
+
+/// Samples a built-in widget's motion. Reduced motion and low-power mode pin
+/// the sample to `elapsed = 0`, which is the neutral pose, so the widget stays
+/// still instead of disappearing or jumping.
+fn widget_sample(look: Option<&WidgetLook>, scene: &Scene<'_>) -> Option<DecorSample> {
+  let look = look?;
+  Some(look.motion.sample(widget_elapsed(scene)))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2186,10 +2250,43 @@ fn draw_plugins(
         continue;
       }
       let placement = widget.placement();
+      // Only the built-in clock and media have a resolved look today. Plugin
+      // widgets keep the historical fixed scrim and a static transform, so a
+      // third-party manifest cannot opt into theme state rules yet.
+      let look = if plugin.builtin {
+        match widget {
+          Widget::Clock { .. } => Some(&scene.theme.clock_look),
+          Widget::Media { .. } => Some(&scene.theme.media_look),
+          _ => None,
+        }
+      } else {
+        None
+      };
+      if let Some(look) = look
+        && !widget_visible(&look.show_on, &look.hide_on, scene.view)
+      {
+        continue;
+      }
+      let sample = widget_sample(look, scene);
+      // Blink gates the whole widget, plate included. That is what makes a
+      // two-state radar blip possible without a second decor item.
+      if sample.is_some_and(|sample| !sample.blink_on) {
+        continue;
+      }
+      let configured = (
+        placement.offset.0 as f32 + sample.map_or(0.0, |sample| sample.offset.0),
+        placement.offset.1 as f32 + sample.map_or(0.0, |sample| sample.offset.1),
+      );
       let id = widget_id(plugin, index, widget);
       let drag = scene.drag.offset(&id);
-      let offset = widget_offset(&frame, placement.offset, drag);
+      let offset = widget_offset(&frame, configured, drag);
       let rotation = placement.rotation;
+      let angle = rotation + sample.map_or(0.0, |sample| sample.angle);
+      let (scale, opacity) = match (look, sample) {
+        (Some(look), Some(sample)) => (sample.scale, sample.opacity * look.plate.opacity),
+        _ => (1.0, 1.0),
+      };
+      let plate = look.map(|look| &look.plate);
       let draggable = widget.draggable();
       match widget {
         Widget::Text {
@@ -2234,23 +2331,36 @@ fn draw_plugins(
             frame.scale,
             scene.now,
           ) {
-            paint_rotated(canvas, bounds, bounds.center(), rotation, |layer| {
-              draw_scrim(layer, bounds, scene.theme, frame.scale);
-              clock::draw(
-                layer,
-                text,
-                spec,
-                placement.anchor,
-                offset,
-                frame.viewport(),
-                frame.scale,
-                color,
-                date_color,
-                scene.now,
-              );
-            });
+            paint_transformed(
+              canvas,
+              bounds,
+              bounds.center(),
+              angle,
+              scale,
+              opacity,
+              |layer, _| {
+                // The plate is drawn before the digits so the whole widget,
+                // including its future progress bar, sits on one surface.
+                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate);
+                clock::draw(
+                  layer,
+                  text,
+                  spec,
+                  placement.anchor,
+                  offset,
+                  frame.viewport(),
+                  frame.scale,
+                  color,
+                  date_color,
+                  scene.now,
+                  widget_elapsed(scene),
+                  plate,
+                  scene.theme,
+                );
+              },
+            );
             regions.push(
-              HitRegion::rotated(id.clone(), bounds, *draggable, rotation)
+              HitRegion::rotated(id.clone(), bounds, *draggable, angle)
                 .with_drag_scale(frame.scale),
             );
             draw_drag_highlight(canvas, bounds, &id, scene, accent, frame.scale);
@@ -2278,6 +2388,7 @@ fn draw_plugins(
           state,
           size,
           show_art,
+          look: media_look,
           color,
           show_before_login,
           draggable,
@@ -2295,28 +2406,38 @@ fn draw_plugins(
             *show_art,
             *show_before_login,
             scene.view.authenticated,
+            *media_look,
           );
-          paint_rotated(canvas, bounds, bounds.center(), rotation, |layer| {
-            draw_media(
-              layer,
-              text,
-              scene,
-              &snapshot,
-              placement.anchor,
-              offset,
-              frame.viewport(),
-              frame.scale,
-              *size,
-              *show_art,
-              *show_before_login,
-              color.unwrap_or(primary),
-              muted,
-              accent,
-            );
-          });
+          paint_transformed(
+            canvas,
+            bounds,
+            bounds.center(),
+            angle,
+            scale,
+            opacity,
+            |layer, _| {
+              draw_media(
+                layer,
+                text,
+                scene,
+                &snapshot,
+                placement.anchor,
+                offset,
+                frame.viewport(),
+                frame.scale,
+                *size,
+                *show_art,
+                *show_before_login,
+                color.unwrap_or(primary),
+                muted,
+                accent,
+                plate,
+                *media_look,
+              );
+            },
+          );
           regions.push(
-            HitRegion::rotated(id.clone(), bounds, *draggable, rotation)
-              .with_drag_scale(frame.scale),
+            HitRegion::rotated(id.clone(), bounds, *draggable, angle).with_drag_scale(frame.scale),
           );
           draw_drag_highlight(canvas, bounds, &id, scene, accent, frame.scale);
         }
@@ -2325,8 +2446,38 @@ fn draw_plugins(
   }
 }
 
+/// The album art a layout should paint. `Disc` prefers the circular pixmap
+/// masked once in [`crate::ui::media`], but falls back to the square crop when
+/// a snapshot was built without one (tests and older cached tracks).
+fn media_art(
+  snapshot: &MediaSnapshot,
+  show_art: bool,
+  art: MediaArt,
+) -> Option<&tiny_skia::Pixmap> {
+  if !show_art {
+    return None;
+  }
+  match art {
+    MediaArt::None => None,
+    MediaArt::Cover => snapshot.art.as_deref(),
+    MediaArt::Disc => snapshot.art_disc.as_deref().or(snapshot.art.as_deref()),
+  }
+}
+
+/// Height a progress style needs inside its layout. A wave needs vertical room
+/// to be visible; a line stays a hairline.
+fn progress_height(style: MediaProgress, size: f32, scale: f32) -> f32 {
+  match style {
+    MediaProgress::Line => 2.0 * scale,
+    MediaProgress::Segments => 4.0 * scale,
+    MediaProgress::Wave => size * 0.8,
+  }
+}
+
 /// The rectangle a media widget will occupy. Split from `draw_media` so the
-/// rotation layer can size itself before painting.
+/// rotation layer can size itself before painting. The layout switch lives
+/// here and in `draw_media`; keeping the two matches in the same file is what
+/// stops the hit region from drifting away from the pixels.
 #[allow(clippy::too_many_arguments)]
 fn media_bounds(
   text: &mut TextEngine,
@@ -2339,6 +2490,7 @@ fn media_bounds(
   show_art: bool,
   show_before_login: bool,
   authenticated: bool,
+  look: MediaLook,
 ) -> Rect {
   let size = logical_size * scale;
   let screen = (viewport.w, viewport.h);
@@ -2348,15 +2500,214 @@ fn media_bounds(
     let (x, y) = anchor.place(screen, (width, height), offset);
     return Rect::new(viewport.x + x, viewport.y + y, width, height);
   }
-  let art_size = if show_art && snapshot.art.is_some() {
-    size * 3.0
-  } else {
-    0.0
+  let art_visible = media_art(snapshot, show_art, look.art).is_some();
+  let (width, height) = match look.layout {
+    MediaLayout::Card => {
+      let art_size = if art_visible { size * 3.0 } else { 0.0 };
+      let mut height = art_size.max(size * 2.8);
+      if look.controls {
+        height = height.max(size * 4.2);
+      }
+      ((300.0 * scale).max(art_size + size * 12.0), height)
+    }
+    MediaLayout::Compact => {
+      let height = if look.controls {
+        size * 3.4
+      } else {
+        size * 2.6
+      };
+      (320.0 * scale, height)
+    }
+    MediaLayout::Vinyl => {
+      let disc = if art_visible { size * 4.0 } else { 0.0 };
+      let mut height = disc + size * 3.4;
+      if look.controls {
+        height += size * 1.2;
+      }
+      ((size * 5.0).max(disc + size * 0.8), height)
+    }
   };
-  let width = (300.0 * scale).max(art_size + size * 12.0);
-  let height = art_size.max(size * 2.8);
   let (x, y) = anchor.place(screen, (width, height), offset);
   Rect::new(viewport.x + x, viewport.y + y, width, height)
+}
+
+/// The music progress indicator. None of these styles reads audio samples:
+/// the wave is a deterministic sine that only encodes the playback fraction,
+/// so it looks alive without claiming to be a real spectrum.
+fn draw_progress(
+  canvas: &mut Canvas,
+  rect: Rect,
+  fraction: f32,
+  style: MediaProgress,
+  accent: Rgb,
+  muted: Rgb,
+  scale: f32,
+) {
+  let fraction = fraction.clamp(0.0, 1.0);
+  match style {
+    MediaProgress::Line => {
+      canvas.fill(rect, muted.with_alpha(50), 1.0);
+      canvas.fill(
+        Rect::new(rect.x, rect.y, rect.w * fraction, rect.h),
+        accent,
+        1.0,
+      );
+    }
+    MediaProgress::Segments => {
+      const BLOCKS: usize = 12;
+      let gap = 3.0 * scale;
+      let block_width = ((rect.w - gap * (BLOCKS - 1) as f32) / BLOCKS as f32).max(1.0);
+      let filled = ((fraction * BLOCKS as f32).round() as usize).min(BLOCKS);
+      for index in 0..BLOCKS {
+        let x = rect.x + index as f32 * (block_width + gap);
+        let color = if index < filled {
+          accent
+        } else {
+          muted.with_alpha(70)
+        };
+        canvas.fill(
+          Rect::new(x, rect.y, block_width, rect.h.max(4.0)),
+          color,
+          1.0,
+        );
+      }
+    }
+    MediaProgress::Wave => {
+      let amplitude = (rect.h * 0.5).max(3.0);
+      let baseline = rect.y + rect.h * 0.5;
+      let step = (4.0 * scale).max(1.0);
+      let steps = (rect.w / step).ceil().max(2.0) as usize;
+      let mut previous = None;
+      for index in 0..=steps {
+        let progress = index as f32 / steps as f32;
+        let point = (
+          rect.x + progress * rect.w,
+          baseline + (progress * TAU * 3.0).sin() * amplitude,
+        );
+        if let Some(from) = previous {
+          let color = if progress <= fraction {
+            accent
+          } else {
+            muted.with_alpha(80)
+          };
+          canvas.line(from, point, color, 1.5 * scale);
+        }
+        previous = Some(point);
+      }
+    }
+  }
+}
+
+/// The three transport glyphs. They are visual only in this version: the
+/// renderer records no hit regions for them and no control message is sent,
+/// so a greeter never offers a button that cannot work.
+fn draw_controls(canvas: &mut Canvas, rect: Rect, size: f32, color: Rgb, playing: bool) {
+  let center_y = rect.y + rect.h * 0.5;
+  let center_x = rect.x + rect.w * 0.5;
+  let gap = size * 1.1;
+  let half = rect.h * 0.45;
+  let stroke = (size * 0.08).max(1.0);
+  let triangle = |canvas: &mut Canvas, points: [(f32, f32); 3]| {
+    for index in 0..3 {
+      let from = points[index];
+      let to = points[(index + 1) % 3];
+      canvas.line(from, to, color, stroke);
+    }
+  };
+  let previous_x = center_x - gap;
+  canvas.fill(
+    Rect::new(previous_x - half * 0.8, center_y - half, stroke, half * 2.0),
+    color,
+    1.0,
+  );
+  triangle(
+    canvas,
+    [
+      (previous_x + half * 0.55, center_y - half),
+      (previous_x + half * 0.55, center_y + half),
+      (previous_x - half * 0.45, center_y),
+    ],
+  );
+
+  if playing {
+    canvas.fill(
+      Rect::new(
+        center_x - half * 0.45,
+        center_y - half,
+        half * 0.3,
+        half * 2.0,
+      ),
+      color,
+      1.0,
+    );
+    canvas.fill(
+      Rect::new(
+        center_x + half * 0.15,
+        center_y - half,
+        half * 0.3,
+        half * 2.0,
+      ),
+      color,
+      1.0,
+    );
+  } else {
+    triangle(
+      canvas,
+      [
+        (center_x - half * 0.4, center_y - half),
+        (center_x - half * 0.4, center_y + half),
+        (center_x + half * 0.65, center_y),
+      ],
+    );
+  }
+
+  let next_x = center_x + gap;
+  triangle(
+    canvas,
+    [
+      (next_x - half * 0.55, center_y - half),
+      (next_x - half * 0.55, center_y + half),
+      (next_x + half * 0.45, center_y),
+    ],
+  );
+  canvas.fill(
+    Rect::new(next_x + half * 0.55, center_y - half, stroke, half * 2.0),
+    color,
+    1.0,
+  );
+}
+
+/// Circular progress used by the vinyl layout. Drawing the ring as short line
+/// segments avoids needing an arc primitive on the canvas.
+fn draw_ring_progress(
+  canvas: &mut Canvas,
+  center: (f32, f32),
+  radius: f32,
+  fraction: f32,
+  accent: Rgb,
+  muted: Rgb,
+  width: f32,
+) {
+  const STEPS: usize = 96;
+  let fraction = fraction.clamp(0.0, 1.0);
+  for index in 0..STEPS {
+    let start = index as f32 / STEPS as f32 * TAU - TAU / 4.0;
+    let end = (index + 1) as f32 / STEPS as f32 * TAU - TAU / 4.0;
+    let color = if (index + 1) as f32 / STEPS as f32 <= fraction {
+      accent
+    } else {
+      muted.with_alpha(70)
+    };
+    canvas.line(
+      (
+        center.0 + start.cos() * radius,
+        center.1 + start.sin() * radius,
+      ),
+      (center.0 + end.cos() * radius, center.1 + end.sin() * radius),
+      color,
+      width,
+    );
+  }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2375,6 +2726,8 @@ fn draw_media(
   primary: Rgb,
   muted: Rgb,
   accent: Rgb,
+  plate: Option<&WidgetPlate>,
+  look: MediaLook,
 ) -> Rect {
   let size = logical_size * scale;
   let rect = media_bounds(
@@ -2388,13 +2741,14 @@ fn draw_media(
     show_art,
     show_before_login,
     scene.view.authenticated,
+    look,
   );
   // A greeter normally runs before the user's session exists. `show_before_login`
   // lets a desktop-session test or a single-user machine display the last
   // track; shared machines can turn it off and keep metadata off the pixels.
   if (!scene.view.authenticated && !show_before_login) || !snapshot.available {
     let label = "No media";
-    draw_scrim(canvas, rect, scene.theme, scale);
+    paint_widget_backdrop(canvas, rect, scene.theme, scale, plate);
     text.draw(
       canvas,
       label,
@@ -2404,70 +2758,339 @@ fn draw_media(
     return rect;
   }
 
+  // Art tinting is opt-in and derived from pixels, never from metadata. The
+  // progress bar and an existing plate border/glow pick up the same hue so the
+  // widget reads as one object instead of a coloured bar on a grey pill.
+  let art_tint = if look.tint_from_art {
+    snapshot.art_tint
+  } else {
+    None
+  };
+  let accent = art_tint.unwrap_or(accent);
+  let tinted_plate = plate.map(|plate| {
+    let mut plate = *plate;
+    if let Some(tint) = art_tint {
+      plate.border = Some(tint.with_alpha(180));
+      if plate.glow.is_some() && plate.glow_size > 0.0 {
+        plate.glow = Some(tint);
+      }
+    }
+    plate
+  });
+  let plate = tinted_plate.as_ref();
+  let art = media_art(snapshot, show_art, look.art);
+  paint_widget_backdrop(canvas, rect, scene.theme, scale, plate);
+
   let (x, y) = (rect.x, rect.y);
   let width = rect.w;
-  let art_size = if show_art && snapshot.art.is_some() {
-    size * 3.0
-  } else {
-    0.0
-  };
-  draw_scrim(canvas, rect, scene.theme, scale);
-  let mut text_x = x;
-  if let Some(art) = &snapshot.art
-    && show_art
-  {
-    canvas.image_in(art, Rect::new(x, y, art_size, art_size));
-    text_x += art_size + size * 0.7;
-  }
-
-  text.draw_line(
-    canvas,
-    &snapshot.title,
-    Style::new(
-      size,
-      primary.with_alpha(if snapshot.stale { 210 } else { 255 }),
-    ),
-    Area::new(text_x, y, (width - (text_x - x)).max(1.0)),
-  );
-  text.draw_line(
-    canvas,
-    &snapshot.artist,
-    Style::new(size * 0.85, muted),
-    Area::new(text_x, y + size * 1.25, (width - (text_x - x)).max(1.0)),
-  );
-
-  if snapshot.stale {
-    text.draw_line(
-      canvas,
-      "Last played",
-      Style::new(size * 0.7, muted.with_alpha(150)),
-      Area::new(text_x, y + size * 2.25, (width - (text_x - x)).max(1.0)),
-    );
-  } else if !snapshot.length.is_zero() {
-    let fraction =
-      (snapshot.position.as_secs_f32() / snapshot.length.as_secs_f32()).clamp(0.0, 1.0);
-    let bar = Rect::new(
-      text_x,
-      y + size * 2.35,
-      (width - (text_x - x)).max(1.0),
-      2.0 * scale,
-    );
-    canvas.fill(bar, muted.with_alpha(50), 1.0);
-    canvas.fill(
-      Rect::new(bar.x, bar.y, bar.w * fraction, bar.h),
-      accent,
-      1.0,
-    );
+  let playing = snapshot.playing;
+  match look.layout {
+    MediaLayout::Card => {
+      let art_size = if art.is_some() { size * 3.0 } else { 0.0 };
+      let mut text_x = x;
+      if let Some(art) = art {
+        canvas.image_in(art, Rect::new(x, y, art_size, art_size));
+        text_x += art_size + size * 0.7;
+      }
+      let text_width = (width - (text_x - x)).max(1.0);
+      text.draw_line(
+        canvas,
+        &snapshot.title,
+        Style::new(
+          size,
+          primary.with_alpha(if snapshot.stale { 210 } else { 255 }),
+        ),
+        Area::new(text_x, y, text_width),
+      );
+      text.draw_line(
+        canvas,
+        &snapshot.artist,
+        Style::new(size * 0.85, muted),
+        Area::new(text_x, y + size * 1.25, text_width),
+      );
+      if snapshot.stale {
+        text.draw_line(
+          canvas,
+          "Last played",
+          Style::new(size * 0.7, muted.with_alpha(150)),
+          Area::new(text_x, y + size * 2.25, text_width),
+        );
+      } else if !snapshot.length.is_zero() {
+        let fraction =
+          (snapshot.position.as_secs_f32() / snapshot.length.as_secs_f32()).clamp(0.0, 1.0);
+        let bar = Rect::new(
+          text_x,
+          y + size * 2.35,
+          text_width,
+          progress_height(look.progress, size, scale),
+        );
+        draw_progress(canvas, bar, fraction, look.progress, accent, muted, scale);
+      }
+      if look.controls {
+        draw_controls(
+          canvas,
+          Rect::new(text_x, y + size * 3.15, text_width, size * 0.9),
+          size,
+          muted,
+          playing,
+        );
+      }
+    }
+    MediaLayout::Compact => {
+      let thumb = if art.is_some() { size * 1.6 } else { 0.0 };
+      let mut text_x = x;
+      if let Some(art) = art {
+        let thumb_y = y + ((size * 2.6 - thumb) * 0.5).max(0.0);
+        canvas.image_in(art, Rect::new(x, thumb_y, thumb, thumb));
+        text_x += thumb + size * 0.5;
+      }
+      let text_width = (width - (text_x - x)).max(1.0);
+      text.draw_line(
+        canvas,
+        &snapshot.title,
+        Style::new(
+          size,
+          primary.with_alpha(if snapshot.stale { 210 } else { 255 }),
+        ),
+        Area::new(text_x, y + size * 0.1, text_width),
+      );
+      text.draw_line(
+        canvas,
+        &snapshot.artist,
+        Style::new(size * 0.8, muted),
+        Area::new(text_x, y + size * 1.05, text_width),
+      );
+      if snapshot.stale {
+        text.draw_line(
+          canvas,
+          "Last played",
+          Style::new(size * 0.7, muted.with_alpha(150)),
+          Area::new(text_x, y + size * 2.05, text_width),
+        );
+      } else if !snapshot.length.is_zero() {
+        let fraction =
+          (snapshot.position.as_secs_f32() / snapshot.length.as_secs_f32()).clamp(0.0, 1.0);
+        let bar = Rect::new(
+          text_x,
+          y + size * 2.05,
+          text_width,
+          progress_height(look.progress, size, scale),
+        );
+        draw_progress(canvas, bar, fraction, look.progress, accent, muted, scale);
+      }
+      if look.controls {
+        draw_controls(
+          canvas,
+          Rect::new(text_x, y + size * 2.75, text_width, size * 0.9),
+          size,
+          muted,
+          playing,
+        );
+      }
+    }
+    MediaLayout::Vinyl => {
+      let disc = if art.is_some() { size * 4.0 } else { 0.0 };
+      let center_x = x + width * 0.5;
+      if let Some(art) = art {
+        canvas.image_in(art, Rect::new(center_x - disc * 0.5, y, disc, disc));
+      }
+      let fraction = if snapshot.length.is_zero() {
+        0.0
+      } else {
+        (snapshot.position.as_secs_f32() / snapshot.length.as_secs_f32()).clamp(0.0, 1.0)
+      };
+      let ring = look.progress == MediaProgress::Line && disc > 0.0;
+      if ring && !snapshot.stale {
+        draw_ring_progress(
+          canvas,
+          (center_x, y + disc * 0.5),
+          disc * 0.5 + size * 0.1,
+          fraction,
+          accent,
+          muted,
+          (size * 0.12).max(1.0),
+        );
+      }
+      // The ring sits just outside the disc, so the title starts a little
+      // lower than the card layout to keep clear of it.
+      let text_y = y + disc + size * 0.35;
+      text.draw_line(
+        canvas,
+        &snapshot.title,
+        Style::new(
+          size * 0.78,
+          primary.with_alpha(if snapshot.stale { 210 } else { 255 }),
+        ),
+        Area::new(x, text_y, width).align(Align::Center),
+      );
+      text.draw_line(
+        canvas,
+        &snapshot.artist,
+        Style::new(size * 0.68, muted),
+        Area::new(x, text_y + size * 0.95, width).align(Align::Center),
+      );
+      if snapshot.stale {
+        text.draw_line(
+          canvas,
+          "Last played",
+          Style::new(size * 0.7, muted.with_alpha(150)),
+          Area::new(x, text_y + size * 2.0, width).align(Align::Center),
+        );
+      } else if !ring && !snapshot.length.is_zero() {
+        let bar = Rect::new(
+          x + width * 0.12,
+          text_y + size * 2.0,
+          width * 0.76,
+          progress_height(look.progress, size, scale),
+        );
+        draw_progress(canvas, bar, fraction, look.progress, accent, muted, scale);
+      }
+      if look.controls {
+        draw_controls(
+          canvas,
+          Rect::new(
+            x + width * 0.25,
+            text_y + size * 2.9,
+            width * 0.5,
+            size * 0.9,
+          ),
+          size,
+          muted,
+          playing,
+        );
+      }
+    }
   }
   rect
 }
 
-/// A readable backplate for a widget that sits directly on the wallpaper.
+/// Scales a colour's existing alpha by `opacity`. Alpha is the only channel
+/// the plate multiplier touches, so hue stays exactly what the theme wrote.
+fn alpha(color: Rgb, opacity: f32) -> Rgb {
+  let value = (f32::from(color.a) * opacity.clamp(0.0, 1.0))
+    .round()
+    .clamp(0.0, 255.0) as u8;
+  color.with_alpha(value)
+}
+
+/// Paints the backdrop for one widget. Built-in widgets pass their resolved
+/// plate; plugin widgets have no look yet and keep the fixed scrim. Keeping the
+/// choice in one place is what stops the two paths from drifting.
+fn paint_widget_backdrop(
+  canvas: &mut Canvas,
+  bounds: Rect,
+  theme: &Theme,
+  scale: f32,
+  plate: Option<&WidgetPlate>,
+) {
+  match plate {
+    // The transform already multiplied the plate opacity into the whole
+    // widget, so the plate itself must not apply it a second time.
+    Some(plate) => draw_widget_plate(canvas, bounds, plate, theme, scale, 1.0),
+    None => draw_scrim(canvas, bounds, theme, scale),
+  }
+}
+
+/// Draws a themed plate behind a widget. The plate is sized from the widget's
+/// content bounds plus the configured padding, so it always wraps the digits,
+/// album art, and progress bar as one surface.
 ///
-/// The card has its own glass panel, but the clock and media widgets do not.
-/// White text over a bright photo is a legibility bug, so each built-in widget
-/// gets a translucent theme-tinted pill. It uses the same tint token as the
-/// card, which keeps the design language consistent across presets.
+/// Shadow and glow paint first, then the fill, then the border. Every alpha is
+/// multiplied by `opacity`, which lets a caller fade a plate without touching
+/// the widget's text colours.
+fn draw_widget_plate(
+  canvas: &mut Canvas,
+  bounds: Rect,
+  plate: &WidgetPlate,
+  theme: &Theme,
+  scale: f32,
+  opacity: f32,
+) {
+  if bounds.w <= 0.0 || bounds.h <= 0.0 || opacity <= 0.0 {
+    return;
+  }
+  // `None` means the widget floats on the wallpaper. A shadow or glow with no
+  // plate underneath would just be a floating smudge, so skip all of it.
+  if plate.style == PlateStyle::None {
+    return;
+  }
+  let pad = plate.padding * scale;
+  let rect = Rect::new(
+    bounds.x - pad,
+    bounds.y - pad,
+    bounds.w + pad * 2.0,
+    bounds.h + pad * 2.0,
+  );
+  let radius = (plate.radius * scale).min(rect.h / 2.0);
+
+  if plate.shadow {
+    let spread = pad + 4.0 * scale;
+    let shadow = Rect::new(
+      bounds.x - spread,
+      bounds.y - spread + 3.0 * scale,
+      bounds.w + spread * 2.0,
+      bounds.h + spread * 2.0,
+    );
+    let shadow_radius = (plate.radius * scale + 4.0 * scale).min(shadow.h / 2.0);
+    canvas.fill(
+      shadow,
+      alpha(theme.shadow.with_alpha(90), opacity),
+      shadow_radius,
+    );
+  }
+  if let Some(glow) = plate.glow
+    && plate.glow_size > 0.0
+  {
+    let spread = pad + plate.glow_size * scale;
+    let glow_rect = Rect::new(
+      bounds.x - spread,
+      bounds.y - spread,
+      bounds.w + spread * 2.0,
+      bounds.h + spread * 2.0,
+    );
+    let glow_radius = (plate.radius * scale + plate.glow_size * scale).min(glow_rect.h / 2.0);
+    canvas.fill(glow_rect, alpha(glow.with_alpha(40), opacity), glow_radius);
+  }
+
+  match plate.style {
+    PlateStyle::Tint => canvas.fill(rect, alpha(theme.tint.with_alpha(180), opacity), radius),
+    PlateStyle::Solid => canvas.fill(
+      rect,
+      alpha(plate.color.unwrap_or(theme.tint), opacity),
+      radius,
+    ),
+    PlateStyle::Gradient => {
+      let start = plate.color.unwrap_or(theme.tint);
+      let end = plate.color_end.unwrap_or(Rgb::rgba(0, 0, 0, 0));
+      canvas.linear_gradient_stops(
+        rect,
+        radius,
+        plate.gradient_angle,
+        &[(0.0, alpha(start, opacity)), (1.0, alpha(end, opacity))],
+      );
+    }
+    PlateStyle::None => {}
+  }
+
+  match (plate.border, plate.style) {
+    (Some(border), _) => canvas.stroke(rect, alpha(border, opacity), radius, 1.0),
+    // The historical scrim always had a faint theme border. Only Tint keeps
+    // it implicitly; Solid and Gradient get a border only when asked.
+    (None, PlateStyle::Tint) => {
+      canvas.stroke(
+        rect,
+        alpha(theme.border.with_alpha(45), opacity),
+        radius,
+        1.0,
+      );
+    }
+    (None, _) => {}
+  }
+}
+
+/// The fixed backplate a plugin widget still gets. Built-in widgets use
+/// [`draw_widget_plate`] instead; this stays for plugins until their manifests
+/// grow a look table.
 fn draw_scrim(canvas: &mut Canvas, bounds: Rect, theme: &Theme, scale: f32) {
   if bounds.w <= 0.0 || bounds.h <= 0.0 {
     return;
@@ -2497,9 +3120,9 @@ fn scaled_offset(offset: (i32, i32), scale: f32) -> (i32, i32) {
 mod tests {
   use std::time::Instant;
 
-  use super::{Scene, WidgetFrame, draw_media, widget_offset};
+  use super::{Scene, WidgetFrame, draw_media, widget_offset, widget_visible};
   use crate::color::Rgb;
-  use crate::config::Config;
+  use crate::config::{Config, MediaLook};
   use crate::layout::Anchor;
   use crate::ui::canvas::{Canvas, Rect};
   use crate::ui::drag::Drag;
@@ -2565,6 +3188,8 @@ mod tests {
       Rgb::solid(255, 255, 255),
       Rgb::solid(200, 200, 200),
       Rgb::solid(80, 120, 255),
+      None,
+      MediaLook::default(),
     );
     canvas.pixmap().data().to_vec()
   }
@@ -2578,16 +3203,22 @@ mod tests {
     assert_eq!(card.origin, (10.0, 20.0));
     assert_eq!(card.extent, (100.0, 80.0));
     assert_eq!(card.scale, 0.5);
-    assert_eq!(widget_offset(&card, (48, 14), (0.0, 0.0)), (24, 7));
+    assert_eq!(widget_offset(&card, (48.0, 14.0), (0.0, 0.0)), (24, 7));
     // Adding the drag before rounding matches decor and keeps a card-space
     // widget moving with the same pixel grid as its configured offset.
-    assert_eq!(widget_offset(&card, (48, 14), (10.0, -4.0)), (29, 5));
+    assert_eq!(widget_offset(&card, (48.0, 14.0), (10.0, -4.0)), (29, 5));
+    // A motion sample joins the configured offset in logical pixels before
+    // the scale multiply, exactly like a decor item.
+    assert_eq!(widget_offset(&card, (48.5, 14.4), (0.0, 0.0)), (24, 7));
 
     // The behind layer keeps the screen-space frame and the old rounding.
     let screen = WidgetFrame::screen((1920.0, 1080.0), 1.0);
     assert_eq!(screen.origin, (0.0, 0.0));
     assert_eq!(screen.extent, (1920.0, 1080.0));
-    assert_eq!(widget_offset(&screen, (48, 14), (0.0, 0.0)), (48, 14));
+    assert_eq!(widget_offset(&screen, (48.0, 14.0), (0.0, 0.0)), (48, 14));
+    // A fractional sample rounds the same way the integer manifest offset
+    // used to, so an unconfigured widget keeps its exact pixels.
+    assert_eq!(widget_offset(&screen, (48.25, 14.75), (0.0, 0.0)), (48, 15));
   }
 
   #[test]
@@ -2615,5 +3246,63 @@ mod tests {
       first, second,
       "authenticated media rendering ignored the track metadata"
     );
+  }
+
+  #[test]
+  fn widget_visibility_prefers_hide_and_treats_an_empty_show_list_as_always() {
+    use crate::config::WidgetState;
+    use crate::ui::view::Line;
+
+    let idle = View::default();
+    // Empty show_on means always, even with a hide list that does not match.
+    assert!(widget_visible(&[], &[], &idle));
+    assert!(widget_visible(&[], &[WidgetState::Busy], &idle));
+
+    // A state in hide_on wins even when show_on also lists it.
+    assert!(!widget_visible(
+      &[WidgetState::Typing],
+      &[WidgetState::Typing],
+      &View {
+        username: "ada".to_string(),
+        ..View::default()
+      }
+    ));
+
+    // Typed content is the typing state.
+    let typing = View {
+      password: "secret".to_string(),
+      ..View::default()
+    };
+    assert!(widget_visible(&[WidgetState::Typing], &[], &typing));
+    assert!(!widget_visible(&[WidgetState::Idle], &[], &typing));
+
+    // Busy outranks typing when a request is in flight.
+    let busy = View {
+      busy: true,
+      username: "ada".to_string(),
+      ..View::default()
+    };
+    assert!(widget_visible(&[WidgetState::Busy], &[], &busy));
+    assert!(!widget_visible(&[WidgetState::Typing], &[], &busy));
+
+    // An error status is the error state.
+    let error = View {
+      status: Some(Line::error("denied")),
+      ..View::default()
+    };
+    assert!(widget_visible(&[WidgetState::Error], &[], &error));
+    assert!(!widget_visible(&[WidgetState::Idle], &[], &error));
+
+    // Authentication outranks an empty form.
+    let authenticated = View {
+      authenticated: true,
+      ..View::default()
+    };
+    assert!(widget_visible(
+      &[WidgetState::Authenticated],
+      &[],
+      &authenticated
+    ));
+    assert!(!widget_visible(&[WidgetState::Idle], &[], &authenticated));
   }
 }

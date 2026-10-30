@@ -11,7 +11,10 @@ use tiny_skia::Pixmap;
 use tracing::warn;
 
 use crate::color::Rgb;
-use crate::config::{BlurConfig, Config, DecorSpec, LoginConfig, MotionConfig, WidgetLayer};
+use crate::config::{
+  BlurConfig, ClockStyle, Config, DecorSpec, LoginConfig, MotionConfig, SecondHand, WidgetLayer,
+  WidgetLook,
+};
 use crate::layout::Anchor;
 use crate::ui::image::{DecodeLimits, load_native};
 
@@ -80,6 +83,15 @@ pub struct Theme {
   pub clock_layer: WidgetLayer,
   /// Draw order for the built-in media widget. See [`Self::clock_layer`].
   pub media_layer: WidgetLayer,
+  /// Resolved plate, motion, and state rules for the built-in clock.
+  pub clock_look: WidgetLook,
+  /// Resolved plate, motion, and state rules for the built-in media widget.
+  pub media_look: WidgetLook,
+  /// True when the clock face changes between whole seconds: a blinking colon
+  /// or a sweeping analog second hand. Those need animation frames rather than
+  /// the once-per-second clock tick, otherwise the effect looks like a
+  /// slideshow.
+  pub clock_face_animating: bool,
 }
 
 impl Theme {
@@ -134,12 +146,18 @@ impl Theme {
       .focus_ring
       .ensure_contrast(self.panel_backdrop(background), self.min_contrast)
   }
-  /// True when at least one decor item is animated and motion is allowed.
-  /// The window uses this to keep requesting animation frames; reduced motion
-  /// and low-power mode freeze the ornaments along with the rest of the UI.
+  /// True when at least one decor item or built-in widget is animated and
+  /// motion is allowed. The window uses this to keep requesting animation
+  /// frames; reduced motion and low-power mode freeze the ornaments and the
+  /// widget plates along with the rest of the UI.
   #[must_use]
   pub fn decor_motion_active(&self) -> bool {
-    !self.motion.reduced && !self.low_power && self.decor.iter().any(|item| item.motion.active())
+    !self.motion.reduced
+      && !self.low_power
+      && (self.decor.iter().any(|item| item.motion.active())
+        || self.clock_look.motion.active()
+        || self.media_look.motion.active()
+        || self.clock_face_animating)
   }
 }
 
@@ -174,6 +192,12 @@ impl From<&Config> for Theme {
       low_power: config.power.low_power,
       clock_layer: config.clock.layer,
       media_layer: config.media.layer,
+      clock_look: config.clock.look.clone(),
+      media_look: config.media.presentation.clone(),
+      clock_face_animating: config.clock.enabled
+        && (config.clock.colon_blink_ms > 0.0
+          || (config.clock.style == ClockStyle::Analog
+            && config.clock.second_hand == SecondHand::Sweep)),
     }
   }
 }

@@ -13,8 +13,9 @@
 //! would be a worse API than waiting for a real v2 manifest contract.
 //!
 //! Failure policy: a broken plugin is logged and left out. It must never stop
-//! the greeter, and it must never sit between the user and the login form, so
-//! widgets are painted *under* all core UI as well.
+//! the greeter, and it must never sit between the user and the login form.
+//! Widgets default to painting under the decor and can opt into the front
+//! layer, but the form still paints afterwards, so a plugin cannot cover it.
 
 mod assets;
 mod manifest;
@@ -26,7 +27,7 @@ use tiny_skia::Pixmap;
 use tracing::{debug, info, warn};
 
 use crate::color::Rgb;
-use crate::config::{Config, PluginsConfig, ThemeConfig};
+use crate::config::{Config, MediaLook, PluginsConfig, ThemeConfig, WidgetLayer};
 use crate::layout::Placement;
 use crate::ui::clock::ClockSpec;
 use crate::ui::media::MediaState;
@@ -45,25 +46,32 @@ pub enum Widget {
     color: Rgb,
     placement: Placement,
     max_width: Option<f32>,
+    /// Paint before or after the login decor. The form always paints last.
+    layer: WidgetLayer,
   },
   Clock {
     spec: ClockSpec,
     placement: Placement,
     draggable: bool,
+    layer: WidgetLayer,
   },
   Image {
     image: Pixmap,
     width: f32,
     placement: Placement,
+    layer: WidgetLayer,
   },
   Media {
     state: Arc<MediaState>,
     placement: Placement,
     size: f32,
     show_art: bool,
+    /// Layout, art shape, progress style, and art tinting.
+    look: MediaLook,
     color: Option<Rgb>,
     show_before_login: bool,
     draggable: bool,
+    layer: WidgetLayer,
   },
 }
 
@@ -118,6 +126,19 @@ impl Widget {
       Self::Text { .. } | Self::Image { .. } => false,
     }
   }
+
+  /// Paint order relative to the login decor. A manifest sets this per widget
+  /// and defaults to `Behind`; the login form still paints after both layers,
+  /// so no widget can cover an input.
+  #[must_use]
+  pub fn layer(&self) -> WidgetLayer {
+    match self {
+      Self::Text { layer, .. }
+      | Self::Clock { layer, .. }
+      | Self::Image { layer, .. }
+      | Self::Media { layer, .. } => *layer,
+    }
+  }
 }
 
 /// A loaded plugin, ready for the renderer.
@@ -162,6 +183,7 @@ pub fn builtins(config: &Config) -> Builtins {
       spec: ClockSpec::from_config(&config.clock),
       placement: config.clock.placement.clone(),
       draggable: config.clock.draggable,
+      layer: config.clock.layer,
     });
   }
   if config.media.enabled {
@@ -172,9 +194,11 @@ pub fn builtins(config: &Config) -> Builtins {
       placement: config.media.placement.clone(),
       size: config.media.size,
       show_art: config.media.show_art,
+      look: config.media.look,
       color: config.media.color,
       show_before_login: config.media.show_before_login,
       draggable: config.media.draggable,
+      layer: config.media.layer,
     });
   }
   if widgets.is_empty() {
@@ -335,6 +359,7 @@ fn resolve_widget(dir: &Path, widget: ParsedWidget, grants: &[String]) -> Result
       monitor,
       rotation,
       max_width,
+      layer,
     } => Ok(Widget::Text {
       text,
       size,
@@ -346,6 +371,7 @@ fn resolve_widget(dir: &Path, widget: ParsedWidget, grants: &[String]) -> Result
         rotation,
       },
       max_width,
+      layer,
     }),
     ParsedWidget::Clock {
       spec,
@@ -353,6 +379,7 @@ fn resolve_widget(dir: &Path, widget: ParsedWidget, grants: &[String]) -> Result
       offset,
       monitor,
       rotation,
+      layer,
     } => Ok(Widget::Clock {
       spec,
       placement: Placement {
@@ -362,16 +389,19 @@ fn resolve_widget(dir: &Path, widget: ParsedWidget, grants: &[String]) -> Result
         rotation,
       },
       draggable: false,
+      layer,
     }),
     ParsedWidget::Media {
       size,
       show_art,
       show_before_login,
+      look,
       color,
       anchor,
       offset,
       monitor,
       rotation,
+      layer,
     } => Ok(Widget::Media {
       state: Arc::new(MediaState::new()),
       placement: Placement {
@@ -382,9 +412,11 @@ fn resolve_widget(dir: &Path, widget: ParsedWidget, grants: &[String]) -> Result
       },
       size,
       show_art,
+      look,
       color: Some(color),
       show_before_login,
       draggable: false,
+      layer,
     }),
     ParsedWidget::Image {
       path,
@@ -393,6 +425,7 @@ fn resolve_widget(dir: &Path, widget: ParsedWidget, grants: &[String]) -> Result
       offset,
       monitor,
       rotation,
+      layer,
     } => {
       let image =
         assets::load_png(dir, &path, grants).map_err(|error| format!("{path}: {error}"))?;
@@ -405,6 +438,7 @@ fn resolve_widget(dir: &Path, widget: ParsedWidget, grants: &[String]) -> Result
           monitor,
           rotation,
         },
+        layer,
       })
     }
   }
@@ -459,6 +493,31 @@ mod tests {
     assert_eq!(report.plugins[0].widgets[0].placement().rotation, 15.0);
     assert!(!report.plugins[0].builtin);
     assert!(report.errors.is_empty());
+    let _ = std::fs::remove_dir_all(&root);
+  }
+
+  #[test]
+  fn plugin_widgets_resolve_their_manifest_layer() {
+    use crate::config::WidgetLayer;
+
+    let root = temp_root("layer");
+    let plugin = root.join("layered");
+    std::fs::create_dir_all(&plugin).unwrap();
+    std::fs::write(
+      plugin.join("plugin.toml"),
+      "api_version = 1\nname = \"Layered\"\n[[widget]]\nkind = \"text\"\ntext = \"Hi\"\nlayer = \"front\"\n",
+    )
+    .unwrap();
+
+    let report = load_all(
+      &PluginsConfig {
+        enabled: true,
+        dirs: vec![root.clone()],
+      },
+      &theme(),
+    );
+    assert_eq!(report.plugins.len(), 1);
+    assert_eq!(report.plugins[0].widgets[0].layer(), WidgetLayer::Front);
     let _ = std::fs::remove_dir_all(&root);
   }
 
