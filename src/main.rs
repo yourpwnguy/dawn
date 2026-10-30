@@ -278,9 +278,20 @@ fn check_config(loaded: &LoadedConfig, sessions: &[Session], report: &Report) ->
 }
 
 fn init_logging(verbose: bool) {
+  use tracing_subscriber::layer::SubscriberExt;
+  use tracing_subscriber::util::SubscriberInitExt;
+
   let level = if verbose { Level::DEBUG } else { Level::INFO };
-  let _ = tracing_subscriber::fmt()
-    .with_max_level(level)
-    .with_target(false)
+  // cosmic-text logs one debug line per text run whose glyphs are not covered
+  // by the theme family ("No default font match for SansSerif..."). That is
+  // useful inside cosmic-text, but it buries dawn's own debug output, so keep
+  // dependency chatter at WARN. dawn's records still follow `-v`.
+  let filter = tracing_subscriber::filter::Targets::new()
+    .with_default(level)
+    .with_target("cosmic_text", Level::WARN)
+    .with_target("fontdb", Level::WARN);
+  let _ = tracing_subscriber::registry()
+    .with(tracing_subscriber::fmt::layer().with_target(false))
+    .with(filter)
     .try_init();
 }

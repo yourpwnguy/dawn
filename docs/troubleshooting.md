@@ -26,19 +26,18 @@ while changing a greeter.
 
 Run `dawn --list-gpus` to see the adapters this config can address. The table
 prints an index, name, backend, device class, driver, and marks the selection.
-`index:N` and name substrings match that list, so start with:
+The simplest fix is a class keyword:
 
 ```toml
 [gpu]
-adapter = "..."
+adapter = "discrete"   # or "integrated"
 ```
 
-Some machines expose both a discrete and an integrated adapter. Force the one
-you want with `device = "discrete"` (or `"integrated"`), and try
-`backend = "gl"` when a Vulkan driver enumerates but renders incorrectly. If
-the GPU path still fails, `fallback = "cpu"` uses softbuffer immediately
-instead of spending time on adapter retries. `DAWN_GPU=0` remains a one-off
-diagnostic equivalent to `enabled = false`.
+That sets the device class and the power ranking in one line. For one specific
+adapter, use `adapter = "index:N"` or part of its name from the table. Try
+`backend = "gl"` when a Vulkan driver enumerates but renders incorrectly.
+`adapter = "software"` forces the CPU adapter and `DAWN_GPU=0` disables the GPU
+for one run, which is the same as `enabled = false`.
 
 ## The window opens but the keyboard does not work
 

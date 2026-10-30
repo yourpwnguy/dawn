@@ -1232,17 +1232,31 @@ This section controls the low-power switch.
 
 This section controls the live window's GPU compositor. `--screenshot` and the CPU compositor always run on tiny-skia, so a GPU setting can never change the pixels in a screenshot.
 
+Most machines need nothing here. When you do need to choose a GPU, one line is usually enough:
+
+```toml
+[gpu]
+adapter = "auto"   # auto, integrated, discrete, software, index:N, or part of a name
+```
+
+`enabled = false`, or `DAWN_GPU=0` for one run, uses the CPU renderer. `backend` is for the rare machine where the automatic driver choice is wrong.
+
 | Key | Type and range | Default | What it does |
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Set to `false` to use softbuffer without touching a driver. `DAWN_GPU=0` is the environment equivalent. |
 | `backend` | enum: `auto`, `vulkan` (alias `vk`), `gl` (aliases `opengl`, `gles`), `software` (alias `sw`) | `"auto"` | `auto` enables Vulkan and GL. `vulkan` or `gl` picks one. `software` keeps the GPU pipeline but restricts it to CPU adapters such as lavapipe or llvmpipe. |
-| `adapter` | string, at most 64 characters: `auto`, `index:N`, or a case-insensitive substring of the adapter name or driver | `"auto"` | Adapter choice. `index:N` numbers the adapters that match the backend and device filter, in the same order `dawn --list-gpus` prints them, before any power ranking. |
-| `device` | enum: `auto`, `discrete`, `integrated`, `virtual`, `cpu` (alias `software`) | `"auto"` | Adapter class filter. A non-auto value is a hard filter, not a hint. `backend = "software"` forces a CPU adapter. |
-| `power` | enum: `low`, `high`, `default` | `"low"` | Ranking for `adapter = "auto"`. `low` prefers integrated, then other, virtual, discrete, and finally CPU. `high` prefers discrete first and can raise heat and battery drain. `default` keeps the backend enumeration order. This is a preference, not a filter. |
+| `adapter` | string, at most 64 characters: `auto`, `integrated`, `discrete`, `software`, `index:N`, or a case-insensitive substring of the adapter name or driver | `"auto"` | `integrated` and `discrete` pick that class and set the matching power ranking. `software` picks a CPU adapter. `index:N` numbers the adapters that match the backend filter, in the same order `dawn --list-gpus` prints them. Any other value matches a name or driver. |
+
+The remaining keys are escape hatches. The `adapter` keywords already set the device class and ranking, so these only matter when you need something the keywords cannot express.
+
+| Key | Type and range | Default | What it does |
+| --- | --- | --- | --- |
+| `device` | enum: `auto`, `discrete`, `integrated`, `virtual`, `cpu` (alias `software`) | `"auto"` | Adapter class filter. A non-auto value is a hard filter, not a hint. Ignored when `adapter` is `integrated`, `discrete`, or `software`. |
+| `power` | enum: `low`, `high`, `default` | `"low"` | Ranking for `adapter = "auto"`. `low` prefers integrated, then other, virtual, discrete, and finally CPU. `high` prefers discrete first and can raise heat and battery drain. `default` keeps the backend enumeration order. Ignored when `adapter` is `integrated` or `discrete`. |
 | `present` | enum: `fifo` (alias `vsync`), `mailbox`, `immediate` (alias `tearing`) | `"fifo"` | Swapchain presentation mode. `fifo` queues frames with vsync-style pacing: tear-free, but it can add up to one frame of latency. `mailbox` replaces the queued frame when offered: tear-free and lower latency. `immediate` presents as soon as possible and may tear. A mode the surface does not offer is ignored with a warning. |
 | `fallback` | enum: `chain`, `software`, `cpu`, `none` | `"chain"` | What to try when the selected adapter cannot produce a device or surface. `chain` tries the configured adapter, then a software adapter, then softbuffer. `software` stops after the software adapter. `cpu` skips the GPU. `none` sends a failure to the terminal fallback. |
 
-`index:N` is checked for syntax at load time. An index that does not exist at runtime produces a readable error and follows `fallback`; it is not a config error. A name that matches nothing at runtime also falls through the same way, because the adapter may only exist on the machine that actually runs the greeter. Run `dawn --list-gpus` to see the indices, names, backends, device classes, and which one the config selects.
+`adapter` keywords are matched case-insensitively. A value that is not a keyword, `index:N`, or a matching name falls through at runtime and follows `fallback`. `index:N` is checked for syntax at load time; an index that does not exist at runtime produces a readable error instead of a config error, because the adapter list depends on the machine that actually runs the greeter. Run `dawn --list-gpus` to see the indices, names, backends, device classes, and which one the config selects.
 
 ### Host-only rule
 

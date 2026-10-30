@@ -1109,12 +1109,48 @@ fn backend_mask(gpu: &GpuConfig) -> wgpu::Backends {
 
 /// `backend = "software"` is a stronger statement than `device = "cpu"`: it
 /// means "only a CPU adapter is acceptable", so it overrides whatever device
-/// value the same table contains.
+/// value the same table contains. The `adapter` keywords do the same thing for
+/// the common cases, which lets most configs name a class instead of combining
+/// a device filter with a power ranking.
 fn effective_device(gpu: &GpuConfig) -> GpuDevice {
-  if gpu.backend == GpuBackend::Software {
-    GpuDevice::Cpu
-  } else {
-    gpu.device
+  match adapter_choice(&gpu.adapter) {
+    AdapterChoice::Integrated => GpuDevice::Integrated,
+    AdapterChoice::Discrete => GpuDevice::Discrete,
+    AdapterChoice::Software => GpuDevice::Cpu,
+    AdapterChoice::Auto if gpu.backend == GpuBackend::Software => GpuDevice::Cpu,
+    AdapterChoice::Auto | AdapterChoice::Other => gpu.device,
+  }
+}
+
+/// Power ranking implied by an adapter keyword. `device` and `power` remain for
+/// callers that need a filter or an order the keywords cannot express.
+fn effective_power(gpu: &GpuConfig) -> GpuPower {
+  match adapter_choice(&gpu.adapter) {
+    AdapterChoice::Integrated => GpuPower::Low,
+    AdapterChoice::Discrete => GpuPower::High,
+    AdapterChoice::Auto | AdapterChoice::Software | AdapterChoice::Other => gpu.power,
+  }
+}
+
+/// The friendly spellings accepted by `[gpu] adapter` before it is treated as
+/// an index or a name substring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AdapterChoice {
+  Auto,
+  Integrated,
+  Discrete,
+  Software,
+  /// `index:N` or a name/driver substring.
+  Other,
+}
+
+fn adapter_choice(adapter: &str) -> AdapterChoice {
+  match adapter.trim().to_ascii_lowercase().as_str() {
+    "" | "auto" => AdapterChoice::Auto,
+    "integrated" | "igpu" | "integrated-gpu" => AdapterChoice::Integrated,
+    "discrete" | "dgpu" | "discrete-gpu" => AdapterChoice::Discrete,
+    "software" | "cpu" => AdapterChoice::Software,
+    _ => AdapterChoice::Other,
   }
 }
 
@@ -1175,8 +1211,14 @@ fn order_candidates(
         .to_string(),
     );
   }
-  let ranked = rank_adapters(adapters, gpu.power);
-  let chosen = if gpu.adapter.eq_ignore_ascii_case("auto") {
+  let ranked = rank_adapters(adapters, effective_power(gpu));
+  let chosen = if matches!(
+    adapter_choice(&gpu.adapter),
+    AdapterChoice::Auto
+      | AdapterChoice::Integrated
+      | AdapterChoice::Discrete
+      | AdapterChoice::Software
+  ) {
     ranked.first().cloned()
   } else {
     adapter_position(adapters, &gpu.adapter).and_then(|index| adapters.get(index).cloned())
@@ -1391,8 +1433,59 @@ fn shade(color: Rgb, factor: f32) -> Rgb {
 
 #[cfg(test)]
 mod tests {
-  use super::{BlurParams, Globals, MODE_IMAGE, choose_format, padded_row};
+  use super::{
+    AdapterChoice, BlurParams, Globals, MODE_IMAGE, adapter_choice, choose_format,
+    effective_device, effective_power, padded_row,
+  };
+  use crate::config::{GpuBackend, GpuConfig, GpuDevice, GpuPower};
   use wgpu::TextureFormat;
+
+  #[test]
+  fn adapter_keywords_pick_a_class_and_a_ranking() {
+    let discrete = GpuConfig {
+      adapter: "discrete".to_string(),
+      ..GpuConfig::default()
+    };
+    assert_eq!(adapter_choice(&discrete.adapter), AdapterChoice::Discrete);
+    assert_eq!(effective_device(&discrete), GpuDevice::Discrete);
+    assert_eq!(effective_power(&discrete), GpuPower::High);
+
+    let integrated = GpuConfig {
+      adapter: "integrated".to_string(),
+      ..GpuConfig::default()
+    };
+    assert_eq!(effective_device(&integrated), GpuDevice::Integrated);
+    assert_eq!(effective_power(&integrated), GpuPower::Low);
+
+    let software = GpuConfig {
+      adapter: "software".to_string(),
+      ..GpuConfig::default()
+    };
+    assert_eq!(effective_device(&software), GpuDevice::Cpu);
+
+    let named = GpuConfig {
+      adapter: "index:1".to_string(),
+      ..GpuConfig::default()
+    };
+    assert_eq!(adapter_choice(&named.adapter), AdapterChoice::Other);
+    assert_eq!(effective_device(&named), GpuDevice::Auto);
+    assert_eq!(effective_power(&named), GpuPower::Low);
+  }
+
+  #[test]
+  fn backend_software_still_forces_the_cpu_with_adapter_auto() {
+    let mut gpu = GpuConfig {
+      backend: GpuBackend::Software,
+      ..GpuConfig::default()
+    };
+    assert_eq!(effective_device(&gpu), GpuDevice::Cpu);
+    gpu.adapter = "discrete".to_string();
+    assert_eq!(
+      effective_device(&gpu),
+      GpuDevice::Discrete,
+      "an explicit adapter keyword is the more specific request"
+    );
+  }
 
   #[test]
   fn uniform_layout_matches_the_shader_size() {
