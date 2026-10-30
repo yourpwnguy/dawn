@@ -289,8 +289,8 @@ usual motion table. A panel ignores `image` and `text`; if either is present the
 panel is still drawn as a bare plate and one issue is reported.
 
 `blink_ms` turns a panel into a radar blip by hiding the whole plate for the
-second half of each period. `typer_ms` and the ticker pair are text-only and do
-nothing to a panel.
+second half of each period. `typer_ms`, `scramble_ms`, `wave`, `glitch`, and the
+ticker pair are text-only and do nothing to a panel.
 
 #### Animated decor
 
@@ -337,8 +337,21 @@ phase = 0.25        # cycle offset in turns, 0 to 1
 | `ticker_ms` | `0` | Text only. Time for the marquee strip to travel one tile, 0 to 120000. Zero is off. |
 | `ticker_width` | `0` | Text only. Width of the marquee strip in logical pixels, 0 to 4000. Required when `ticker_ms` is set. |
 | `ticker_gap` | `64` | Text only. Space between repeated copies in the ticker, 0 to 2000. |
+| `parallax_depth` | `0` | Pointer parallax strength for this item, 0 to 1. `[motion].parallax` must also be positive, and the effect needs a live window with a pointer. |
+| `enter` | `"none"` | One-shot entrance: `none`, `fade`, `slide`, or `scale`. Starts hidden at `elapsed = 0` and settles after `enter_delay_ms + enter_ms`. |
+| `enter_ms` | `600` | Entrance duration, 0 to 20000 ms. |
+| `enter_delay_ms` | `0` | Delay before the entrance starts, 0 to 20000 ms. |
+| `enter_from` | `"left"` | Start edge for `enter = "slide"`: `left`, `right`, `top`, or `bottom`. |
+| `wave` | `0` | Text only. Vertical per-character wave amplitude in logical pixels, 0 to 40. Zero is off. A ticker keeps scrolling plain. |
+| `wave_ms` | `2400` | Wave period, 200 to 20000 ms. |
+| `wave_step` | `0.12` | Phase step between adjacent characters in turns, 0 to 1. |
+| `scramble_ms` | `0` | Text only. Scramble-to-real reveal, 0 to 20000 ms. Overrides `typer_ms` on the same item, and a ticker overrides both. At `elapsed = 0` the final text is shown. |
+| `glitch` | `0` | Text only. Glitch strength, 0 to 1. Two coloured copies appear for the first 8 percent of each period. Images ignore it. |
+| `glitch_ms` | `2000` | Glitch period, 200 to 20000 ms. |
 
-A typewriter starts empty, so a screenshot at `elapsed = 0` shows no text for that item. A ticker overrides the typewriter on the same item, because the marquee already shows the full run. A ticker without a positive `ticker_width` is reported as a config issue.
+A typewriter starts empty, so a screenshot at `elapsed = 0` shows no text for that item. The `enter` styles are also one-shot and start hidden at `elapsed = 0`, so a screenshot captures the first frame of the entrance rather than the settled item. A ticker overrides the typewriter and the scramble on the same item, because the marquee already shows the full run. A ticker without a positive `ticker_width` is reported as a config issue.
+
+The scramble reveal deliberately breaks the "start at zero" rule: at `elapsed = 0` it shows the final text, so a captured frame stays readable instead of showing noise. Live, it resolves from the head over `scramble_ms`; a positive `scramble_ms` overrides `typer_ms` on that item. The per-character wave ignores `stroke` because eight outline passes per character is not worth the cost, and it does not apply to a ticker. Glitch is text-only: it draws deterministic red and cyan copies at opposite horizontal offsets for 8 percent of each `glitch_ms` period. If wave and glitch are both on, the coloured copies follow the same wave path.
 
 `blink_ms` is the one clock-like field that works on both kinds: it hides a text run or an image during the second half of each period, which is how you get a strobing cursor sprite.
 
@@ -365,6 +378,39 @@ ticker_ms = 3000
 ticker_width = 300
 ticker_gap = 80
 ```
+
+The motion pack combines an entrance, pointer parallax, a per-character wave,
+a scramble reveal, and a glitch:
+
+```toml
+[motion]
+parallax = 1.0
+
+[[login.decor]]
+kind = "text"
+text = "INCOMING TRANSMISSION"
+size = 18
+anchor = "top-left"
+offset = [32, 40]
+
+[login.decor.motion]
+parallax_depth = 0.6
+enter = "slide"
+enter_from = "left"
+enter_ms = 700
+enter_delay_ms = 120
+wave = 6
+wave_ms = 2400
+wave_step = 0.12
+scramble_ms = 1800
+glitch = 0.5
+glitch_ms = 2200
+```
+
+Parallax follows the pointer: the item shifts a few pixels toward the opposite
+side of the cursor. It needs a live window with a pointer position, so
+screenshots stay at the neutral offset. `[motion].parallax` is the global
+strength and every item still needs its own `parallax_depth`.
 
 Motion runs inside the cached UI overlay. A moving ornament therefore asks the
 renderer for a fresh overlay frame; keep animated artwork small and prefer a
@@ -748,6 +794,7 @@ never the only indicator of focus: the caret and selected row change too.
 | `shake_ms` | integer | `320` | Error shake duration, 0 to 2000. |
 | `drag_ms` | integer | `120` | Time constant for pointer-drag easing, 0 to 1000. `0` snaps to the pointer. |
 | `decor_fps` | integer | `30` | Refresh rate for animated decor only, 10 to 60. Focus, typing, boot, and button effects still use the full motion rate. Lower this on weak hardware; raise it when every ornament should move at the wallpaper's frame rate. |
+| `parallax` | number | `0` | Global cursor parallax multiplier, 0 to 2. Each decor item or built-in widget with a positive `parallax_depth` shifts with the pointer. Zero disables it. |
 
 Animated decor is rasterised inside the cached UI overlay, so a moving petal
 would otherwise force a full overlay repaint on every 60 fps wallpaper frame.

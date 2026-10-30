@@ -429,6 +429,76 @@ pub enum DecorSpec {
   },
 }
 
+/// How a decor item enters the screen on the first frames.
+///
+/// This is a one-shot choreography, not a loop. At `elapsed = 0` the item is
+/// still in its hidden pose, so a screenshot captures the start of the entrance
+/// rather than the settled widget. That is deliberate: the same frame can be
+/// compared across runs without waiting for time to pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EnterStyle {
+  /// No entrance. The item is fully visible immediately.
+  #[default]
+  None,
+  /// Fade from transparent to the configured opacity.
+  Fade,
+  /// Slide in from the side named by `enter_from`.
+  Slide,
+  /// Grow from 92 percent of the base scale to the full size.
+  Scale,
+}
+
+impl EnterStyle {
+  /// Parses the TOML spelling. Unknown values return `None` so the validator
+  /// can report the exact key and fall back to [`EnterStyle::None`].
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "none" => Some(Self::None),
+      "fade" => Some(Self::Fade),
+      "slide" => Some(Self::Slide),
+      "scale" => Some(Self::Scale),
+      _ => None,
+    }
+  }
+}
+
+/// Which edge a [`EnterStyle::Slide`] entrance starts from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EnterFrom {
+  /// Start offset to the left.
+  #[default]
+  Left,
+  /// Start offset to the right.
+  Right,
+  /// Start offset above the final position.
+  Top,
+  /// Start offset below the final position.
+  Bottom,
+}
+
+impl EnterFrom {
+  /// Parses the TOML spelling. Unknown values return `None` so the validator
+  /// can report the exact key and fall back to [`EnterFrom::Left`].
+  #[must_use]
+  pub fn parse(value: &str) -> Option<Self> {
+    match value {
+      "left" => Some(Self::Left),
+      "right" => Some(Self::Right),
+      "top" => Some(Self::Top),
+      "bottom" => Some(Self::Bottom),
+      _ => None,
+    }
+  }
+}
+
+/// Cubic ease-out used by the entrance. It starts fast and settles gently,
+/// which reads as a deliberate arrival rather than a linear push. This lives
+/// in config rather than the UI so the sample stays a pure value calculation.
+fn ease_out_cubic(t: f32) -> f32 {
+  1.0 - (1.0 - t).powi(3)
+}
+
 /// How a decor item moves. All values are optional in TOML; an item with no
 /// motion table stays completely static.
 ///
@@ -436,8 +506,8 @@ pub enum DecorSpec {
 /// drift, and breathe at the same time. `phase` offsets the whole pattern in
 /// turns, which is how a row of particles avoids moving in lockstep. The
 /// clock-like fields have two scopes: `blink_ms` gates both text and image
-/// decor, while `typer_ms` and the ticker pair only apply to text; images
-/// ignore those three.
+/// decor, while `typer_ms`, `scramble_ms`, `wave`, `glitch`, and the ticker
+/// pair only apply to text; images ignore those.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DecorMotion {
   /// Continuous rotation in degrees per second.
@@ -470,8 +540,8 @@ pub struct DecorMotion {
   /// fade.
   pub blink_ms: f32,
   /// Time for a ticker to travel one full tile, in milliseconds. Zero disables
-  /// scrolling. A ticker overrides the typewriter on the same item, since a
-  /// marquee is already showing the whole run.
+  /// scrolling. A ticker overrides the typewriter and the scramble on the same
+  /// item, since a marquee is already showing the whole run.
   pub ticker_ms: f32,
   /// Width of the ticker strip in logical pixels. Zero leaves the ticker off
   /// even when `ticker_ms` is set, because there is nowhere to draw it.
@@ -479,6 +549,35 @@ pub struct DecorMotion {
   /// Space between two copies of the ticker text, in logical pixels. The gap
   /// is part of the tile, so the loop stays seamless.
   pub ticker_gap: i32,
+  /// How strongly the pointer shifts this item, 0 to 1. The actual travel also
+  /// depends on `[motion].parallax`, so either value at zero keeps the item
+  /// still. Parallax only does anything in a live window with a pointer.
+  pub parallax_depth: f32,
+  /// One-shot entrance style. See [`EnterStyle`].
+  pub enter: EnterStyle,
+  /// Duration of the entrance in milliseconds, 0 to 20000.
+  pub enter_ms: f32,
+  /// Delay before the entrance starts in milliseconds, 0 to 20000.
+  pub enter_delay_ms: f32,
+  /// Edge the slide entrance starts from. Ignored by the other styles.
+  pub enter_from: EnterFrom,
+  /// Vertical wave amplitude in logical pixels, 0 to 40. Text only. Each
+  /// character rides a sine offset by `wave_step` turns from the previous one.
+  pub wave: f32,
+  /// Period of the character wave in milliseconds, 200 to 20000.
+  pub wave_ms: f32,
+  /// Phase step between adjacent characters in turns, 0 to 1. Around 0.12
+  /// gives a visible ripple without making the run look broken.
+  pub wave_step: f32,
+  /// Text reveal time in milliseconds, 0 to 20000. Zero is off. A positive
+  /// value overrides `typer_ms` on the same item, and a ticker overrides both.
+  /// At `elapsed = 0` the final text is shown, so screenshots stay readable.
+  pub scramble_ms: f32,
+  /// Glitch strength, 0 to 1. Zero is off. Text only. The effect shows two
+  /// coloured copies of the run for a short slice of each `glitch_ms` period.
+  pub glitch: f32,
+  /// Period of the glitch window in milliseconds, 200 to 20000.
+  pub glitch_ms: f32,
 }
 
 impl Default for DecorMotion {
@@ -499,6 +598,17 @@ impl Default for DecorMotion {
       ticker_ms: 0.0,
       ticker_width: 0,
       ticker_gap: 64,
+      parallax_depth: 0.0,
+      enter: EnterStyle::None,
+      enter_ms: 600.0,
+      enter_delay_ms: 0.0,
+      enter_from: EnterFrom::Left,
+      wave: 0.0,
+      wave_ms: 2400.0,
+      wave_step: 0.12,
+      scramble_ms: 0.0,
+      glitch: 0.0,
+      glitch_ms: 2000.0,
     }
   }
 }
@@ -523,6 +633,9 @@ pub struct DecorSample {
   /// Fraction of one ticker tile already travelled, 0 to 1. Zero when the
   /// ticker is off.
   pub loop_frac: f32,
+  /// Age of the sample in seconds after clamping. Negative or non-finite input
+  /// becomes zero, so every time-based effect has a safe neutral pose.
+  pub elapsed: f32,
 }
 
 impl DecorMotion {
@@ -537,12 +650,20 @@ impl DecorMotion {
       || self.typer_ms > 0.0
       || self.blink_ms > 0.0
       || (self.ticker_ms > 0.0 && self.ticker_width > 0)
+      || self.parallax_depth > 0.0
+      || self.enter != EnterStyle::None
+      || self.wave > 0.0
+      || self.scramble_ms > 0.0
+      || self.glitch > 0.0
   }
 
   /// Samples the motion at `elapsed` seconds since the UI started.
   ///
-  /// The formulas are simple on purpose: phase 0 starts at the neutral
+  /// The looping formulas are simple on purpose: phase 0 starts at the neutral
   /// position, so a screenshot (`elapsed = 0`) matches the first live frame.
+  /// The entrance is the exception: it starts hidden at zero and settles after
+  /// `enter_delay_ms + enter_ms`, because an entrance that was already finished
+  /// would not be an entrance at all.
   #[must_use]
   pub fn sample(self, elapsed: f32) -> DecorSample {
     if !elapsed.is_finite() {
@@ -554,6 +675,7 @@ impl DecorMotion {
         reveal: 1.0,
         blink_on: true,
         loop_frac: 0.0,
+        elapsed: 0.0,
       };
     }
     let turns = elapsed.max(0.0);
@@ -570,8 +692,31 @@ impl DecorMotion {
     let scale = 1.0 + self.pulse * ((wave(self.pulse_ms) + phase).sin() - phase.sin());
     let rest = 0.5 - 0.5 * phase.cos();
     let opacity = 1.0 - self.fade * ((0.5 - 0.5 * (wave(self.fade_ms) + phase).cos()) - rest);
+    let enter_t = if self.enter == EnterStyle::None {
+      1.0
+    } else {
+      let t = ((ms - self.enter_delay_ms) / self.enter_ms.max(1.0)).clamp(0.0, 1.0);
+      ease_out_cubic(t)
+    };
+    let mut offset = (float_x, float_y);
+    let mut scale = scale;
+    let mut opacity = opacity;
+    match self.enter {
+      EnterStyle::None => {}
+      EnterStyle::Fade => opacity *= enter_t,
+      EnterStyle::Scale => scale *= 0.92 + 0.08 * enter_t,
+      EnterStyle::Slide => {
+        let d = 28.0 * (1.0 - enter_t);
+        match self.enter_from {
+          EnterFrom::Left => offset.0 -= d,
+          EnterFrom::Right => offset.0 += d,
+          EnterFrom::Top => offset.1 -= d,
+          EnterFrom::Bottom => offset.1 += d,
+        }
+      }
+    }
     DecorSample {
-      offset: (float_x, float_y),
+      offset,
       angle,
       scale: scale.clamp(0.1, 2.0),
       opacity: opacity.clamp(0.0, 1.0),
@@ -590,6 +735,7 @@ impl DecorMotion {
       } else {
         (ms / self.ticker_ms) % 1.0
       },
+      elapsed: turns,
     }
   }
 }
@@ -1424,6 +1570,10 @@ pub struct MotionConfig {
   /// capping their overlay redraws keeps the CPU free for the wallpaper while
   /// focus, typing, and button effects still run at the full motion rate.
   pub decor_fps: u32,
+  /// Global multiplier for cursor parallax, 0 to 2. Each decor item also needs
+  /// a positive `parallax_depth`, and the effect only runs in a live window
+  /// where the pointer position is known. Zero disables it everywhere.
+  pub parallax: f32,
 }
 
 impl MotionConfig {
@@ -1444,6 +1594,7 @@ impl Default for MotionConfig {
       shake: Duration::from_millis(320),
       drag: Duration::from_millis(120),
       decor_fps: 30,
+      parallax: 0.0,
     }
   }
 }
@@ -2447,6 +2598,7 @@ phase = 0.25
       ticker_ms: 0.0,
       ticker_width: 0,
       ticker_gap: 64,
+      ..super::DecorMotion::default()
     };
     let start = motion.sample(0.0);
     assert_eq!(start.offset, (0.0, 0.0));
@@ -2518,6 +2670,78 @@ phase = 0.25
   }
 
   #[test]
+  fn enter_choreography_starts_hidden_and_eases_in() {
+    let fade = super::DecorMotion {
+      enter: super::EnterStyle::Fade,
+      ..super::DecorMotion::default()
+    };
+    // The entrance is deliberately not neutral at zero: it starts hidden.
+    assert_eq!(fade.sample(0.0).opacity, 0.0);
+    assert!((fade.sample(0.6).opacity - 1.0).abs() < 0.001);
+
+    let delayed = super::DecorMotion {
+      enter_delay_ms: 300.0,
+      ..fade
+    };
+    assert_eq!(delayed.sample(0.0).opacity, 0.0);
+    assert_eq!(delayed.sample(0.3).opacity, 0.0);
+    let midway = delayed.sample(0.6).opacity;
+    assert!(midway > 0.0 && midway < 1.0);
+    assert!((delayed.sample(0.9).opacity - 1.0).abs() < 0.001);
+
+    let slide = super::DecorMotion {
+      enter: super::EnterStyle::Slide,
+      ..super::DecorMotion::default()
+    };
+    assert!((slide.sample(0.0).offset.0 + 28.0).abs() < 0.001);
+    assert!(slide.sample(0.6).offset.0.abs() < 0.001);
+
+    let scale = super::DecorMotion {
+      enter: super::EnterStyle::Scale,
+      ..super::DecorMotion::default()
+    };
+    let opening = scale.sample(0.0).scale;
+    assert!(opening < 1.0);
+    assert!(opening >= 0.9);
+    assert!((scale.sample(0.6).scale - 1.0).abs() < 0.001);
+  }
+
+  #[test]
+  fn sample_carries_elapsed_and_new_motions_are_active() {
+    let sample = super::DecorMotion::default().sample(2.5);
+    assert_eq!(sample.elapsed, 2.5);
+    // Non-finite input has no usable age; the neutral sample reports zero.
+    assert_eq!(super::DecorMotion::default().sample(f32::NAN).elapsed, 0.0);
+    assert_eq!(super::DecorMotion::default().sample(-1.0).elapsed, 0.0);
+
+    let cases = [
+      super::DecorMotion {
+        wave: 4.0,
+        ..super::DecorMotion::default()
+      },
+      super::DecorMotion {
+        scramble_ms: 800.0,
+        ..super::DecorMotion::default()
+      },
+      super::DecorMotion {
+        glitch: 0.5,
+        ..super::DecorMotion::default()
+      },
+      super::DecorMotion {
+        parallax_depth: 0.5,
+        ..super::DecorMotion::default()
+      },
+      super::DecorMotion {
+        enter: super::EnterStyle::Fade,
+        ..super::DecorMotion::default()
+      },
+    ];
+    for motion in cases {
+      assert!(motion.active(), "{motion:?} should request animation");
+    }
+  }
+
+  #[test]
   fn decor_motion_active_tracks_the_text_motions() {
     let typer = super::DecorMotion {
       typer_ms: 1.0,
@@ -2579,6 +2803,116 @@ caret_style = "block"
       loaded.config.login.username.caret_style,
       super::CaretStyle::Block
     );
+  }
+
+  #[test]
+  fn the_motion_pack_keys_parse_with_their_ranges() {
+    let path = temp_config(
+      "motion-pack",
+      r##"
+[motion]
+parallax = 1.5
+
+[[login.decor]]
+kind = "text"
+text = "MOTION"
+[login.decor.motion]
+parallax_depth = 0.8
+enter = "slide"
+enter_ms = 1200
+enter_delay_ms = 250
+enter_from = "bottom"
+wave = 12
+wave_ms = 3000
+wave_step = 0.2
+scramble_ms = 1800
+glitch = 0.6
+glitch_ms = 1500
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    assert_eq!(loaded.config.motion.parallax, 1.5);
+    let motion = match &loaded.config.login.decor[0] {
+      super::DecorSpec::Text { motion, .. } => *motion,
+      other => panic!("expected a text decor, got {other:?}"),
+    };
+    assert_eq!(motion.parallax_depth, 0.8);
+    assert_eq!(motion.enter, super::EnterStyle::Slide);
+    assert_eq!(motion.enter_ms, 1200.0);
+    assert_eq!(motion.enter_delay_ms, 250.0);
+    assert_eq!(motion.enter_from, super::EnterFrom::Bottom);
+    assert_eq!(motion.wave, 12.0);
+    assert_eq!(motion.wave_ms, 3000.0);
+    assert_eq!(motion.wave_step, 0.2);
+    assert_eq!(motion.scramble_ms, 1800.0);
+    assert_eq!(motion.glitch, 0.6);
+    assert_eq!(motion.glitch_ms, 1500.0);
+  }
+
+  #[test]
+  fn bad_motion_pack_values_fall_back_with_issues() {
+    let path = temp_config(
+      "bad-motion-pack",
+      r##"
+[motion]
+parallax = 9
+
+[[login.decor]]
+kind = "text"
+text = "MOTION"
+[login.decor.motion]
+parallax_depth = 2
+enter = "wobble"
+enter_ms = 99999
+enter_delay_ms = -1
+enter_from = "diagonal"
+wave = 99
+wave_ms = 10
+wave_step = 5
+scramble_ms = -1
+glitch = 2
+glitch_ms = 1
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert_eq!(loaded.config.motion.parallax, 0.0);
+    let motion = match &loaded.config.login.decor[0] {
+      super::DecorSpec::Text { motion, .. } => *motion,
+      other => panic!("expected a text decor, got {other:?}"),
+    };
+    let fallback = super::DecorMotion::default();
+    assert_eq!(motion.parallax_depth, fallback.parallax_depth);
+    assert_eq!(motion.enter, fallback.enter);
+    assert_eq!(motion.enter_ms, fallback.enter_ms);
+    assert_eq!(motion.enter_delay_ms, fallback.enter_delay_ms);
+    assert_eq!(motion.enter_from, fallback.enter_from);
+    assert_eq!(motion.wave, fallback.wave);
+    assert_eq!(motion.wave_ms, fallback.wave_ms);
+    assert_eq!(motion.wave_step, fallback.wave_step);
+    assert_eq!(motion.scramble_ms, fallback.scramble_ms);
+    assert_eq!(motion.glitch, fallback.glitch);
+    assert_eq!(motion.glitch_ms, fallback.glitch_ms);
+    for key in [
+      "motion.parallax",
+      "login.decor[0].motion.parallax_depth",
+      "login.decor[0].motion.enter",
+      "login.decor[0].motion.enter_ms",
+      "login.decor[0].motion.enter_delay_ms",
+      "login.decor[0].motion.enter_from",
+      "login.decor[0].motion.wave",
+      "login.decor[0].motion.wave_ms",
+      "login.decor[0].motion.wave_step",
+      "login.decor[0].motion.scramble_ms",
+      "login.decor[0].motion.glitch",
+      "login.decor[0].motion.glitch_ms",
+    ] {
+      assert!(
+        loaded.issues.iter().any(|issue| issue.key == key),
+        "missing issue {key}: {:?}",
+        loaded.issues
+      );
+    }
   }
 
   #[test]

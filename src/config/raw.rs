@@ -283,6 +283,28 @@ pub struct RawDecorMotion {
   pub ticker_width: Option<Field>,
   #[serde(default)]
   pub ticker_gap: Option<Field>,
+  #[serde(default)]
+  pub parallax_depth: Option<Field>,
+  #[serde(default)]
+  pub enter: Option<Field>,
+  #[serde(default)]
+  pub enter_ms: Option<Field>,
+  #[serde(default)]
+  pub enter_delay_ms: Option<Field>,
+  #[serde(default)]
+  pub enter_from: Option<Field>,
+  #[serde(default)]
+  pub wave: Option<Field>,
+  #[serde(default)]
+  pub wave_ms: Option<Field>,
+  #[serde(default)]
+  pub wave_step: Option<Field>,
+  #[serde(default)]
+  pub scramble_ms: Option<Field>,
+  #[serde(default)]
+  pub glitch: Option<Field>,
+  #[serde(default)]
+  pub glitch_ms: Option<Field>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -669,6 +691,8 @@ pub struct RawMotion {
   pub drag_ms: Option<Field>,
   #[serde(default)]
   pub decor_fps: Option<Field>,
+  #[serde(default)]
+  pub parallax: Option<Field>,
 }
 
 #[derive(Debug, Default, Deserialize)]

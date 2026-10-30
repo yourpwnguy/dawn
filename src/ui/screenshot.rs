@@ -93,6 +93,9 @@ pub fn render(
     background_color: config.background.color,
     asset_warning: asset_warning.as_deref(),
     drag: &drag,
+    // A screenshot has no pointer, so parallax stays at its neutral offset.
+    cursor: None,
+    screen: (width as f32, height as f32),
   };
   let _ = render::paint(&mut canvas, &mut text, &mut background, &mut glass, &scene);
 

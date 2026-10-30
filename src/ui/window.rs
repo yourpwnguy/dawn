@@ -194,6 +194,10 @@ struct FrameState {
   scale: f32,
   motion: MotionFrame,
   background_color: Rgb,
+  /// Pointer position in physical pixels, or `None` when it is outside.
+  cursor: Option<(f32, f32)>,
+  /// Window size in physical pixels, used to normalise parallax.
+  screen: (f32, f32),
 }
 
 impl FrameState {
@@ -211,6 +215,8 @@ impl FrameState {
       background_color: self.background_color,
       asset_warning: self.warning.as_deref(),
       drag,
+      cursor: self.cursor,
+      screen: self.screen,
     }
   }
 }
@@ -485,6 +491,7 @@ impl Handler {
     let view = self.app.view();
     let zoned = jiff::Zoned::now();
     let warning = self.background.warning().map(str::to_string);
+    let size = window.inner_size();
     FrameState {
       view,
       zoned,
@@ -494,6 +501,8 @@ impl Handler {
       scale,
       motion,
       background_color,
+      cursor: self.pointer_inside.then_some(self.cursor),
+      screen: (size.width as f32, size.height as f32),
     }
   }
 
@@ -675,6 +684,14 @@ impl Handler {
     } else if self.drag.hover(&self.regions, Some(cursor)) {
       self.ui_dirty = true;
       self.refresh_cursor();
+    }
+    // Parallax follows the pointer even when nothing else changed, so a static
+    // login screen still needs a fresh overlay frame on every move. Hover
+    // already asked for one above, but the guard keeps this path cheap when
+    // the effect is off.
+    if self.app.theme().motion.parallax > 0.0 {
+      self.ui_dirty = true;
+      self.request_redraw();
     }
   }
 
