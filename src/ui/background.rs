@@ -673,6 +673,16 @@ impl BackgroundView {
   /// when the wallpaper is not supposed to move.
   #[must_use]
   pub fn frame_id(&self, now: Instant) -> u64 {
+    // An unloaded wallpaper shows the placeholder, and that is not the same
+    // identity as the wallpaper that will load a moment later. The generation
+    // does not change across the transition (the request already bumped it and
+    // a still image keeps frame index 0 forever), so the blur cache computed
+    // from the placeholder would stick around after the real pixels arrive.
+    // Sentinel `u64::MAX` means "next change wakes the caches"; glass itself
+    // uses it as its not-prepared marker, so the two sides agree.
+    if self.loaded.is_none() {
+      return u64::MAX;
+    }
     if let Some(Content::Stream(stream)) = self.loaded.as_ref().map(|l| &l.content) {
       return self
         .generation
@@ -799,6 +809,32 @@ mod tests {
     assert_eq!(
       values,
       [Duration::from_millis(10), Duration::from_millis(30)]
+    );
+  }
+
+  #[test]
+  fn an_unloaded_wallpaper_is_not_the_loaded_identity() {
+    // The frame id gates the glass blur cache. Before the loader returns, the
+    // window blurs the navy placeholder; the id stays there forever (a still
+    // background keeps frame index 0 and the generation was already bumped by
+    // the request), so the cache never re-blurred and the plates stayed navy
+    // on screen. Unloaded must return the sentinel; loaded must move off it.
+    let mut view = BackgroundView::new(&Config {
+      background: config(BackgroundKind::Gradient),
+      ..Config::default()
+    });
+    assert_eq!(
+      view.frame_id(Instant::now()),
+      u64::MAX,
+      "unloaded id must be the sentinel"
+    );
+    let request = view.request((320, 200), None).unwrap();
+    let (generation, result) = request.load();
+    assert!(view.accept(generation, result, Instant::now()));
+    assert_ne!(
+      view.frame_id(Instant::now()),
+      u64::MAX,
+      "loaded background kept the placeholder id, so the blur cache would never refresh"
     );
   }
 
