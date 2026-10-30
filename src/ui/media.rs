@@ -17,6 +17,7 @@ use std::time::Duration;
 use tiny_skia::Pixmap;
 use tracing::debug;
 
+use crate::color::Rgb;
 use crate::ui::image::{self, DecodeLimits};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -44,6 +45,12 @@ pub struct MediaSnapshot {
   pub stale: bool,
   /// Album art, already decoded and downscaled through [`crate::ui::image`].
   pub art: Option<Arc<Pixmap>>,
+  /// The same art with a circular alpha mask, used by the vinyl layout. It is
+  /// computed once at load time so drawing a disc never walks the pixels.
+  pub art_disc: Option<Arc<Pixmap>>,
+  /// Average colour of the art, boosted a little so it reads as a hue instead
+  /// of a muddy grey. `None` when there is no art or every sample was empty.
+  pub art_tint: Option<Rgb>,
   /// The URI the art came from, so we only decode it when it changes.
   pub art_key: String,
 }
@@ -61,6 +68,8 @@ impl Default for MediaSnapshot {
       length: Duration::ZERO,
       stale: false,
       art: None,
+      art_disc: None,
+      art_tint: None,
       art_key: String::new(),
     }
   }
@@ -80,6 +89,7 @@ impl MediaSnapshot {
       && self.length == other.length
       && self.stale == other.stale
       && self.art_key == other.art_key
+      && self.art_tint == other.art_tint
   }
 }
 
@@ -327,11 +337,23 @@ async fn poll(
     .unwrap_or(Duration::ZERO);
 
   let art_key = art_url.clone().unwrap_or_default();
-  let art = if !art_key.is_empty() && art_key == previous.art_key && previous.art.is_some() {
-    previous.art.clone()
-  } else {
-    art_url.as_deref().and_then(load_art).map(Arc::new)
-  };
+  let (art, art_disc, art_tint) =
+    if !art_key.is_empty() && art_key == previous.art_key && previous.art.is_some() {
+      (
+        previous.art.clone(),
+        previous.art_disc.clone(),
+        previous.art_tint,
+      )
+    } else {
+      match art_url.as_deref().and_then(load_art) {
+        Some(loaded) => (
+          Some(Arc::new(loaded.square)),
+          loaded.disc.map(Arc::new),
+          loaded.tint,
+        ),
+        None => (None, None, None),
+      }
+    };
 
   Ok(Some(MediaSnapshot {
     available: title.as_deref().is_some_and(|value| !value.is_empty())
@@ -346,6 +368,8 @@ async fn poll(
     stale: false,
     art_key,
     art,
+    art_disc,
+    art_tint,
   }))
 }
 
@@ -430,7 +454,16 @@ fn artist_value(value: Option<&zbus::OwnedVariant>) -> Option<String> {
   String::try_from(value).ok()
 }
 
-fn load_art(url: &str) -> Option<Pixmap> {
+/// One decoded cover and everything the renderer derives from it. Building all
+/// of it here means the per-pixel mask and colour sampling happen once per
+/// track, not once per frame.
+struct LoadedArt {
+  square: Pixmap,
+  disc: Option<Pixmap>,
+  tint: Option<Rgb>,
+}
+
+fn load_art(url: &str) -> Option<LoadedArt> {
   let path = art_path(url)?;
   // The URI comes from an untrusted D-Bus property. Check the file type and
   // size BEFORE reading: `fs::read` on /dev/zero or a 4 GiB file would happily
@@ -468,7 +501,108 @@ fn load_art(url: &str) -> Option<Pixmap> {
     crate::layout::Fit::Cover,
     crate::color::Rgb::solid(0, 0, 0),
   );
-  image::to_pixmap(fitted)
+  let square = image::to_pixmap(fitted)?;
+  let disc = circular_mask(&square);
+  let tint = dominant_tint(&square);
+  Some(LoadedArt { square, disc, tint })
+}
+
+/// Applies a circular alpha mask to a premultiplied pixmap.
+///
+/// tiny-skia pixels are premultiplied, so scaling every channel (alpha
+/// included) by the coverage is the correct way to anti-alias the edge. We
+/// only need a one-pixel ramp: the art is already a downscaled 256 px cover,
+/// and the renderer blits it with bilinear sampling.
+fn circular_mask(pixmap: &Pixmap) -> Option<Pixmap> {
+  let width = pixmap.width();
+  let height = pixmap.height();
+  if width == 0 || height == 0 {
+    return None;
+  }
+  let mut output = Pixmap::new(width, height)?;
+  let radius = width.min(height) as f32 * 0.5;
+  let center = (width as f32 * 0.5, height as f32 * 0.5);
+  let source = pixmap.data();
+  let destination = output.data_mut();
+  for y in 0..height {
+    for x in 0..width {
+      let dx = x as f32 + 0.5 - center.0;
+      let dy = y as f32 + 0.5 - center.1;
+      let distance = (dx * dx + dy * dy).sqrt();
+      let coverage = (radius - distance + 0.5).clamp(0.0, 1.0);
+      if coverage <= 0.0 {
+        continue;
+      }
+      let index = ((y * width + x) * 4) as usize;
+      for channel in 0..4 {
+        destination[index + channel] =
+          (f32::from(source[index + channel]) * coverage).round() as u8;
+      }
+    }
+  }
+  Some(output)
+}
+
+/// Averages a sparse grid of opaque pixels and pushes the result a little away
+/// from grey. The grid keeps this cheap even if the art size changes later, and
+/// skipping transparent or near-black pixels avoids a muddy black tint from
+/// letterboxed covers.
+fn dominant_tint(pixmap: &Pixmap) -> Option<Rgb> {
+  let width = pixmap.width();
+  let height = pixmap.height();
+  if width == 0 || height == 0 {
+    return None;
+  }
+  let step = (width.min(height) / 24).max(1);
+  let data = pixmap.data();
+  let mut total = (0u64, 0u64, 0u64);
+  let mut samples = 0u64;
+  let mut y = step / 2;
+  while y < height {
+    let mut x = step / 2;
+    while x < width {
+      let index = ((y * width + x) * 4) as usize;
+      let alpha = data[index + 3];
+      if alpha >= 128 {
+        // Undo the premultiplication so a partially transparent sample does
+        // not drag the average toward black.
+        let scale = 255.0 / f32::from(alpha);
+        let red = (f32::from(data[index]) * scale).min(255.0);
+        let green = (f32::from(data[index + 1]) * scale).min(255.0);
+        let blue = (f32::from(data[index + 2]) * scale).min(255.0);
+        let color = Rgb::rgba(red as u8, green as u8, blue as u8, 255);
+        if color.luminance() > 0.03 {
+          total.0 += u64::from(color.r);
+          total.1 += u64::from(color.g);
+          total.2 += u64::from(color.b);
+          samples += 1;
+        }
+      }
+      x += step;
+    }
+    y += step;
+  }
+  if samples == 0 {
+    return None;
+  }
+  let average = Rgb::solid(
+    (total.0 / samples) as u8,
+    (total.1 / samples) as u8,
+    (total.2 / samples) as u8,
+  );
+  // A modest chroma boost keeps album art recognisable as a hue without
+  // turning a pastel cover into neon.
+  let grey = (u16::from(average.r) + u16::from(average.g) + u16::from(average.b)) / 3;
+  let boost = |channel: u8| {
+    (f32::from(grey) + (f32::from(channel) - f32::from(grey)) * 1.35)
+      .round()
+      .clamp(0.0, 255.0) as u8
+  };
+  Some(Rgb::solid(
+    boost(average.r),
+    boost(average.g),
+    boost(average.b),
+  ))
 }
 
 fn art_path(url: &str) -> Option<PathBuf> {
@@ -521,7 +655,8 @@ fn percent_decode(input: &str) -> String {
 #[cfg(test)]
 mod tests {
   use super::{
-    MediaControl, MediaSnapshot, MediaState, art_path, clean_text, percent_decode, when_no_player,
+    MediaControl, MediaSnapshot, MediaState, art_path, circular_mask, clean_text, dominant_tint,
+    percent_decode, when_no_player,
   };
 
   #[test]
@@ -586,5 +721,28 @@ mod tests {
     let (sender, receiver) = std::sync::mpsc::channel();
     sender.send(MediaControl::PlayPause).unwrap();
     assert_eq!(receiver.recv().unwrap(), MediaControl::PlayPause);
+  }
+
+  #[test]
+  fn dominant_colour_ignores_transparency_and_keeps_the_hue() {
+    let mut pixmap = tiny_skia::Pixmap::new(8, 8).unwrap();
+    pixmap.fill(tiny_skia::Color::from_rgba8(200, 40, 40, 255));
+    let tint = dominant_tint(&pixmap).expect("an opaque pixmap has a dominant colour");
+    assert_eq!(tint.a, 255);
+    assert!(tint.r > tint.g && tint.r > tint.b, "red should stay red");
+
+    let empty = tiny_skia::Pixmap::new(8, 8).unwrap();
+    assert_eq!(dominant_tint(&empty), None);
+  }
+
+  #[test]
+  fn the_disc_mask_clears_the_corners_but_keeps_the_centre() {
+    let mut pixmap = tiny_skia::Pixmap::new(8, 8).unwrap();
+    pixmap.fill(tiny_skia::Color::from_rgba8(200, 40, 40, 255));
+    let masked = circular_mask(&pixmap).expect("mask should allocate");
+    let corner = masked.pixel(0, 0).unwrap().alpha();
+    let center = masked.pixel(4, 4).unwrap().alpha();
+    assert_eq!(corner, 0);
+    assert_eq!(center, 255);
   }
 }

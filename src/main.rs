@@ -45,6 +45,10 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode> {
   let mut loaded = config::load(cli.config.as_deref());
+  // A theme bundle replaces the whole config, but the GPU belongs to the
+  // machine, not to the theme. Save the host table before selection and put it
+  // back afterwards so `--theme` can never change which adapter boots.
+  let host_gpu = loaded.config.gpu.clone();
   if let Some(id) = cli.theme.as_deref() {
     loaded = load_theme(id).unwrap_or_else(|| {
       let mut fallback = config::load(None);
@@ -57,7 +61,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
       loaded
     });
   }
+  loaded.config.gpu = host_gpu;
   let mut config = loaded.config.clone();
+  config.gpu.apply_env();
+  // Keep the diagnostics view in sync with the env override. The fields below
+  // read `loaded.config`, and an admin running `--check-config` should see the
+  // adapter policy that will actually be used.
+  loaded.config.gpu = config.gpu.clone();
   if cli.fullscreen {
     config.ui.fullscreen = true;
   }
@@ -68,6 +78,19 @@ fn run(cli: Cli) -> Result<ExitCode> {
   match &loaded.path {
     Some(path) => info!(path = %path.display(), "loaded config"),
     None => info!("no config file found, using built-in defaults"),
+  }
+
+  if cli.list_gpus {
+    return match dawn::ui::gpu::list_adapters(&config.gpu) {
+      Ok(text) => {
+        println!("{text}");
+        Ok(ExitCode::SUCCESS)
+      }
+      Err(error) => {
+        eprintln!("dawn: {error}");
+        Ok(ExitCode::FAILURE)
+      }
+    };
   }
 
   let sessions = session::discover(&config.sessions.dirs);
@@ -155,6 +178,7 @@ fn check_config(loaded: &LoadedConfig, sessions: &[Session], report: &Report) ->
     Some(path) => println!("config: {}", path.display()),
     None => println!("config: built-in defaults (no file found)"),
   }
+  println!("gpu: {}", loaded.config.gpu.summary());
 
   if loaded.issues.is_empty() {
     println!("issues: none");

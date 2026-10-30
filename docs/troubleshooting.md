@@ -22,6 +22,24 @@ while changing a greeter.
 - Look for a missing library with `ldd /usr/local/bin/dawn`.
 - If the GPU path is the suspect, run `DAWN_GPU=0 dawn --dry-run`.
 
+## Wrong GPU or a black screen with the GPU compositor
+
+Run `dawn --list-gpus` to see the adapters this config can address. The table
+prints an index, name, backend, device class, driver, and marks the selection.
+`index:N` and name substrings match that list, so start with:
+
+```toml
+[gpu]
+adapter = "..."
+```
+
+Some machines expose both a discrete and an integrated adapter. Force the one
+you want with `device = "discrete"` (or `"integrated"`), and try
+`backend = "gl"` when a Vulkan driver enumerates but renders incorrectly. If
+the GPU path still fails, `fallback = "cpu"` uses softbuffer immediately
+instead of spending time on adapter retries. `DAWN_GPU=0` remains a one-off
+diagnostic equivalent to `enabled = false`.
+
 ## The window opens but the keyboard does not work
 
 - Under X11, a bare X server does not always focus the new window. Use a small

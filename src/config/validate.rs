@@ -13,13 +13,17 @@ use std::time::Duration;
 use toml::Value;
 
 use crate::color::Rgb;
-use crate::config::raw::{Field, RawBackgroundOverride, RawConfig, RawField};
+use crate::config::raw::{
+  Field, RawBackgroundOverride, RawConfig, RawField, RawGpu, RawWidgetPlate,
+};
 use crate::config::{
   AuthConfig, BackgroundConfig, BackgroundKind, BackgroundOverride, BlurConfig, ButtonEffect,
-  CaretStyle, ClockConfig, ClockStyle, Config, DecorMotion, FieldConfig, HintConfig, HoverReveal,
-  Issue, LayoutConfig, Location, LoginConfig, MediaConfig, MotionConfig, PluginsConfig,
-  PowerConfig, SessionRowConfig, SessionsConfig, SurfaceStyle, ThemeConfig, ThemePreset, UiConfig,
-  WidgetLayer,
+  CaretStyle, ClockConfig, ClockStyle, Config, DecorMotion, FieldConfig, GpuBackend, GpuConfig,
+  GpuDevice, GpuFallback, GpuPower, GpuPresent, HintConfig, HoverReveal, Issue, LayoutConfig,
+  Location, LoginConfig, MediaArt, MediaConfig, MediaLayout, MediaLook, MediaProgress,
+  MotionConfig, PlateStyle, PluginsConfig, PowerConfig, SecondHand, SessionRowConfig,
+  SessionsConfig, SurfaceStyle, ThemeConfig, ThemePreset, UiConfig, WidgetLayer, WidgetLook,
+  WidgetPlate, WidgetState,
 };
 use crate::layout::{Anchor, Fit, Placement};
 
@@ -348,6 +352,13 @@ impl<'a> Validator<'a> {
         "clock.layer",
         defaults.clock.layer,
       ),
+      look: self.widget_look(
+        &raw.clock.plate,
+        raw.clock.motion.as_ref(),
+        raw.clock.show_on.as_ref(),
+        raw.clock.hide_on.as_ref(),
+        "clock",
+      ),
       time_format: self.strftime(
         raw.clock.time_format.as_ref(),
         "clock.time_format",
@@ -401,6 +412,33 @@ impl<'a> Validator<'a> {
       ) as f32,
       color: self.optional_color(raw.clock.color.as_ref(), "clock.color"),
       date_color: self.optional_color(raw.clock.date_color.as_ref(), "clock.date_color"),
+      ghost: self.boolean(
+        raw.clock.ghost.as_ref(),
+        "clock.ghost",
+        defaults.clock.ghost,
+      ),
+      glow: self.optional_color(raw.clock.glow.as_ref(), "clock.glow"),
+      glow_size: self.range(
+        raw.clock.glow_size.as_ref(),
+        "clock.glow_size",
+        f64::from(defaults.clock.glow_size),
+        0.0,
+        32.0,
+      ) as f32,
+      colon_blink_ms: self.range(
+        raw.clock.colon_blink_ms.as_ref(),
+        "clock.colon_blink_ms",
+        f64::from(defaults.clock.colon_blink_ms),
+        0.0,
+        5000.0,
+      ) as f32,
+      second_hand: self.choice(
+        raw.clock.second_hand.as_ref(),
+        "clock.second_hand",
+        defaults.clock.second_hand,
+        SecondHand::parse,
+        "tick or sweep",
+      ),
       draggable: self.boolean(
         raw.clock.draggable.as_ref(),
         "clock.draggable",
@@ -439,6 +477,46 @@ impl<'a> Validator<'a> {
         "media.layer",
         defaults.media.layer,
       ),
+      presentation: self.widget_look(
+        &raw.media.plate,
+        raw.media.motion.as_ref(),
+        raw.media.show_on.as_ref(),
+        raw.media.hide_on.as_ref(),
+        "media",
+      ),
+      look: MediaLook {
+        layout: self.choice(
+          raw.media.layout.as_ref(),
+          "media.layout",
+          defaults.media.look.layout,
+          MediaLayout::parse,
+          "card, compact, or vinyl",
+        ),
+        art: self.choice(
+          raw.media.art.as_ref(),
+          "media.art",
+          defaults.media.look.art,
+          MediaArt::parse,
+          "cover, disc, or none",
+        ),
+        progress: self.choice(
+          raw.media.progress.as_ref(),
+          "media.progress",
+          defaults.media.look.progress,
+          MediaProgress::parse,
+          "line, segments, or wave",
+        ),
+        controls: self.boolean(
+          raw.media.controls.as_ref(),
+          "media.controls",
+          defaults.media.look.controls,
+        ),
+        tint_from_art: self.boolean(
+          raw.media.tint_from_art.as_ref(),
+          "media.tint_from_art",
+          defaults.media.look.tint_from_art,
+        ),
+      },
       color: self.optional_color(raw.media.color.as_ref(), "media.color"),
       show_before_login: self.boolean(
         raw.media.show_before_login.as_ref(),
@@ -669,6 +747,8 @@ impl<'a> Validator<'a> {
       )),
     };
 
+    let gpu = self.gpu(&raw.gpu);
+
     Config {
       ui,
       login,
@@ -678,6 +758,7 @@ impl<'a> Validator<'a> {
       theme,
       motion,
       power,
+      gpu,
       layout,
       sessions,
       plugins,
@@ -919,7 +1000,7 @@ impl<'a> Validator<'a> {
       self.issue(
         "clock.style",
         Some(field),
-        "expected \"digital\" or \"analog\"",
+        "expected \"digital\", \"analog\", \"flip\", or \"segment\"",
       );
       return default;
     };
@@ -927,7 +1008,7 @@ impl<'a> Validator<'a> {
       self.issue(
         "clock.style",
         Some(field),
-        format!("unknown style {value:?}; use digital or analog"),
+        format!("unknown style {value:?}; use digital, analog, flip, or segment"),
       );
       default
     })
@@ -1322,6 +1403,243 @@ impl<'a> Validator<'a> {
         default
       }
     }
+  }
+
+  /// Parses one widget plate table. Every key falls back independently, so a
+  /// single typo recolours or reshapes one property instead of dropping the
+  /// whole backplate. The defaults are the old scrim values.
+  fn plate(&mut self, raw: &RawWidgetPlate, prefix: &str) -> WidgetPlate {
+    let default = WidgetPlate::default();
+    let key = |name: &str| format!("{prefix}.{name}");
+    let style = match raw.style.as_ref() {
+      None => default.style,
+      Some(field) => match field.get_ref().as_str() {
+        Some(text) => PlateStyle::parse(text).unwrap_or_else(|| {
+          self.issue(
+            key("style"),
+            Some(field),
+            format!("unknown plate style {text:?}; use none, tint, solid, or gradient"),
+          );
+          default.style
+        }),
+        None => {
+          self.issue(key("style"), Some(field), "expected a plate style name");
+          default.style
+        }
+      },
+    };
+    WidgetPlate {
+      style,
+      color: self.optional_color(raw.color.as_ref(), &key("color")),
+      color_end: self.optional_color(raw.color_end.as_ref(), &key("color_end")),
+      gradient_angle: self.range(
+        raw.gradient_angle.as_ref(),
+        &key("gradient_angle"),
+        0.0,
+        -360.0,
+        360.0,
+      ) as f32,
+      radius: self.range(
+        raw.radius.as_ref(),
+        &key("radius"),
+        f64::from(default.radius),
+        0.0,
+        64.0,
+      ) as f32,
+      border: self.optional_color(raw.border.as_ref(), &key("border")),
+      padding: self.range(
+        raw.padding.as_ref(),
+        &key("padding"),
+        f64::from(default.padding),
+        0.0,
+        64.0,
+      ) as f32,
+      glow: self.optional_color(raw.glow.as_ref(), &key("glow")),
+      glow_size: self.range(raw.glow_size.as_ref(), &key("glow_size"), 0.0, 0.0, 48.0) as f32,
+      shadow: self.boolean(raw.shadow.as_ref(), &key("shadow"), false),
+      opacity: self.range(
+        raw.opacity.as_ref(),
+        &key("opacity"),
+        f64::from(default.opacity),
+        0.0,
+        1.0,
+      ) as f32,
+    }
+  }
+
+  /// Parses `show_on` or `hide_on`.
+  ///
+  /// The lists are small and names are cheap, so duplicates are removed here
+  /// rather than at draw time. Unknown names are reported once each and then
+  /// skipped: one typo should not hide the whole widget. An empty list is a
+  /// valid "always" for `show_on` and a valid "never hide" for `hide_on`.
+  fn widget_states(&mut self, field: Option<&Field>, key: &str) -> Vec<WidgetState> {
+    let Some(field) = field else {
+      return Vec::new();
+    };
+    let Some(values) = field.get_ref().as_array() else {
+      self.issue(
+        key,
+        Some(field),
+        "expected an array of state names such as [\"typing\", \"busy\"]",
+      );
+      return Vec::new();
+    };
+    if values.len() > 8 {
+      self.issue(key, Some(field), "accepts at most 8 states");
+    }
+    let mut states = Vec::new();
+    let mut reported = Vec::new();
+    for value in values.iter().take(8) {
+      let Some(text) = value.as_str() else {
+        self.issue(key, Some(field), "every state must be a string");
+        continue;
+      };
+      match WidgetState::parse(text) {
+        Some(state) => {
+          if !states.contains(&state) {
+            states.push(state);
+          }
+        }
+        None => {
+          if !reported.contains(&text) {
+            self.issue(
+              key,
+              Some(field),
+              format!("unknown state {text:?}; use idle, typing, busy, error, or authenticated"),
+            );
+            reported.push(text);
+          }
+        }
+      }
+    }
+    states
+  }
+
+  /// Resolves the whole presentation block for one built-in widget.
+  fn widget_look(
+    &mut self,
+    plate: &RawWidgetPlate,
+    motion: Option<&crate::config::raw::RawDecorMotion>,
+    show_on: Option<&Field>,
+    hide_on: Option<&Field>,
+    prefix: &str,
+  ) -> WidgetLook {
+    WidgetLook {
+      plate: self.plate(plate, &format!("{prefix}.plate")),
+      motion: self.decor_motion(motion, &format!("{prefix}.motion")),
+      show_on: self.widget_states(show_on, &format!("{prefix}.show_on")),
+      hide_on: self.widget_states(hide_on, &format!("{prefix}.hide_on")),
+    }
+  }
+
+  fn gpu(&mut self, raw: &RawGpu) -> GpuConfig {
+    let defaults = GpuConfig::default();
+    GpuConfig {
+      enabled: self.boolean(raw.enabled.as_ref(), "gpu.enabled", defaults.enabled),
+      backend: self.choice(
+        raw.backend.as_ref(),
+        "gpu.backend",
+        defaults.backend,
+        GpuBackend::parse,
+        "auto, vulkan, gl, or software",
+      ),
+      adapter: self.gpu_adapter(raw.adapter.as_ref(), &defaults.adapter),
+      device: self.choice(
+        raw.device.as_ref(),
+        "gpu.device",
+        defaults.device,
+        GpuDevice::parse,
+        "auto, discrete, integrated, virtual, or cpu",
+      ),
+      power: self.choice(
+        raw.power.as_ref(),
+        "gpu.power",
+        defaults.power,
+        GpuPower::parse,
+        "low, high, or default",
+      ),
+      present: self.choice(
+        raw.present.as_ref(),
+        "gpu.present",
+        defaults.present,
+        GpuPresent::parse,
+        "fifo, mailbox, or immediate",
+      ),
+      fallback: self.choice(
+        raw.fallback.as_ref(),
+        "gpu.fallback",
+        defaults.fallback,
+        GpuFallback::parse,
+        "chain, software, cpu, or none",
+      ),
+    }
+  }
+
+  /// The shared shape of every enumerated choice key, not just `[gpu]`.
+  /// Keeping the issue key caller-provided is what makes a typo report
+  /// `gpu.present` or `media.layout` rather than a generic table error.
+  fn choice<T: Copy>(
+    &mut self,
+    field: Option<&Field>,
+    key: &str,
+    default: T,
+    parse: fn(&str) -> Option<T>,
+    expected: &str,
+  ) -> T {
+    let Some(field) = field else {
+      return default;
+    };
+    let Some(value) = field.get_ref().as_str() else {
+      self.issue(key, Some(field), format!("expected {expected}"));
+      return default;
+    };
+    match parse(value) {
+      Some(choice) => choice,
+      None => {
+        self.issue(
+          key,
+          Some(field),
+          format!("unknown value {value:?}; use {expected}"),
+        );
+        default
+      }
+    }
+  }
+
+  /// Adapter selection is intentionally looser than the other keys: a name may
+  /// only exist on the machine running the greeter, so an unknown name is not a
+  /// config error. Only the `index:N` syntax can be checked here.
+  fn gpu_adapter(&mut self, field: Option<&Field>, default: &str) -> String {
+    let Some(field) = field else {
+      return default.to_string();
+    };
+    let Some(value) = self.string_value(
+      Some(field),
+      "gpu.adapter",
+      "expected auto, index:N, or an adapter name",
+      64,
+    ) else {
+      return default.to_string();
+    };
+    if value.is_empty() || value.eq_ignore_ascii_case("auto") {
+      return "auto".to_string();
+    }
+    if let Some(rest) = value.strip_prefix("index:") {
+      let rest = rest.trim();
+      return match rest.parse::<u32>() {
+        Ok(index) => format!("index:{index}"),
+        Err(_) => {
+          self.issue(
+            "gpu.adapter",
+            Some(field),
+            format!("expected index:N with a whole number, got {value:?}"),
+          );
+          "auto".to_string()
+        }
+      };
+    }
+    value
   }
 
   fn rotation(&mut self, field: Option<&Field>, key: &str, default: f32) -> f32 {

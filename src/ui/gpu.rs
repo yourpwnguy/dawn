@@ -26,11 +26,12 @@
 use std::sync::Arc;
 
 use tiny_skia::Pixmap;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use winit::event_loop::OwnedDisplayHandle;
 use winit::window::Window;
 
 use crate::color::Rgb;
+use crate::config::{GpuBackend, GpuConfig, GpuDevice, GpuPower, GpuPresent};
 use crate::ui::background::{BackgroundSnapshot, SnapshotKind};
 
 /// Uniform data shared with `gpu.wgsl`. Keep this layout in sync with the WGSL
@@ -143,45 +144,81 @@ pub struct GpuRenderer {
 
 impl GpuRenderer {
   /// Builds the compositor for one window. The caller owns the fallback: an
-  /// `Err` here means "use softbuffer", never "the greeter cannot start".
+  /// `Err` here means "try the next policy", never "the greeter cannot start".
+  ///
+  /// Adapter selection is deliberately separate from device creation. A driver
+  /// can advertise a surface and still fail when asked for a device, so the
+  /// chosen adapter is only the first candidate; the loop keeps walking the
+  /// ranked list until one produces both a device and a usable format.
   pub fn new(
     window: Arc<Window>,
     display: OwnedDisplayHandle,
     size: (u32, u32),
+    gpu: &GpuConfig,
   ) -> Result<Self, String> {
     let size = (size.0.max(1), size.1.max(1));
+    let backends = backend_mask(gpu);
 
     let mut descriptor = wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display));
-    // Vulkan first, GL as the older-hardware fallback. Both are compiled in;
-    // wgpu picks whichever can present to this surface.
-    descriptor.backends = wgpu::Backends::VULKAN | wgpu::Backends::GL;
+    descriptor.backends = backends;
     let instance = wgpu::Instance::new(descriptor);
 
     let surface = instance
       .create_surface(window)
       .map_err(|error| format!("cannot create a GPU surface: {error}"))?;
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-      power_preference: wgpu::PowerPreference::LowPower,
-      force_fallback_adapter: false,
-      compatible_surface: Some(&surface),
-      apply_limit_buckets: false,
-    }))
-    .map_err(|error| format!("no usable GPU adapter: {error}"))?;
-    let info = adapter.get_info();
+    let all = pollster::block_on(instance.enumerate_adapters(backends));
+    let device_class = effective_device(gpu);
+    let supported: Vec<wgpu::Adapter> = all
+      .into_iter()
+      .filter(|adapter| {
+        adapter.is_surface_supported(&surface)
+          && device_matches(device_class, adapter.get_info().device_type)
+      })
+      .collect();
+    let candidates = order_candidates(&supported, gpu)?;
+
+    let mut failure = "no adapter could create a device and surface".to_string();
+    let mut chosen = None;
+    for adapter in candidates {
+      let info = adapter.get_info();
+      let device_result = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("dawn"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        ..wgpu::DeviceDescriptor::default()
+      }));
+      let (device, queue) = match device_result {
+        Ok(pair) => pair,
+        Err(error) => {
+          failure = format!("{}: cannot create a GPU device: {error}", info.name);
+          continue;
+        }
+      };
+      let caps = surface.get_capabilities(&adapter);
+      let Some(format) = choose_format(&caps.formats) else {
+        failure = format!(
+          "{}: no non-sRGB surface format ({:?})",
+          info.name, caps.formats
+        );
+        continue;
+      };
+      let present_mode = choose_present(gpu.present, &caps.present_modes);
+      chosen = Some((device, queue, info, format, caps.alpha_modes, present_mode));
+      break;
+    }
+
+    let Some((device, queue, info, format, alpha_modes, present_mode)) = chosen else {
+      return Err(format!("no usable GPU adapter: {failure}"));
+    };
+
     info!(
       name = %info.name,
-      backend = ?info.device_type,
+      backend = %info.backend,
+      device = ?info.device_type,
       driver = %info.driver,
+      present = ?present_mode,
       "GPU compositor adapter"
     );
-
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-      label: Some("dawn"),
-      required_features: wgpu::Features::empty(),
-      required_limits: wgpu::Limits::default(),
-      ..wgpu::DeviceDescriptor::default()
-    }))
-    .map_err(|error| format!("cannot create a GPU device: {error}"))?;
     device.on_uncaptured_error(Arc::new(|error| {
       tracing::error!(%error, "GPU validation error");
     }));
@@ -194,14 +231,10 @@ impl GpuRenderer {
       ));
     }
 
-    let caps = surface.get_capabilities(&adapter);
-    let format = choose_format(&caps.formats)
-      .ok_or_else(|| format!("GPU surface has no non-sRGB format: {:?}", caps.formats))?;
-    let alpha_mode = if caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
+    let alpha_mode = if alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
       wgpu::CompositeAlphaMode::Opaque
     } else {
-      *caps
-        .alpha_modes
+      *alpha_modes
         .first()
         .unwrap_or(&wgpu::CompositeAlphaMode::Auto)
     };
@@ -211,7 +244,7 @@ impl GpuRenderer {
       color_space: wgpu::SurfaceColorSpace::Auto,
       width: size.0,
       height: size.1,
-      present_mode: wgpu::PresentMode::Fifo,
+      present_mode,
       desired_maximum_frame_latency: 2,
       alpha_mode,
       view_formats: Vec::new(),
@@ -596,6 +629,238 @@ impl GpuRenderer {
       &self.previous,
       &self.ui,
     );
+  }
+}
+
+/// Lists the adapters the configured policy can see, without a window.
+///
+/// This is the `--list-gpus` half of the selection logic. There is no surface,
+/// so we cannot know which adapters can present; the footer says so, and the
+/// real window still tries the chosen adapter and walks the ranked list when a
+/// driver cannot create a device. Keeping the backend, device, power, and spec
+/// helpers shared is what makes the index in this table match `adapter =
+/// "index:N"`.
+pub fn list_adapters(gpu: &GpuConfig) -> Result<String, String> {
+  let backends = backend_mask(gpu);
+  let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+  descriptor.backends = backends;
+  let instance = wgpu::Instance::new(descriptor);
+  let all = pollster::block_on(instance.enumerate_adapters(backends));
+  let device_class = effective_device(gpu);
+  let filtered: Vec<wgpu::Adapter> = all
+    .into_iter()
+    .filter(|adapter| device_matches(device_class, adapter.get_info().device_type))
+    .collect();
+
+  let selected = order_candidates(&filtered, gpu)
+    .ok()
+    .and_then(|ordered| ordered.first().cloned());
+
+  let mut out = format!("dawn {} GPUs\n", env!("CARGO_PKG_VERSION"));
+  if filtered.is_empty() {
+    out.push_str("no adapters found\n");
+  } else {
+    for (index, adapter) in filtered.iter().enumerate() {
+      let info = adapter.get_info();
+      let marker = if selected.as_ref() == Some(adapter) {
+        " * selected"
+      } else {
+        ""
+      };
+      out.push_str(&format!(
+        "  [{index}] {} | backend={} device={} driver={}{marker}\n",
+        info.name,
+        info.backend,
+        device_label(info.device_type),
+        info.driver
+      ));
+    }
+    if selected.is_none() {
+      out.push_str(&format!(
+        "no adapter matches {:?}; available adapters: {}\n",
+        gpu.adapter,
+        adapter_list(&filtered)
+      ));
+    }
+  }
+  out.push_str(
+    "note: surface support cannot be checked without a window, so the window may skip an adapter\n",
+  );
+  out.push_str(&format!("gpu: {}\n", gpu.summary()));
+  Ok(out)
+}
+
+/// Maps the configured backend to the wgpu mask used by both the instance and
+/// adapter enumeration. Software stays on Vulkan and GL because lavapipe and
+/// llvmpipe live behind different APIs; the device filter below narrows the
+/// result to CPU adapters.
+fn backend_mask(gpu: &GpuConfig) -> wgpu::Backends {
+  match gpu.backend {
+    GpuBackend::Auto | GpuBackend::Software => wgpu::Backends::VULKAN | wgpu::Backends::GL,
+    GpuBackend::Vulkan => wgpu::Backends::VULKAN,
+    GpuBackend::Gl => wgpu::Backends::GL,
+  }
+}
+
+/// `backend = "software"` is a stronger statement than `device = "cpu"`: it
+/// means "only a CPU adapter is acceptable", so it overrides whatever device
+/// value the same table contains.
+fn effective_device(gpu: &GpuConfig) -> GpuDevice {
+  if gpu.backend == GpuBackend::Software {
+    GpuDevice::Cpu
+  } else {
+    gpu.device
+  }
+}
+
+fn device_matches(wanted: GpuDevice, actual: wgpu::DeviceType) -> bool {
+  match wanted {
+    GpuDevice::Auto => true,
+    GpuDevice::Discrete => actual == wgpu::DeviceType::DiscreteGpu,
+    GpuDevice::Integrated => actual == wgpu::DeviceType::IntegratedGpu,
+    GpuDevice::Virtual => actual == wgpu::DeviceType::VirtualGpu,
+    GpuDevice::Cpu => actual == wgpu::DeviceType::Cpu,
+  }
+}
+
+/// Stable order for the fallback walk. `Default` keeps enumeration order, which
+/// is the only way to see exactly what the backend reported.
+fn rank_adapters(adapters: &[wgpu::Adapter], power: GpuPower) -> Vec<wgpu::Adapter> {
+  let priority = |device: wgpu::DeviceType| -> u8 {
+    match power {
+      GpuPower::Low => match device {
+        wgpu::DeviceType::IntegratedGpu => 0,
+        wgpu::DeviceType::Other => 1,
+        wgpu::DeviceType::VirtualGpu => 2,
+        wgpu::DeviceType::DiscreteGpu => 3,
+        wgpu::DeviceType::Cpu => 4,
+      },
+      GpuPower::High => match device {
+        wgpu::DeviceType::DiscreteGpu => 0,
+        wgpu::DeviceType::IntegratedGpu => 1,
+        wgpu::DeviceType::VirtualGpu => 2,
+        wgpu::DeviceType::Other => 3,
+        wgpu::DeviceType::Cpu => 4,
+      },
+      GpuPower::Default => 0,
+    }
+  };
+  let mut ranked = adapters.to_vec();
+  if power != GpuPower::Default {
+    // Stable sort, so equal classes keep the backend's enumeration order.
+    ranked.sort_by_key(|adapter| priority(adapter.get_info().device_type));
+  }
+  ranked
+}
+
+/// Turns a filtered adapter list into the order `GpuRenderer::new` should try.
+///
+/// `auto` takes the first ranked adapter. `index:N` and name matching read the
+/// unranked list, so the index printed by `--list-gpus` is stable regardless of
+/// the power preference. The chosen adapter is always first, followed by the
+/// rest of the ranking, which is what lets one broken driver fall through
+/// instead of killing the compositor.
+fn order_candidates(
+  adapters: &[wgpu::Adapter],
+  gpu: &GpuConfig,
+) -> Result<Vec<wgpu::Adapter>, String> {
+  if adapters.is_empty() {
+    return Err(
+      "no GPU adapters matched the configured backend and device; run `dawn --list-gpus`"
+        .to_string(),
+    );
+  }
+  let ranked = rank_adapters(adapters, gpu.power);
+  let chosen = if gpu.adapter.eq_ignore_ascii_case("auto") {
+    ranked.first().cloned()
+  } else {
+    adapter_position(adapters, &gpu.adapter).and_then(|index| adapters.get(index).cloned())
+  };
+  let Some(chosen) = chosen else {
+    return Err(format!(
+      "no adapter matches {:?}; available adapters: {}",
+      gpu.adapter,
+      adapter_list(adapters)
+    ));
+  };
+  let mut ordered = Vec::with_capacity(adapters.len());
+  ordered.push(chosen.clone());
+  for adapter in ranked {
+    if adapter != chosen {
+      ordered.push(adapter);
+    }
+  }
+  Ok(ordered)
+}
+
+/// Resolves the `adapter` spec against the filtered list before ranking.
+/// `None` covers both "not an index" and "out of range"; the caller turns that
+/// into a readable error listing the names.
+fn adapter_position(adapters: &[wgpu::Adapter], spec: &str) -> Option<usize> {
+  if let Some(rest) = spec.strip_prefix("index:") {
+    return rest
+      .trim()
+      .parse::<usize>()
+      .ok()
+      .filter(|index| *index < adapters.len());
+  }
+  let needle = spec.to_ascii_lowercase();
+  if needle.is_empty() {
+    return None;
+  }
+  adapters.iter().position(|adapter| {
+    let info = adapter.get_info();
+    info.name.to_ascii_lowercase().contains(&needle)
+      || info.driver.to_ascii_lowercase().contains(&needle)
+  })
+}
+
+fn adapter_list(adapters: &[wgpu::Adapter]) -> String {
+  if adapters.is_empty() {
+    return "none".to_string();
+  }
+  adapters
+    .iter()
+    .map(|adapter| adapter.get_info().name)
+    .collect::<Vec<_>>()
+    .join(", ")
+}
+
+/// Present modes are a preference, never a hard requirement. Fifo is the one
+/// mode every backend must provide, so an unavailable request degrades to it
+/// (or to whatever the surface does offer) with a warning.
+fn choose_present(wanted: GpuPresent, available: &[wgpu::PresentMode]) -> wgpu::PresentMode {
+  let desired = match wanted {
+    GpuPresent::Fifo => wgpu::PresentMode::Fifo,
+    GpuPresent::Mailbox => wgpu::PresentMode::Mailbox,
+    GpuPresent::Immediate => wgpu::PresentMode::Immediate,
+  };
+  if available.contains(&desired) {
+    return desired;
+  }
+  let fallback = if available.contains(&wgpu::PresentMode::Fifo) {
+    wgpu::PresentMode::Fifo
+  } else {
+    available
+      .first()
+      .copied()
+      .unwrap_or(wgpu::PresentMode::Fifo)
+  };
+  warn!(
+    requested = ?desired,
+    using = ?fallback,
+    "GPU present mode is not supported by this surface"
+  );
+  fallback
+}
+
+fn device_label(device: wgpu::DeviceType) -> &'static str {
+  match device {
+    wgpu::DeviceType::Other => "other",
+    wgpu::DeviceType::IntegratedGpu => "integrated",
+    wgpu::DeviceType::DiscreteGpu => "discrete",
+    wgpu::DeviceType::VirtualGpu => "virtual",
+    wgpu::DeviceType::Cpu => "cpu",
   }
 }
 

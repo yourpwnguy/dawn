@@ -18,7 +18,7 @@ use serde::Deserialize;
 use tracing::warn;
 
 use crate::color::Rgb;
-use crate::config::ClockStyle;
+use crate::config::{ClockStyle, MediaLook, SecondHand, WidgetLayer};
 use crate::layout::Anchor;
 use crate::ui::clock::ClockSpec;
 
@@ -40,6 +40,7 @@ pub(crate) enum ParsedWidget {
     monitor: Option<String>,
     rotation: f32,
     max_width: Option<f32>,
+    layer: WidgetLayer,
   },
   Clock {
     spec: ClockSpec,
@@ -47,6 +48,7 @@ pub(crate) enum ParsedWidget {
     offset: (i32, i32),
     monitor: Option<String>,
     rotation: f32,
+    layer: WidgetLayer,
   },
   Image {
     path: String,
@@ -55,6 +57,7 @@ pub(crate) enum ParsedWidget {
     offset: (i32, i32),
     monitor: Option<String>,
     rotation: f32,
+    layer: WidgetLayer,
   },
   /// A first-party media widget. The manifest can place it, but the live
   /// player state comes from the host, exactly as it does for the built-in
@@ -62,6 +65,9 @@ pub(crate) enum ParsedWidget {
   Media {
     size: f32,
     show_art: bool,
+    /// Manifest media widgets get the main-config defaults until the v1
+    /// surface grows layout keys of its own.
+    look: MediaLook,
     /// Draw the last visible track before authentication. Shared machines
     /// should set this to `false`, exactly like `media.show_before_login`.
     show_before_login: bool,
@@ -70,6 +76,7 @@ pub(crate) enum ParsedWidget {
     offset: (i32, i32),
     monitor: Option<String>,
     rotation: f32,
+    layer: WidgetLayer,
   },
 }
 
@@ -124,6 +131,8 @@ enum RawWidget {
     rotation: Option<Num>,
     #[serde(default)]
     max_width: Option<Num>,
+    #[serde(default)]
+    layer: Option<String>,
   },
   Clock {
     #[serde(default)]
@@ -156,6 +165,8 @@ enum RawWidget {
     monitor: Option<String>,
     #[serde(default)]
     rotation: Option<Num>,
+    #[serde(default)]
+    layer: Option<String>,
   },
   Image {
     path: String,
@@ -169,6 +180,8 @@ enum RawWidget {
     monitor: Option<String>,
     #[serde(default)]
     rotation: Option<Num>,
+    #[serde(default)]
+    layer: Option<String>,
   },
   Media {
     #[serde(default)]
@@ -187,6 +200,8 @@ enum RawWidget {
     monitor: Option<String>,
     #[serde(default)]
     rotation: Option<Num>,
+    #[serde(default)]
+    layer: Option<String>,
   },
 }
 
@@ -278,6 +293,13 @@ fn validate_widget(raw: RawWidget, default_color: Rgb) -> Result<ParsedWidget, S
   let monitor = raw_monitor(&raw).map(validate_monitor).transpose()?;
   let rotation = validate_rotation(raw_rotation(&raw))?;
   let color = raw_color(&raw, default_color)?;
+  // An unknown layer is a per-widget error, not a whole-manifest failure:
+  // the rest of the plugin still loads without the misplaced widget.
+  let layer = match raw_layer(&raw) {
+    Some(text) => WidgetLayer::parse(text)
+      .ok_or_else(|| format!("unknown widget layer '{text}'; use behind or front"))?,
+    None => WidgetLayer::Behind,
+  };
 
   match raw {
     RawWidget::Text {
@@ -305,6 +327,7 @@ fn validate_widget(raw: RawWidget, default_color: Rgb) -> Result<ParsedWidget, S
         monitor,
         rotation,
         max_width,
+        layer,
       })
     }
     RawWidget::Clock {
@@ -321,8 +344,9 @@ fn validate_widget(raw: RawWidget, default_color: Rgb) -> Result<ParsedWidget, S
       ..
     } => {
       let style = match style.as_deref() {
-        Some(style) => ClockStyle::parse(style)
-          .ok_or_else(|| format!("unknown clock style {style:?}; use digital or analog"))?,
+        Some(style) => ClockStyle::parse(style).ok_or_else(|| {
+          format!("unknown clock style {style:?}; use digital, analog, flip, or segment")
+        })?,
         None => ClockStyle::Digital,
       };
       let format = format.unwrap_or_else(|| "%H:%M".to_string());
@@ -362,6 +386,14 @@ fn validate_widget(raw: RawWidget, default_color: Rgb) -> Result<ParsedWidget, S
         date_size: validate_size(date_size.and_then(Num::to_f32).unwrap_or(12.0))?,
         color: Some(color),
         date_color,
+        // The v1 manifest does not expose the decorative face options yet.
+        // Defaults keep a plugin clock on the same object model as a built-in
+        // clock without inventing a second configuration surface.
+        ghost: false,
+        glow: None,
+        glow_size: 0.0,
+        colon_blink_ms: 0.0,
+        second_hand: SecondHand::Tick,
       };
       Ok(ParsedWidget::Clock {
         spec,
@@ -369,6 +401,7 @@ fn validate_widget(raw: RawWidget, default_color: Rgb) -> Result<ParsedWidget, S
         offset,
         monitor,
         rotation,
+        layer,
       })
     }
     RawWidget::Image { path, width, .. } => {
@@ -384,6 +417,7 @@ fn validate_widget(raw: RawWidget, default_color: Rgb) -> Result<ParsedWidget, S
         offset,
         monitor,
         rotation,
+        layer,
       })
     }
     RawWidget::Media {
@@ -399,12 +433,14 @@ fn validate_widget(raw: RawWidget, default_color: Rgb) -> Result<ParsedWidget, S
       Ok(ParsedWidget::Media {
         size,
         show_art,
+        look: MediaLook::default(),
         show_before_login,
         color,
         anchor,
         offset,
         monitor,
         rotation,
+        layer,
       })
     }
   }
@@ -416,6 +452,15 @@ fn raw_anchor(raw: &RawWidget) -> Option<&str> {
     | RawWidget::Clock { anchor, .. }
     | RawWidget::Image { anchor, .. }
     | RawWidget::Media { anchor, .. } => anchor.as_deref(),
+  }
+}
+
+fn raw_layer(raw: &RawWidget) -> Option<&str> {
+  match raw {
+    RawWidget::Text { layer, .. }
+    | RawWidget::Clock { layer, .. }
+    | RawWidget::Image { layer, .. }
+    | RawWidget::Media { layer, .. } => layer.as_deref(),
   }
 }
 
@@ -575,7 +620,7 @@ pub(crate) fn is_granted(path: &str, grants: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
   use super::{Anchor, is_granted, normalize_relative, parse};
-  use crate::config::ClockStyle;
+  use crate::config::{ClockStyle, WidgetLayer};
 
   const BASE: &str = r##"
 api_version = 1
@@ -629,6 +674,29 @@ text = "Welcome"
   fn skips_a_bad_widget_but_keeps_the_plugin() {
     let source = format!("{BASE}\n[[widget]]\nkind = \"text\"\ntext = \"Too big\"\nsize = 1000\n");
     let manifest = parse(&source, color()).unwrap();
+    assert_eq!(manifest.widgets.len(), 1);
+  }
+
+  #[test]
+  fn widget_layer_parses_and_an_unknown_value_skips_the_widget() {
+    let source =
+      format!("{BASE}\n[[widget]]\nkind = \"text\"\ntext = \"Front\"\nlayer = \"front\"\n");
+    let manifest = parse(&source, color()).unwrap();
+    assert_eq!(manifest.widgets.len(), 2);
+    match &manifest.widgets[1] {
+      super::ParsedWidget::Text { layer, .. } => assert_eq!(*layer, WidgetLayer::Front),
+      other => panic!("expected a text widget, got {other:?}"),
+    }
+
+    // The default stays behind, and an unknown layer only removes the widget
+    // that wrote it. The rest of the manifest is still usable.
+    let defaulted = parse(BASE, color()).unwrap();
+    match &defaulted.widgets[0] {
+      super::ParsedWidget::Text { layer, .. } => assert_eq!(*layer, WidgetLayer::Behind),
+      other => panic!("expected a text widget, got {other:?}"),
+    }
+    let bad = format!("{BASE}\n[[widget]]\nkind = \"text\"\ntext = \"Nope\"\nlayer = \"middle\"\n");
+    let manifest = parse(&bad, color()).unwrap();
     assert_eq!(manifest.widgets.len(), 1);
   }
 

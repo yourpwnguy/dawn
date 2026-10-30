@@ -6,9 +6,10 @@ they describe widgets and the greeter paints them. There is no code execution,
 no scripting host, no event hook, and no shared memory with the login form.
 
 This is the whole sandbox, and it is deliberately boring. A plugin never sees a
-keystroke, the username, the password, or the greetd conversation. All plugin
-pixels are drawn before the login card, so a widget cannot cover the form even
-if it is huge. A broken or hostile plugin can only waste screen space.
+keystroke, the username, the password, or the greetd conversation. Widgets
+default to painting before the login card; a widget may opt into the front
+layer, but the form still paints last, so no widget can cover it. A broken or
+hostile plugin can only waste screen space.
 
 The current API version is `1`. A manifest with another version is rejected
 with a clear log line; it is not guessed at.
@@ -115,6 +116,27 @@ default is `[24, 24]`. Offsets are multiplied by the output scale factor at
 draw time. A missing `monitor` means every output; an unknown output name in a
 preview shows the widget rather than hiding it.
 
+#### Layers
+
+Every widget accepts `layer = "behind" | "front"`. The default is `behind`,
+which paints in screen space before the login decor. `front` paints after the
+decor and before the form, and places the widget in the card's coordinate
+system: the anchor is the card, and both `offset` and the widget size scale with
+the card. The login form still paints afterwards, so the layer only changes
+which cosmetic surfaces a widget can cover.
+
+```toml
+[[widget]]
+kind = "text"
+text = "SECTOR 7"
+anchor = "top-right"
+offset = [28, 24]
+layer = "front"
+```
+
+An unknown layer value skips that widget and logs an error. The rest of the
+plugin still loads.
+
 #### Text
 
 ```toml
@@ -193,7 +215,8 @@ pixmap are checked so a malicious header cannot force a large allocation.
 ## Failure behaviour
 
 - A widget with an invalid value is skipped and logged with its index. The rest
-  of the plugin still loads.
+  of the plugin still loads. An unknown `layer` is one of those per-widget
+  errors.
 - A structurally invalid manifest, an unsupported API version, or an unreadable
   `plugin.toml` disables that plugin.
 - A missing image or a denied path skips that widget.

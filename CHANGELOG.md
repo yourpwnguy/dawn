@@ -2,7 +2,7 @@
 
 All notable changes to dawn are recorded here.
 
-## Unreleased
+## 0.2.1 - 2026-10-30
 
 ### Added
 
@@ -18,10 +18,26 @@ All notable changes to dawn are recorded here.
   caret.
 - `layer = "behind" | "front"` on `[clock]` and `[media]`, so a built-in widget
   can paint inside a decor-built HUD bar without covering the form.
+- Themed plates for the built-in clock and media widgets: `[clock.plate]` and
+  `[media.plate]` support tint, solid, and gradient fills, borders, glow,
+  shadow, padding, radius, and opacity. `[clock.motion]` and `[media.motion]`
+  animate the whole widget with the decor motion table, and `show_on` /
+  `hide_on` gate it on the login state.
+- `layer = "behind" | "front"` on every plugin widget, so a manifest widget can
+  join the front layer without ever covering the login form.
 - A `kind = "panel"` decor item: an anchored solid or gradient plate with an
   optional border, opacity, and the usual motion table.
 - Outlined text decor with `stroke` and `stroke_width`, drawn as an eight-copy
   ring behind the fill pass.
+- A `[gpu]` table for backend, adapter, device class, power preference, present
+  mode, and fallback policy, plus `--list-gpus` to inspect adapters and the
+  selected one.
+- Two clock faces: `flip` split-flap cards and `segment` seven-segment digits,
+  with `ghost` unlit segments, a segment `glow`, a blinking colon, and a
+  `tick` or `sweep` analog second hand.
+- Three media layouts: `card`, `compact`, and `vinyl`, with cover or circular
+  disc art, line/segments/wave progress, optional art-derived tinting, and
+  visual-only transport glyphs.
 
 ### Security
 
