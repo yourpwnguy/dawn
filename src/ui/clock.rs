@@ -543,6 +543,17 @@ fn draw_flip_card(
         let angle = plate.map_or(0.0, |plate| plate.gradient_angle);
         canvas.linear_gradient_stops(rect, radius, angle, &[(0.0, start), (1.0, end)]);
       }
+      // The widget plate already painted the shared backdrop underneath the
+      // flip cards. Each card still needs its own denser surface to look like a
+      // hinged flap, so Glass behaves like Tint here and honours a configured
+      // colour when the author set one.
+      PlateStyle::Glass => canvas.fill(
+        rect,
+        plate
+          .and_then(|plate| plate.color)
+          .unwrap_or(theme.tint.with_alpha(230)),
+        radius,
+      ),
       PlateStyle::None => {}
     }
     let border = plate

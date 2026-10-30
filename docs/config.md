@@ -284,9 +284,27 @@ Panel keys: `width` and `height` (required, 4 to 4000), `color` (falls back to
 `[theme].tint`), `color_end` (optional second colour; when set the plate becomes
 a linear gradient from `color` to `color_end`), `gradient_angle` (-360 to 360,
 0 is left to right), `radius` (0 to 64, default 0), `border` (optional one-pixel
-stroke colour), `opacity` (0 to 1), plus `anchor`, `offset`, `rotation`, and the
-usual motion table. A panel ignores `image` and `text`; if either is present the
-panel is still drawn as a bare plate and one issue is reported.
+stroke colour), `glass` (default `false`), `opacity` (0 to 1), plus `anchor`,
+`offset`, `rotation`, and the usual motion table. A panel ignores `image` and
+`text`; if either is present the panel is still drawn as a bare plate and one
+issue is reported.
+
+With `glass = true` the panel paints the shared blurred backdrop under its fill.
+That is a backdrop blur, not a blur of the panel's own colour. `color` still
+falls back to the theme tint, which is fairly opaque, so a glass panel normally
+wants an alpha colour:
+
+```toml
+[[login.decor]]
+kind = "panel"
+width = 420
+height = 64
+glass = true
+color = "#10172655"
+radius = 16
+border = "#ffffff22"
+anchor = "bottom-left"
+```
 
 `blink_ms` turns a panel into a radar blip by hiding the whole plate for the
 second half of each period. `typer_ms`, `scramble_ms`, `wave`, `glitch`, and the
@@ -593,8 +611,8 @@ output just like the widget content.
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `style` | string | `"tint"` | `none`, `tint`, `solid`, or `gradient`. `none` draws no plate, border, glow, or shadow. `tint` is the historical scrim. |
-| `color` | colour | theme tint | Fill colour for `solid` and the first stop for `gradient`. |
+| `style` | string | `"tint"` | `none`, `tint`, `solid`, `gradient`, or `glass`. `blur` is accepted as an alias for `glass`. `none` draws no plate, border, glow, or shadow. `tint` is the historical scrim. `glass` samples the shared blurred backdrop first and then applies `color` when it is set. |
+| `color` | colour | unset | Fill colour for `solid` (falls back to the theme tint) and the first stop for `gradient`. For `glass` it is an optional tint painted over the blur, so use a translucent value such as `#10172655`; unset means pure blur. |
 | `color_end` | colour | transparent | Second gradient stop. Unset fades to nothing. |
 | `gradient_angle` | number | `0` | Gradient direction in degrees, -360 to 360. Zero goes left to right. |
 | `radius` | number | `14` | Corner radius in logical pixels, 0 to 64. |
@@ -619,6 +637,23 @@ glow_size = 10
 shadow = true
 opacity = 0.9
 ```
+
+A glass plate uses the same cached backdrop as the login card:
+
+```toml
+[clock.plate]
+style = "glass"
+color = "#10172655"
+radius = 18
+padding = 16
+border = "#ffffff22"
+```
+
+The backdrop is a blur of the wallpaper, not a blur of the plate's own colour.
+Leaving `color` unset gives pure blur; add a translucent colour like the one
+above when you also want a tint. `glass` and `blur` mean the same thing on
+`[clock.plate]`, `[media.plate]`, `[calendar.plate]`, `[battery.plate]`, and
+`[system.plate]`.
 
 `[clock.motion]` and `[media.motion]` reuse the animated-decor table above
 verbatim: `spin`, `sway`, `float`, `pulse`, `fade`, `phase`, and `blink_ms`.
@@ -909,13 +944,16 @@ values, while `blur_downsample` is ignored.
 
 ### `[theme.blur]`
 
-Backdrop blur follows Hyprland's `decoration:blur` block. Dawn implements the
-same stages on the CPU: a contrast/brightness prepare, a dual Kawase pyramid
-(downsample with five taps, upsample with an eight-tap tent), then grain and
-brightness. It is not a GPU compositor blur, but the radius, pass count, and
-finish controls behave like the compositor settings people already tune. The
-GPU presentation path still samples this cached result; only the final
-wallpaper composite runs on the GPU.
+Backdrop blur follows Hyprland's `decoration:blur` block. The live window runs
+a full-resolution separable Gaussian on the GPU and does the whole colour
+pipeline in the same shader: the contrast/brightness prepare and vibrancy in the
+horizontal pass, then grain and the final brightness in the vertical pass. The
+finished pixels are read back and fed straight to the glass cache. If the GPU
+path is unavailable, `--screenshot` and the fallback use a CPU dual Kawase
+pyramid (downsample with five taps, upsample with an eight-tap tent) with the
+same colour math, so the fallback still looks like the configured blur rather
+than a different effect. The radius, pass count, and finish controls behave like
+the compositor settings people already tune.
 
 ```toml
 [theme.blur]

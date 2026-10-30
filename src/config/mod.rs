@@ -417,8 +417,9 @@ pub enum DecorSpec {
   },
   /// An anchored plate behind or over other decor. Unlike an image it needs no
   /// asset; the colour falls back to the theme tint. `color_end` turns the fill
-  /// into a linear gradient at `gradient_angle`, and `border` adds a one-pixel
-  /// stroke. Typewriter and ticker motion do not apply, but blink still does.
+  /// into a linear gradient at `gradient_angle`, `border` adds a one-pixel
+  /// stroke, and `glass` paints the cached backdrop underneath. Typewriter and
+  /// ticker motion do not apply, but blink still does.
   Panel {
     width: f32,
     height: f32,
@@ -428,6 +429,11 @@ pub enum DecorSpec {
     radius: f32,
     border: Option<Rgb>,
     opacity: f32,
+    /// Paint the shared blurred backdrop under the fill. With a translucent
+    /// `color` this is the same frosted plate the login card uses; with no
+    /// colour it still falls back to the theme tint, so an author who wants to
+    /// see the blur has to set an alpha colour.
+    glass: bool,
     anchor: Anchor,
     offset: (i32, i32),
     rotation: f32,
@@ -1010,6 +1016,10 @@ pub enum PlateStyle {
   Solid,
   /// A linear gradient from `plate.color` to `plate.color_end`.
   Gradient,
+  /// The shared blurred backdrop, then `plate.color` on top when it is set.
+  /// With no colour this is pure blur; a translucent colour is what makes it
+  /// look like a panel rather than a window cut into the wallpaper.
+  Glass,
 }
 
 impl PlateStyle {
@@ -1017,9 +1027,10 @@ impl PlateStyle {
   pub fn parse(value: &str) -> Option<Self> {
     match value {
       "none" | "transparent" => Some(Self::None),
-      "tint" | "glass" => Some(Self::Tint),
+      "tint" => Some(Self::Tint),
       "solid" => Some(Self::Solid),
       "gradient" => Some(Self::Gradient),
+      "glass" | "blur" => Some(Self::Glass),
       _ => None,
     }
   }
@@ -1035,7 +1046,9 @@ impl PlateStyle {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WidgetPlate {
   pub style: PlateStyle,
-  /// Fill colour for `Solid` and `Gradient`. `None` follows the theme tint.
+  /// Fill colour for `Solid`, `Gradient`, and an optional tint over `Glass`.
+  /// `None` follows the theme tint on the first two and leaves `Glass` as pure
+  /// blur.
   pub color: Option<Rgb>,
   /// Second gradient stop. `None` ends in a fully transparent colour.
   pub color_end: Option<Rgb>,
@@ -4044,6 +4057,62 @@ offset = [10, 20]
       }
       other => panic!("expected a panel decor, got {other:?}"),
     }
+  }
+
+  #[test]
+  fn glass_plate_style_accepts_both_spellings() {
+    assert_eq!(
+      super::PlateStyle::parse("glass"),
+      Some(super::PlateStyle::Glass)
+    );
+    assert_eq!(
+      super::PlateStyle::parse("blur"),
+      Some(super::PlateStyle::Glass)
+    );
+    // Tint is still the default, so existing configs cannot change look just
+    // because the glass spelling now means the backdrop filter.
+    assert_eq!(
+      super::PlateStyle::parse("tint"),
+      Some(super::PlateStyle::Tint)
+    );
+    assert_eq!(
+      Config::default().clock.look.plate.style,
+      super::PlateStyle::Tint
+    );
+  }
+
+  #[test]
+  fn panel_glass_parses_and_resolves_to_the_theme_decor() {
+    let path = temp_config(
+      "panel-glass",
+      r##"
+[[login.decor]]
+kind = "panel"
+width = 200
+height = 80
+glass = true
+color = "#10172655"
+
+[[login.decor]]
+kind = "panel"
+width = 120
+height = 40
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    match &loaded.config.login.decor[0] {
+      super::DecorSpec::Panel { glass, .. } => assert!(*glass),
+      other => panic!("expected a panel decor, got {other:?}"),
+    }
+    // Omitting the key keeps the old opaque plate.
+    match &loaded.config.login.decor[1] {
+      super::DecorSpec::Panel { glass, .. } => assert!(!*glass),
+      other => panic!("expected a panel decor, got {other:?}"),
+    }
+    let theme = crate::ui::theme::Theme::from(&loaded.config);
+    assert!(theme.decor[0].glass);
+    assert!(!theme.decor[1].glass);
   }
 
   #[test]

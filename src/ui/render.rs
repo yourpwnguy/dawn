@@ -168,6 +168,7 @@ pub fn paint_overlay(
   draw_plugins(
     canvas,
     text,
+    glass,
     scene,
     WidgetFrame::screen(screen, scale),
     primary,
@@ -452,7 +453,7 @@ fn draw_card(
 
   if login.rotation.abs() <= 0.01 {
     draw_card_chrome(canvas, text, glass, scene, &paint, regions);
-    draw_front_widgets(canvas, text, scene, &paint, regions);
+    draw_front_widgets(canvas, text, glass, scene, &paint, regions);
     draw_card_form(canvas, text, scene, &paint, regions);
     return;
   }
@@ -471,7 +472,7 @@ fn draw_card(
     // No intermediate surface: fall back to the unrotated order. The card
     // still paints, so a failed allocation never blanks the login form.
     draw_card_chrome(canvas, text, glass, scene, &paint, regions);
-    draw_front_widgets(canvas, text, scene, &paint, regions);
+    draw_front_widgets(canvas, text, glass, scene, &paint, regions);
     draw_card_form(canvas, text, scene, &paint, regions);
     return;
   };
@@ -499,7 +500,7 @@ fn draw_card(
     regions.push(region.rotated_around(center, login.rotation));
   }
 
-  draw_front_widgets(canvas, text, scene, &paint, regions);
+  draw_front_widgets(canvas, text, glass, scene, &paint, regions);
 
   let Some(mut form_layer) = Canvas::region(layer_w, layer_h, (bounds.x, bounds.y))
     .map(|layer| layer.with_screen(canvas.screen()))
@@ -523,6 +524,7 @@ fn draw_card(
 fn draw_front_widgets(
   canvas: &mut Canvas,
   text: &mut TextEngine,
+  glass: &GlassCache,
   scene: &Scene<'_>,
   paint: &CardPaint<'_>,
   regions: &mut Vec<HitRegion>,
@@ -530,6 +532,7 @@ fn draw_front_widgets(
   draw_plugins(
     canvas,
     text,
+    glass,
     scene,
     WidgetFrame::card(paint.card, paint.card_scale),
     paint.primary,
@@ -602,7 +605,7 @@ fn draw_card_chrome(
   // The outer wrapper adds the card rotation to every region. Keeping this
   // one at zero avoids rotating the card's own hit box twice.
   regions.push(HitRegion::new("login", card, login.draggable));
-  draw_login_decor(canvas, text, scene, card, card_scale);
+  draw_login_decor(canvas, text, glass, scene, card, card_scale);
 }
 
 /// Paints the interactive form: fields, button, status, session row, hints, and
@@ -1040,6 +1043,7 @@ fn draw_wave_text(text: &mut TextEngine, layer: &mut Canvas, wave: WaveText<'_>)
 fn draw_login_decor(
   canvas: &mut Canvas,
   text: &mut TextEngine,
+  glass: &GlassCache,
   scene: &Scene<'_>,
   card: Rect,
   card_scale: f32,
@@ -1088,6 +1092,12 @@ fn draw_login_decor(
         opacity,
         |layer, _| {
           let radius = item.radius * card_scale;
+          // `glass` asks for the shared backdrop under the fill. The panel's
+          // own `color` is still painted on top, so a translucent colour is
+          // what lets the blur show through.
+          if item.glass {
+            glass.backdrop(layer, rect, radius, 1.0);
+          }
           // Use the same primitive as a field background. A solid fill skips
           // the shader entirely, which keeps the common plate cheap.
           if let Some(end) = item.color_end {
@@ -2517,6 +2527,7 @@ fn widget_sample(look: Option<&WidgetLook>, scene: &Scene<'_>) -> Option<DecorSa
 fn draw_plugins(
   canvas: &mut Canvas,
   text: &mut TextEngine,
+  glass: &GlassCache,
   scene: &Scene<'_>,
   frame: WidgetFrame,
   primary: Rgb,
@@ -2649,7 +2660,7 @@ fn draw_plugins(
               |layer, _| {
                 // The plate is drawn before the digits so the whole widget,
                 // including its future progress bar, sits on one surface.
-                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate);
+                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate, glass);
                 clock::draw(
                   layer,
                   text,
@@ -2693,7 +2704,7 @@ fn draw_plugins(
               scale,
               opacity,
               |layer, _| {
-                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate);
+                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate, glass);
                 calendar::draw(
                   layer,
                   text,
@@ -2731,7 +2742,7 @@ fn draw_plugins(
               scale,
               opacity,
               |layer, _| {
-                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate);
+                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate, glass);
                 battery::draw(
                   layer,
                   text,
@@ -2768,7 +2779,7 @@ fn draw_plugins(
               scale,
               opacity,
               |layer, _| {
-                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate);
+                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate, glass);
                 system::draw(
                   layer,
                   text,
@@ -2842,6 +2853,7 @@ fn draw_plugins(
               painted = Some(draw_media(
                 layer,
                 text,
+                glass,
                 scene,
                 slot,
                 &snapshot,
@@ -3219,6 +3231,7 @@ struct MediaDraw {
 fn draw_media(
   canvas: &mut Canvas,
   text: &mut TextEngine,
+  glass: &GlassCache,
   scene: &Scene<'_>,
   media_index: usize,
   snapshot: &MediaSnapshot,
@@ -3255,7 +3268,7 @@ fn draw_media(
   // track; shared machines can turn it off and keep metadata off the pixels.
   if (!scene.view.authenticated && !show_before_login) || !snapshot.available {
     let label = "No media";
-    paint_widget_backdrop(canvas, rect, scene.theme, scale, plate);
+    paint_widget_backdrop(canvas, rect, scene.theme, scale, plate, glass);
     text.draw(
       canvas,
       label,
@@ -3296,7 +3309,7 @@ fn draw_media(
   });
   let plate = tinted_plate.as_ref();
   let art = media_art(snapshot, show_art, look.art);
-  paint_widget_backdrop(canvas, rect, scene.theme, scale, plate);
+  paint_widget_backdrop(canvas, rect, scene.theme, scale, plate, glass);
 
   let (x, y) = (rect.x, rect.y);
   let width = rect.w;
@@ -3525,11 +3538,12 @@ fn paint_widget_backdrop(
   theme: &Theme,
   scale: f32,
   plate: Option<&WidgetPlate>,
+  glass: &GlassCache,
 ) {
   match plate {
     // The transform already multiplied the plate opacity into the whole
     // widget, so the plate itself must not apply it a second time.
-    Some(plate) => draw_widget_plate(canvas, bounds, plate, theme, scale, 1.0),
+    Some(plate) => draw_widget_plate(canvas, bounds, plate, theme, scale, 1.0, glass),
     None => draw_scrim(canvas, bounds, theme, scale),
   }
 }
@@ -3538,9 +3552,9 @@ fn paint_widget_backdrop(
 /// content bounds plus the configured padding, so it always wraps the digits,
 /// album art, and progress bar as one surface.
 ///
-/// Shadow and glow paint first, then the fill, then the border. Every alpha is
-/// multiplied by `opacity`, which lets a caller fade a plate without touching
-/// the widget's text colours.
+/// Shadow and glow paint first, then the glass backdrop and fill, then the
+/// border. Every alpha is multiplied by `opacity`, which lets a caller fade a
+/// plate without touching the widget's text colours.
 fn draw_widget_plate(
   canvas: &mut Canvas,
   bounds: Rect,
@@ -3548,6 +3562,7 @@ fn draw_widget_plate(
   theme: &Theme,
   scale: f32,
   opacity: f32,
+  glass: &GlassCache,
 ) {
   if bounds.w <= 0.0 || bounds.h <= 0.0 || opacity <= 0.0 {
     return;
@@ -3612,13 +3627,22 @@ fn draw_widget_plate(
         &[(0.0, alpha(start, opacity)), (1.0, alpha(end, opacity))],
       );
     }
+    PlateStyle::Glass => {
+      // A backdrop blur, not a blur of the plate's own colour: the cached
+      // wallpaper is sampled through the rounded rect, then an optional
+      // translucent tint goes on top. With no colour this is pure blur.
+      glass.backdrop(canvas, rect, radius, opacity);
+      if let Some(color) = plate.color {
+        canvas.fill(rect, alpha(color, opacity), radius);
+      }
+    }
     PlateStyle::None => {}
   }
 
   match (plate.border, plate.style) {
     (Some(border), _) => canvas.stroke(rect, alpha(border, opacity), radius, 1.0),
     // The historical scrim always had a faint theme border. Only Tint keeps
-    // it implicitly; Solid and Gradient get a border only when asked.
+    // it implicitly; Solid, Gradient, and Glass get a border only when asked.
     (None, PlateStyle::Tint) => {
       canvas.stroke(
         rect,
@@ -3725,9 +3749,11 @@ mod tests {
     };
     let mut canvas = Canvas::new(480, 160).unwrap();
     let mut text = TextEngine::new(&config.ui.font);
+    let glass = GlassCache::new();
     draw_media(
       &mut canvas,
       &mut text,
+      &glass,
       &scene,
       0,
       &snapshot,
@@ -3791,9 +3817,11 @@ mod tests {
     };
     let mut canvas = Canvas::new(480, 220).unwrap();
     let mut text = TextEngine::new(&config.ui.font);
+    let glass = GlassCache::new();
     draw_media(
       &mut canvas,
       &mut text,
+      &glass,
       &scene,
       2,
       &snapshot,

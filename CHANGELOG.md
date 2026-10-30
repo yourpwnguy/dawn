@@ -2,6 +2,24 @@
 
 All notable changes to dawn are recorded here.
 
+## 0.2.5 - 2026-10-30
+
+### Added
+
+- GPU-accelerated full-resolution backdrop blur. The live window runs a
+  separable 33-tap Gaussian in two passes, reads the result back, and feeds the
+  existing glass cache; the CPU pyramid remains the fallback and the
+  `--screenshot` path.
+- Glass surfaces beyond the login card: `style = "glass"` (alias `"blur"`) on
+  every widget plate, and `glass = true` on `kind = "panel"` decor items.
+
+### Changed
+
+- The GPU blur now runs the entire colour pipeline in `blur.wgsl`: contrast and
+  brightness prepare, HSL vibrancy, grain, and the final brightness. The CPU no
+  longer pre-processes the upload or post-processes the readback, which cuts the
+  per-refresh cost to the upload, two passes, and one readback.
+
 ## 0.2.4 - 2026-10-30
 
 ### Added

@@ -54,12 +54,12 @@ impl GlassCache {
     }
   }
 
-  /// Refreshes the blur cache when the frame changed or the refresh interval
-  /// elapsed. `scale` converts the theme's logical blur radius to pixels.
+  /// Refreshes the blur cache on the CPU when the frame changed or the
+  /// refresh interval elapsed.
   ///
-  /// Returns true when the cached blurred pixmap changed and the caller must
-  /// repaint the UI overlay. The GPU path relies on this: it skips the whole
-  /// text and panel raster on frames where only the wallpaper moved.
+  /// This is the fallback and the `--screenshot` path. The live GPU window
+  /// uses [`Self::prepare_with`] and only lands here when the GPU blur
+  /// declined the frame.
   pub fn prepare(
     &mut self,
     canvas: &Canvas,
@@ -69,6 +69,42 @@ impl GlassCache {
     scale: f32,
     animated: bool,
   ) -> bool {
+    self.prepare_with(canvas, frame_id, now, theme, scale, animated, |_, _, _| {
+      None
+    })
+  }
+
+  /// Refreshes the blur cache, preferring the supplied GPU blur when one is
+  /// available.
+  ///
+  /// `gpu` is called at most once per due refresh with the source pixmap, the
+  /// blur settings, and the output scale. Returning `Some` stores that pixmap
+  /// and returns `true`; returning `None` falls through to the CPU pyramid,
+  /// including the worker thread for an animated wallpaper. We never run both
+  /// for the same refresh: the GPU result replaces the frame outright.
+  ///
+  /// `scale` converts the theme's logical blur radius to pixels.
+  ///
+  /// Returns true when the cached blurred pixmap changed and the caller must
+  /// repaint the UI overlay. The GPU path relies on this: it skips the whole
+  /// text and panel raster on frames where only the wallpaper moved.
+  // Clippy counts `self`, and the eight parameters are the API the window and
+  // the screenshot path both call. Grouping them into a struct would only move
+  // the same values one level up and make the call sites noisier.
+  #[allow(clippy::too_many_arguments)]
+  pub fn prepare_with<F>(
+    &mut self,
+    canvas: &Canvas,
+    frame_id: u64,
+    now: Instant,
+    theme: &Theme,
+    scale: f32,
+    animated: bool,
+    gpu: F,
+  ) -> bool
+  where
+    F: FnOnce(&Pixmap, &crate::config::BlurConfig, f32) -> Option<Pixmap>,
+  {
     let mut changed = false;
     let size = (canvas.width(), canvas.height());
     if size.0 == 0 || size.1 == 0 {
@@ -120,6 +156,22 @@ impl GlassCache {
         .is_some_and(|at| now.duration_since(at) < theme.blur.refresh)
     {
       return changed;
+    }
+
+    // The GPU blur is the preferred path: it runs a full-resolution separable
+    // Gaussian and hands the pixels straight back. If it cannot build a
+    // pipeline or map its readback buffer, the CPU pyramid below still gives us
+    // a backdrop instead of a bare panel.
+    let started = Instant::now();
+    if let Some(pixmap) = gpu(canvas.pixmap(), &theme.blur, scale) {
+      self.blurred = Some(pixmap);
+      self.frame_id = frame_id;
+      self.prepared_at = Some(now);
+      self.last_cost = started.elapsed();
+      // Drop any worker that raced with this refresh. Its result belongs to an
+      // older frame and would replace the newer GPU backdrop a frame later.
+      self.pending = None;
+      return true;
     }
 
     // The first blur has to be synchronous: a sec later the panel would flash
@@ -227,6 +279,17 @@ impl GlassCache {
     }
   }
 
+  /// Paints just the blurred backdrop, with no tint, border, shadow, or grain.
+  ///
+  /// Widget plates and decor panels use this so they can supply their own fill
+  /// on top. When no blur is cached this does nothing, which is the same rule
+  /// the login card follows: a missing backdrop never turns into a black box.
+  pub fn backdrop(&self, canvas: &mut Canvas, rect: Rect, radius: f32, opacity: f32) {
+    if let Some(blurred) = &self.blurred {
+      canvas.fill_blurred(rect, radius, blurred, opacity);
+    }
+  }
+
   /// True when a blurred backdrop is available for panels.
   #[must_use]
   pub fn has_blur(&self) -> bool {
@@ -243,6 +306,16 @@ impl GlassCache {
   pub fn cached_frame(&self) -> u64 {
     self.frame_id
   }
+
+  /// Size of the cached blur, for tests. The window only needs the pixels
+  /// through [`Self::panel`] and [`Self::backdrop`].
+  #[cfg(test)]
+  pub(crate) fn blur_size(&self) -> Option<(u32, u32)> {
+    self
+      .blurred
+      .as_ref()
+      .map(|pixmap| (pixmap.width(), pixmap.height()))
+  }
 }
 
 impl Default for GlassCache {
@@ -257,12 +330,10 @@ fn make_blurred(source: &Pixmap, blur: &crate::config::BlurConfig, scale: f32) -
   // the CPU cost by up to 16x and keeps a 60 fps wallpaper smooth even when
   // the panel is blurred. Small canvases stay at their native size.
   let shortest = source.width().min(source.height());
-  let factor = if shortest >= 720 {
-    16
-  } else if shortest >= 360 {
-    8
-  } else if shortest >= 180 {
+  let factor = if shortest >= 360 {
     4
+  } else if shortest >= 180 {
+    2
   } else {
     1
   };
@@ -295,14 +366,28 @@ fn make_blurred(source: &Pixmap, blur: &crate::config::BlurConfig, scale: f32) -
     current = upsample(&current, target.width(), target.height(), level_radius);
   }
 
-  finish(&mut current, blur.noise, blur.brightness);
-  Some(current)
+  // The pyramid ends at the working resolution. Upscale once before the grain
+  // pass so the noise lands at output resolution instead of turning into
+  // 4x4 or 16x16 blotches when `fill_blurred` magnifies the texture.
+  let longest = source.width().max(source.height());
+  let (out_w, out_h) = if longest > 1920 {
+    let scale = 1920.0 / longest as f32;
+    (
+      (source.width() as f32 * scale).round().max(1.0) as u32,
+      (source.height() as f32 * scale).round().max(1.0) as u32,
+    )
+  } else {
+    (source.width(), source.height())
+  };
+  let mut output = resize(&current, out_w, out_h);
+  finish(&mut output, blur.noise, blur.brightness);
+  Some(output)
 }
 
 /// Hyprland's `blurprepare`: apply the contrast gain and any brightness above
 /// 1.0 before the pyramid. The default brightness is below 1, so it darkens in
 /// `finish` instead, exactly like the shader pair.
-fn prepare(source: &Pixmap, contrast: f32, brightness: f32) -> Pixmap {
+pub(crate) fn prepare(source: &Pixmap, contrast: f32, brightness: f32) -> Pixmap {
   let mut output = source.clone();
   let contrast = contrast.max(0.0);
   let brighten = brightness.max(1.0);
@@ -416,7 +501,7 @@ fn upsample(source: &Pixmap, width: u32, height: u32, radius: f32) -> Pixmap {
 /// `blurFinish`: deterministic per-pixel grain and the final brightness. The
 /// grain depends on the pixel coordinate, not on time, so a still wallpaper
 /// does not shimmer.
-fn finish(source: &mut Pixmap, noise: f32, brightness: f32) {
+pub(crate) fn finish(source: &mut Pixmap, noise: f32, brightness: f32) {
   let pixel_width = source.width();
   let width = pixel_width as f32;
   let height = source.height() as f32;
@@ -621,11 +706,12 @@ fn make_noise() -> Option<Pixmap> {
 
 #[cfg(test)]
 mod tests {
-  use super::GlassCache;
-  use crate::config::Config;
+  use super::{GlassCache, make_blurred};
+  use crate::config::{BlurConfig, Config};
   use crate::ui::canvas::Canvas;
   use crate::ui::theme::Theme;
   use std::time::Instant;
+  use tiny_skia::Pixmap;
 
   #[test]
   fn blur_cache_refreshes_only_when_needed() {
@@ -652,5 +738,88 @@ mod tests {
     let mut cache = GlassCache::new();
     cache.prepare(&canvas, 1, Instant::now(), &theme, 1.0, false);
     assert!(!cache.has_blur());
+  }
+
+  /// A GPU blur that returns pixels must be stored as-is, not reprocessed by
+  /// the CPU pyramid. The 8x8 marker size is impossible for a 32x32 canvas, so
+  /// the assertion can only pass if the closure result won.
+  #[test]
+  fn prepare_with_prefers_the_gpu_result() {
+    let config = Config::default();
+    let theme = Theme::from(&config);
+    let mut canvas = Canvas::new(32, 32).unwrap();
+    canvas.clear(config.background.color);
+    let mut cache = GlassCache::new();
+    let now = Instant::now();
+    let changed = cache.prepare_with(&canvas, 7, now, &theme, 1.0, false, |_, _, _| {
+      Pixmap::new(8, 8)
+    });
+    assert!(changed);
+    assert_eq!(cache.cached_frame(), 7);
+    assert_eq!(cache.blur_size(), Some((8, 8)));
+  }
+
+  /// When the GPU closure declines, the same call must fall through to the CPU
+  /// path and still cache a full-size backdrop. This is the live fallback after
+  /// a driver or readback failure.
+  #[test]
+  fn prepare_with_falls_back_to_the_cpu_path() {
+    let config = Config::default();
+    let theme = Theme::from(&config);
+    let mut canvas = Canvas::new(32, 32).unwrap();
+    canvas.clear(config.background.color);
+    let mut cache = GlassCache::new();
+    let now = Instant::now();
+    let changed = cache.prepare_with(&canvas, 3, now, &theme, 1.0, false, |_, _, _| None);
+    assert!(changed);
+    assert_eq!(cache.cached_frame(), 3);
+    assert_eq!(cache.blur_size(), Some((32, 32)));
+  }
+
+  /// A checkerboard is the worst case for any blur. If the result is not
+  /// measurably flatter than the source, the kernel is not doing its job.
+  #[test]
+  fn blurring_a_checkerboard_reduces_variance() {
+    let mut source = Pixmap::new(16, 16).unwrap();
+    for (index, pixel) in source
+      .data_mut()
+      .as_chunks_mut::<4>()
+      .0
+      .iter_mut()
+      .enumerate()
+    {
+      let value = if (index % 16 + index / 16) % 2 == 0 {
+        255
+      } else {
+        0
+      };
+      pixel.copy_from_slice(&[value, value, value, 255]);
+    }
+    let blur = BlurConfig {
+      size: 4.0,
+      passes: 3,
+      noise: 0.0,
+      ..BlurConfig::default()
+    };
+    let output = make_blurred(&source, &blur, 1.0).expect("the CPU blur must produce a pixmap");
+    assert!(variance(output.data()) < variance(source.data()));
+  }
+
+  /// Luminance variance over the RGB channels of an RGBA byte buffer.
+  fn variance(data: &[u8]) -> f64 {
+    let values: Vec<f64> = data
+      .as_chunks::<4>()
+      .0
+      .iter()
+      .map(|pixel| {
+        0.299 * f64::from(pixel[0]) + 0.587 * f64::from(pixel[1]) + 0.114 * f64::from(pixel[2])
+      })
+      .collect();
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    values
+      .iter()
+      .map(|value| (value - mean).powi(2))
+      .sum::<f64>()
+      / values.len() as f64
   }
 }
