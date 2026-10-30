@@ -18,12 +18,12 @@ use crate::config::raw::{
 };
 use crate::config::{
   AuthConfig, BackgroundConfig, BackgroundKind, BackgroundOverride, BlurConfig, ButtonEffect,
-  CaretStyle, ClockConfig, ClockStyle, Config, DecorMotion, FieldConfig, GpuBackend, GpuConfig,
-  GpuDevice, GpuFallback, GpuPower, GpuPresent, HintConfig, HoverReveal, Issue, LayoutConfig,
-  Location, LoginConfig, MediaArt, MediaConfig, MediaLayout, MediaLook, MediaProgress,
-  MotionConfig, PlateStyle, PluginsConfig, PowerConfig, SecondHand, SessionRowConfig,
-  SessionsConfig, SurfaceStyle, ThemeConfig, ThemePreset, UiConfig, WidgetLayer, WidgetLook,
-  WidgetPlate, WidgetState,
+  CaretStyle, ClockConfig, ClockStyle, Config, DecorMotion, EnterFrom, EnterStyle, FieldConfig,
+  GpuBackend, GpuConfig, GpuDevice, GpuFallback, GpuPower, GpuPresent, HintConfig, HoverReveal,
+  Issue, LayoutConfig, Location, LoginConfig, MediaArt, MediaConfig, MediaLayout, MediaLook,
+  MediaProgress, MotionConfig, PlateStyle, PluginsConfig, PowerConfig, SecondHand,
+  SessionRowConfig, SessionsConfig, SurfaceStyle, ThemeConfig, ThemePreset, UiConfig, WidgetLayer,
+  WidgetLook, WidgetPlate, WidgetState,
 };
 use crate::layout::{Anchor, Fit, Placement};
 
@@ -688,6 +688,13 @@ impl<'a> Validator<'a> {
         10,
         60,
       ) as u32,
+      parallax: self.range(
+        raw.motion.parallax.as_ref(),
+        "motion.parallax",
+        f64::from(defaults.motion.parallax),
+        0.0,
+        2.0,
+      ) as f32,
     };
 
     let power = PowerConfig {
@@ -2114,6 +2121,83 @@ impl<'a> Validator<'a> {
         0,
         2000,
       ) as i32,
+      parallax_depth: self.range(
+        raw.parallax_depth.as_ref(),
+        &key("parallax_depth"),
+        f64::from(default.parallax_depth),
+        0.0,
+        1.0,
+      ) as f32,
+      enter: self.choice(
+        raw.enter.as_ref(),
+        &key("enter"),
+        default.enter,
+        EnterStyle::parse,
+        "none, fade, slide, or scale",
+      ),
+      enter_ms: self.range(
+        raw.enter_ms.as_ref(),
+        &key("enter_ms"),
+        f64::from(default.enter_ms),
+        0.0,
+        20000.0,
+      ) as f32,
+      enter_delay_ms: self.range(
+        raw.enter_delay_ms.as_ref(),
+        &key("enter_delay_ms"),
+        f64::from(default.enter_delay_ms),
+        0.0,
+        20000.0,
+      ) as f32,
+      enter_from: self.choice(
+        raw.enter_from.as_ref(),
+        &key("enter_from"),
+        default.enter_from,
+        EnterFrom::parse,
+        "left, right, top, or bottom",
+      ),
+      wave: self.range(
+        raw.wave.as_ref(),
+        &key("wave"),
+        f64::from(default.wave),
+        0.0,
+        40.0,
+      ) as f32,
+      wave_ms: self.range(
+        raw.wave_ms.as_ref(),
+        &key("wave_ms"),
+        f64::from(default.wave_ms),
+        200.0,
+        20000.0,
+      ) as f32,
+      wave_step: self.range(
+        raw.wave_step.as_ref(),
+        &key("wave_step"),
+        f64::from(default.wave_step),
+        0.0,
+        1.0,
+      ) as f32,
+      scramble_ms: self.range(
+        raw.scramble_ms.as_ref(),
+        &key("scramble_ms"),
+        f64::from(default.scramble_ms),
+        0.0,
+        20000.0,
+      ) as f32,
+      glitch: self.range(
+        raw.glitch.as_ref(),
+        &key("glitch"),
+        f64::from(default.glitch),
+        0.0,
+        1.0,
+      ) as f32,
+      glitch_ms: self.range(
+        raw.glitch_ms.as_ref(),
+        &key("glitch_ms"),
+        f64::from(default.glitch_ms),
+        200.0,
+        20000.0,
+      ) as f32,
     };
     // A scrolling ticker needs a window. Without one the item would silently
     // paint at its text width, which looks like a config typo rather than a

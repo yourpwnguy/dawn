@@ -55,6 +55,13 @@ pub struct Scene<'a> {
   pub asset_warning: Option<&'a str>,
   /// Current drag offsets, keyed by widget id.
   pub drag: &'a Drag,
+  /// Pointer position in physical pixels when it is inside the window. `None`
+  /// in screenshots and whenever the pointer has left, which keeps parallax at
+  /// its neutral offset instead of guessing a position.
+  pub cursor: Option<(f32, f32)>,
+  /// Window size in physical pixels. Parallax normalises the pointer against
+  /// this so the effect is the same on every display size.
+  pub screen: (f32, f32),
 }
 
 /// Draws one complete frame and returns the hit regions it produced. The
@@ -840,6 +847,140 @@ fn draw_login_tab(
   );
 }
 
+/// Pointer-driven parallax offset for one decor item or built-in widget.
+///
+/// The result is in logical pixels unless `scale` is non-zero, in which case it
+/// also carries the output scale for callers that paint in physical pixels.
+/// `depth` is the per-item strength and `[motion].parallax` is the global
+/// multiplier. Either one at zero disables the effect, and a missing pointer or
+/// a zero-sized screen returns zero so screenshots and headless runs never
+/// invent a cursor position.
+fn parallax_offset(scene: &Scene<'_>, depth: f32, scale: f32) -> (f32, f32) {
+  let Some(cursor) = scene.cursor else {
+    return (0.0, 0.0);
+  };
+  let strength = scene.theme.motion.parallax * depth;
+  if strength <= 0.0 || scene.screen.0 <= 0.0 || scene.screen.1 <= 0.0 {
+    return (0.0, 0.0);
+  }
+  let nx = (cursor.0 / scene.screen.0 - 0.5) * 2.0;
+  let ny = (cursor.1 / scene.screen.1 - 0.5) * 2.0;
+  (-nx * strength * 28.0 * scale, -ny * strength * 20.0 * scale)
+}
+
+/// Whether the glitch window is open at `elapsed`.
+///
+/// The window is the first 8 percent of each `glitch_ms` period. Text changes
+/// for a short burst and then rests, which reads as a corrupted signal instead
+/// of a constant shimmer. A zero strength or period keeps it closed.
+fn glitch_window(elapsed: f32, glitch: f32, glitch_ms: f32) -> bool {
+  if glitch <= 0.0 || glitch_ms <= 0.0 {
+    return false;
+  }
+  (elapsed / (glitch_ms / 1000.0)) % 1.0 < 0.08
+}
+
+/// One pseudo-random glyph for the scramble effect.
+///
+/// We deliberately do not pull in a random number generator. A tiny integer
+/// hash keyed by the character index and the current tick is deterministic
+/// across runs, so the same frame always looks the same, while a new tick
+/// reshuffles the tail. That makes screenshots and tests reproducible.
+fn scramble_glyph(index: usize, tick: u64) -> char {
+  const GLYPHS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&";
+  let mut hash =
+    (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ tick.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+  hash ^= hash >> 33;
+  hash = hash.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+  hash ^= hash >> 33;
+  GLYPHS[(hash % GLYPHS.len() as u64) as usize] as char
+}
+
+/// Applies the scramble reveal to one run.
+///
+/// Characters become real from the head as `reveal` grows. Every character has
+/// a threshold of `(index + 1) / count`, so a reveal of 0.5 keeps the first
+/// half and replaces the rest. Whitespace is preserved verbatim: scrambling a
+/// space into a glyph would change the line width and make the text jump.
+fn scramble_run(run: &str, reveal: f32, tick: u64) -> String {
+  let chars: Vec<char> = run.chars().collect();
+  let count = chars.len();
+  if count == 0 {
+    return String::new();
+  }
+  let mut out = String::with_capacity(run.len());
+  for (index, ch) in chars.into_iter().enumerate() {
+    let threshold = (index + 1) as f32 / count as f32;
+    if ch.is_whitespace() || reveal >= threshold {
+      out.push(ch);
+    } else {
+      out.push(scramble_glyph(index, tick));
+    }
+  }
+  out
+}
+
+/// Computes the visible scramble run from the motion clock.
+///
+/// At `elapsed = 0` the final text is returned unchanged. That is the one
+/// exception to "start at the beginning": a screenshot has no time axis, so
+/// showing a wall of noise would make the captured frame useless. Live, the
+/// effect resolves over `scramble_ms`.
+fn scramble_text(run: &str, elapsed: f32, scramble_ms: f32, tick: u64) -> String {
+  if elapsed <= 0.0 || scramble_ms <= 0.0 {
+    return run.to_string();
+  }
+  let reveal = (elapsed * 1000.0 / scramble_ms).clamp(0.0, 1.0);
+  scramble_run(run, reveal, tick)
+}
+
+/// Draws a text run one character at a time with a sine wave per glyph.
+///
+/// Each character is measured and advanced independently, which is what lets
+/// the glyphs ride different vertical offsets without changing the run width.
+/// We ignore `stroke` here on purpose: the outline path draws eight copies per
+/// character, and eight outline passes for every glyph is a lot of pixels for
+/// an effect that already moves. A waving fill reads clearly without it.
+/// One wavy text run. Bundling the shaping and wave inputs keeps the helper
+/// readable; passing eleven positional arguments made every call site a game
+/// of remembering which float was which.
+struct WaveText<'a> {
+  run: &'a str,
+  style: Style,
+  area: Area,
+  size: f32,
+  weight: cosmic_text::Weight,
+  tracking: f32,
+  amplitude: f32,
+  phase: f32,
+  step: f32,
+}
+
+fn draw_wave_text(text: &mut TextEngine, layer: &mut Canvas, wave: WaveText<'_>) {
+  let WaveText {
+    run,
+    style,
+    area,
+    size,
+    weight,
+    tracking,
+    amplitude,
+    phase,
+    step,
+  } = wave;
+  let mut x = area.x;
+  for (index, ch) in run.chars().enumerate() {
+    let mut buffer = [0u8; 4];
+    let glyph = ch.encode_utf8(&mut buffer);
+    let (char_w, _) = text.measure_with(glyph, size, f32::MAX / 4.0, false, weight, tracking);
+    let y = (TAU * (phase + index as f32 * step)).sin() * amplitude;
+    let mut char_area = Area::new(x, area.y + y, char_w.max(1.0));
+    char_area.clip = area.clip;
+    text.draw_line(layer, glyph, style, char_area);
+    x += char_w;
+  }
+}
+
 /// Draws the configured decor inside the card. Images are already decoded, so
 /// this only card_scales them to their display width. Items paint in list
 /// order, so a later item covers an earlier one. The form paints afterwards,
@@ -864,9 +1005,13 @@ fn draw_login_decor(
     let sample = item.motion.sample(elapsed);
     let opacity = item.opacity * sample.opacity;
     let angle = item.rotation + sample.angle;
+    // Parallax is a logical offset, so it joins the configured offset before
+    // the card scale is applied. Passing 1.0 here keeps the helper from
+    // painting the display scale twice.
+    let parallax = parallax_offset(scene, item.motion.parallax_depth, 1.0);
     let offset = (
-      ((item.offset.0 as f32 + sample.offset.0) * card_scale).round() as i32,
-      ((item.offset.1 as f32 + sample.offset.1) * card_scale).round() as i32,
+      ((item.offset.0 as f32 + sample.offset.0 + parallax.0) * card_scale).round() as i32,
+      ((item.offset.1 as f32 + sample.offset.1 + parallax.1) * card_scale).round() as i32,
     );
     if item.panel {
       // Typer and ticker only have a text run to work on, so a panel simply
@@ -983,11 +1128,24 @@ fn draw_login_decor(
           },
         );
       } else {
-        // Typewriter: reveal whole characters, never partial glyphs. `round`
-        // means the last character appears once we are past its midpoint,
-        // which keeps the cadence even for short strings. A tickered item
-        // never reaches this branch because a marquee already shows the run.
-        let shown = if item.motion.typer_ms > 0.0 {
+        // The scramble reveal wins over the typewriter on the same item, and
+        // a ticker would have taken the branch above. At `elapsed = 0` the
+        // scramble helper returns the full run so a screenshot stays readable
+        // instead of showing a wall of noise.
+        //
+        // The typewriter reveals whole characters, never partial glyphs.
+        // `round` means the last character appears once we are past its
+        // midpoint, which keeps the cadence even for short strings. A
+        // tickered item never reaches this branch because a marquee already
+        // shows the run.
+        let shown = if item.motion.scramble_ms > 0.0 {
+          scramble_text(
+            &item.text,
+            sample.elapsed,
+            item.motion.scramble_ms,
+            (sample.elapsed * 12.0) as u64,
+          )
+        } else if item.motion.typer_ms > 0.0 {
           let count = item.text.chars().count();
           let visible = (sample.reveal * count as f32).round() as usize;
           if visible == 0 {
@@ -998,7 +1156,8 @@ fn draw_login_decor(
           item.text.clone()
         };
         // Same reasoning as the ticker: anchor the static and typer text by
-        // its painted width, not the default-style width.
+        // its painted width, not the default-style width. The wave uses the
+        // same box, so the item does not jump when it starts moving.
         let (width, height) = text.measure_with(
           &shown,
           size,
@@ -1011,18 +1170,32 @@ fn draw_login_decor(
           .anchor
           .place((card.w, card.h), (width.max(1.0), height), offset);
         let rect = Rect::new(card.x + x, card.y + y, width.max(1.0), height);
-        // The outline sits outside the fill bounds. Grow the layer by the
-        // stroke radius so the eight offset copies are not clipped at the
-        // edge of the text rectangle.
-        let stroke_radius = if item.stroke.is_some() {
+        let wave_on = item.motion.wave > 0.0;
+        let wave_amp = if wave_on {
+          item.motion.wave * card_scale
+        } else {
+          0.0
+        };
+        let glitch_on = glitch_window(sample.elapsed, item.motion.glitch, item.motion.glitch_ms);
+        let glitch_dx = if item.motion.glitch > 0.0 {
+          (2.0 + 4.0 * item.motion.glitch) * card_scale
+        } else {
+          0.0
+        };
+        // The outline sits outside the fill bounds and the wave moves glyphs
+        // vertically, so grow the layer by the largest excursion. Without this
+        // the top and bottom of the wave would be clipped.
+        let stroke_radius = if item.stroke.is_some() && !wave_on {
           item.stroke_width * card_scale
         } else {
           0.0
         };
-        let bounds = if stroke_radius > 0.0 {
-          rect.inset(-stroke_radius)
+        let pad = stroke_radius.max(wave_amp).max(glitch_dx);
+        let bounds = if pad > 0.0 { rect.inset(-pad) } else { rect };
+        let wave_phase = if item.motion.wave_ms > 0.0 {
+          (sample.elapsed / (item.motion.wave_ms / 1000.0)) % 1.0
         } else {
-          rect
+          0.0
         };
         paint_transformed(
           canvas,
@@ -1032,6 +1205,60 @@ fn draw_login_decor(
           sample.scale,
           opacity,
           |layer, _| {
+            // Glitch is text-only, and these two coloured copies sit behind
+            // the real run. The offsets are deterministic, so the effect does
+            // not flicker differently on every repaint.
+            if glitch_on {
+              for (color, shift) in [
+                (Rgb::solid(255, 64, 64), -glitch_dx),
+                (Rgb::solid(64, 220, 255), glitch_dx),
+              ] {
+                let copy_style = Style {
+                  color: color.with_alpha(70),
+                  ..style
+                };
+                let copy_area = Area::new(rect.x + shift, rect.y, width.max(1.0)).clip(bounds);
+                if wave_on {
+                  draw_wave_text(
+                    text,
+                    layer,
+                    WaveText {
+                      run: &shown,
+                      style: copy_style,
+                      area: copy_area,
+                      size,
+                      weight: style.weight,
+                      tracking: style.tracking,
+                      amplitude: wave_amp,
+                      phase: wave_phase,
+                      step: item.motion.wave_step,
+                    },
+                  );
+                } else {
+                  text.draw_line(layer, &shown, copy_style, copy_area);
+                }
+              }
+            }
+            if wave_on {
+              // Wave ignores `stroke`: eight outline passes per character is
+              // not worth the pixels, and the moving fill already reads well.
+              draw_wave_text(
+                text,
+                layer,
+                WaveText {
+                  run: &shown,
+                  style,
+                  area: Area::new(rect.x, rect.y, width.max(1.0)).clip(bounds),
+                  size,
+                  weight: style.weight,
+                  tracking: style.tracking,
+                  amplitude: wave_amp,
+                  phase: wave_phase,
+                  step: item.motion.wave_step,
+                },
+              );
+              return;
+            }
             if let Some(stroke) = item.stroke {
               // Eight copies on a 45-degree ring is enough for a clean
               // outline without a real glyph-stroking pass. The fill goes on
@@ -2273,9 +2500,14 @@ fn draw_plugins(
       if sample.is_some_and(|sample| !sample.blink_on) {
         continue;
       }
+      // Parallax is logical here; `widget_offset` applies the frame scale
+      // afterwards, exactly like the configured offset and the motion sample.
+      let parallax = look.map_or((0.0, 0.0), |look| {
+        parallax_offset(scene, look.motion.parallax_depth, 1.0)
+      });
       let configured = (
-        placement.offset.0 as f32 + sample.map_or(0.0, |sample| sample.offset.0),
-        placement.offset.1 as f32 + sample.map_or(0.0, |sample| sample.offset.1),
+        placement.offset.0 as f32 + sample.map_or(0.0, |sample| sample.offset.0) + parallax.0,
+        placement.offset.1 as f32 + sample.map_or(0.0, |sample| sample.offset.1) + parallax.1,
       );
       let id = widget_id(plugin, index, widget);
       let drag = scene.drag.offset(&id);
@@ -3120,7 +3352,10 @@ fn scaled_offset(offset: (i32, i32), scale: f32) -> (i32, i32) {
 mod tests {
   use std::time::Instant;
 
-  use super::{Scene, WidgetFrame, draw_media, widget_offset, widget_visible};
+  use super::{
+    Scene, WidgetFrame, draw_media, glitch_window, parallax_offset, scramble_run, scramble_text,
+    widget_offset, widget_visible,
+  };
   use crate::color::Rgb;
   use crate::config::{Config, MediaLook};
   use crate::layout::Anchor;
@@ -3163,6 +3398,8 @@ mod tests {
       background_color: config.background.color,
       asset_warning: None,
       drag: &drag,
+      cursor: None,
+      screen: (480.0, 160.0),
     };
     let snapshot = MediaSnapshot {
       available: true,
@@ -3304,5 +3541,77 @@ mod tests {
       &authenticated
     ));
     assert!(!widget_visible(&[WidgetState::Idle], &[], &authenticated));
+  }
+
+  #[test]
+  fn scramble_run_reveals_from_the_head_and_is_deterministic() {
+    let run = "hello world";
+    // A screenshot and a settled effect both show the final text.
+    assert_eq!(scramble_text(run, 0.0, 1000.0, 3), run);
+    assert_eq!(scramble_run(run, 1.0, 3), run);
+
+    let half = scramble_run(run, 0.5, 3);
+    let original: Vec<char> = run.chars().collect();
+    let scrambled: Vec<char> = half.chars().collect();
+    assert_eq!(scrambled.len(), original.len());
+    for (index, (before, after)) in original.iter().zip(&scrambled).enumerate() {
+      if before.is_whitespace() {
+        assert_eq!(before, after, "whitespace at {index} must survive");
+      } else if index < original.len() / 2 {
+        assert_eq!(before, after, "head character at {index} should stay");
+      } else {
+        assert_ne!(before, after, "tail character at {index} should scramble");
+      }
+    }
+    // The same tick produces the same pixels; a new tick is free to reshuffle.
+    assert_eq!(scramble_run(run, 0.5, 3), half);
+  }
+
+  #[test]
+  fn glitch_window_is_open_only_at_the_start_of_a_period() {
+    assert!(glitch_window(0.0, 1.0, 1000.0));
+    assert!(glitch_window(0.05, 1.0, 1000.0));
+    assert!(!glitch_window(0.08, 1.0, 1000.0));
+    assert!(!glitch_window(0.5, 1.0, 1000.0));
+    // The next period opens again.
+    assert!(glitch_window(1.0, 1.0, 1000.0));
+    assert!(!glitch_window(0.0, 0.0, 1000.0));
+  }
+
+  #[test]
+  fn parallax_follows_the_pointer_and_needs_strength() {
+    let mut config = Config::default();
+    config.motion.parallax = 1.0;
+    let theme = Theme::from(&config);
+    let view = View::default();
+    let now = jiff::Zoned::now();
+    let drag = Drag::empty();
+    let frame_now = Instant::now();
+    let mut scene = Scene {
+      view: &view,
+      theme: &theme,
+      plugins: &[],
+      now: &now,
+      started: frame_now,
+      frame_now,
+      scale: 1.0,
+      motion: MotionFrame::settled(),
+      monitor: None,
+      background_color: config.background.color,
+      asset_warning: None,
+      drag: &drag,
+      cursor: None,
+      screen: (100.0, 100.0),
+    };
+    // No pointer means no offset, which is what a screenshot needs.
+    assert_eq!(parallax_offset(&scene, 1.0, 1.0), (0.0, 0.0));
+    scene.cursor = Some((0.0, 50.0));
+    let left = parallax_offset(&scene, 1.0, 1.0);
+    assert!(left.0 > 0.0);
+    scene.cursor = Some((100.0, 50.0));
+    let right = parallax_offset(&scene, 1.0, 1.0);
+    assert!(right.0 < 0.0);
+    // Depth zero removes the strength even while the pointer is inside.
+    assert_eq!(parallax_offset(&scene, 0.0, 1.0), (0.0, 0.0));
   }
 }

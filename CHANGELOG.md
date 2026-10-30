@@ -2,6 +2,17 @@
 
 All notable changes to dawn are recorded here.
 
+## 0.2.2 - 2026-10-30
+
+### Added
+
+- A decor motion pack: cursor parallax with a global `[motion].parallax`
+  strength, one-shot `enter` choreography (`fade`, `slide`, `scale`), a
+  per-character text `wave`, a `scramble_ms` text reveal, and a text `glitch`
+  effect with coloured offset copies. All eleven per-item keys work on
+  `[[login.decor]]`, and the built-in clock and media widget looks reuse the
+  same motion table.
+
 ## 0.2.1 - 2026-10-30
 
 ### Added
