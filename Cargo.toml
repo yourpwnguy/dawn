@@ -1,6 +1,6 @@
 [package]
 name = "dawn"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 rust-version = "1.89"
 description = "A GPU-composited greetd login greeter with animated wallpapers, themes, widgets, and declarative plugins"

@@ -34,6 +34,7 @@ use crate::ui::motion::MotionFrame;
 use crate::ui::text::{Area, Style, TextEngine};
 use crate::ui::theme::Theme;
 use crate::ui::view::{Tone, View};
+use crate::ui::{battery, calendar, system};
 
 const MAX_PICKER_ROWS: usize = 10;
 
@@ -2347,6 +2348,9 @@ fn widget_id(plugin: &Plugin, index: usize, widget: &Widget) -> String {
     match widget {
       Widget::Clock { .. } => return "clock".to_string(),
       Widget::Media { .. } => return "media".to_string(),
+      Widget::Calendar { .. } => return "calendar".to_string(),
+      Widget::Battery { .. } => return "battery".to_string(),
+      Widget::System { .. } => return "system".to_string(),
       _ => {}
     }
   }
@@ -2377,6 +2381,12 @@ fn widget_layer(scene: &Scene<'_>, plugin: &Plugin, widget: &Widget) -> WidgetLa
   match widget {
     Widget::Clock { .. } => scene.theme.clock_layer,
     Widget::Media { .. } => scene.theme.media_layer,
+    // The calendar, battery, and system widgets carry their own configured
+    // layer because they are optional first-party extras rather than part of
+    // the historical clock/media theme slots.
+    Widget::Calendar { spec, .. } => spec.layer,
+    Widget::Battery { spec, .. } => spec.layer,
+    Widget::System { spec, .. } => spec.layer,
     _ => WidgetLayer::Behind,
   }
 }
@@ -2547,6 +2557,9 @@ fn draw_plugins(
         match widget {
           Widget::Clock { .. } => Some(&scene.theme.clock_look),
           Widget::Media { .. } => Some(&scene.theme.media_look),
+          Widget::Calendar { spec, .. } => Some(&spec.look),
+          Widget::Battery { spec, .. } => Some(&spec.look),
+          Widget::System { spec, .. } => Some(&spec.look),
           _ => None,
         }
       } else {
@@ -2651,6 +2664,119 @@ fn draw_plugins(
                   widget_elapsed(scene),
                   plate,
                   scene.theme,
+                );
+              },
+            );
+            regions.push(
+              HitRegion::rotated(id.clone(), bounds, *draggable, angle)
+                .with_drag_scale(frame.scale),
+            );
+            draw_drag_highlight(canvas, bounds, &id, scene, accent, frame.scale);
+          }
+        }
+        Widget::Calendar {
+          spec, draggable, ..
+        } => {
+          if let Some(bounds) = calendar::bounds(
+            spec,
+            placement.anchor,
+            offset,
+            frame.viewport(),
+            frame.scale,
+            scene.now,
+          ) {
+            paint_transformed(
+              canvas,
+              bounds,
+              bounds.center(),
+              angle,
+              scale,
+              opacity,
+              |layer, _| {
+                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate);
+                calendar::draw(
+                  layer,
+                  text,
+                  spec,
+                  placement,
+                  frame.viewport(),
+                  frame.scale,
+                  scene.now,
+                );
+              },
+            );
+            regions.push(
+              HitRegion::rotated(id.clone(), bounds, *draggable, angle)
+                .with_drag_scale(frame.scale),
+            );
+            draw_drag_highlight(canvas, bounds, &id, scene, accent, frame.scale);
+          }
+        }
+        Widget::Battery {
+          spec, draggable, ..
+        } => {
+          if let Some(bounds) = battery::bounds(
+            spec,
+            &scene.view.battery,
+            placement.anchor,
+            offset,
+            frame.viewport(),
+            frame.scale,
+          ) {
+            paint_transformed(
+              canvas,
+              bounds,
+              bounds.center(),
+              angle,
+              scale,
+              opacity,
+              |layer, _| {
+                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate);
+                battery::draw(
+                  layer,
+                  text,
+                  spec,
+                  &scene.view.battery,
+                  placement,
+                  frame.viewport(),
+                  frame.scale,
+                );
+              },
+            );
+            regions.push(
+              HitRegion::rotated(id.clone(), bounds, *draggable, angle)
+                .with_drag_scale(frame.scale),
+            );
+            draw_drag_highlight(canvas, bounds, &id, scene, accent, frame.scale);
+          }
+        }
+        Widget::System {
+          spec, draggable, ..
+        } => {
+          if let Some(bounds) = system::bounds(
+            spec,
+            placement.anchor,
+            offset,
+            frame.viewport(),
+            frame.scale,
+          ) {
+            paint_transformed(
+              canvas,
+              bounds,
+              bounds.center(),
+              angle,
+              scale,
+              opacity,
+              |layer, _| {
+                paint_widget_backdrop(layer, bounds, scene.theme, frame.scale, plate);
+                system::draw(
+                  layer,
+                  text,
+                  spec,
+                  &scene.view.system,
+                  placement,
+                  frame.viewport(),
+                  frame.scale,
                 );
               },
             );
@@ -3544,8 +3670,12 @@ mod tests {
   use crate::color::Rgb;
   use crate::config::{Config, MediaLayout, MediaLook};
   use crate::layout::Anchor;
+  use crate::plugin;
+  use crate::sysinfo::{BatterySnapshot, SystemSnapshot};
+  use crate::ui::background::BackgroundView;
   use crate::ui::canvas::{Canvas, Rect};
   use crate::ui::drag::Drag;
+  use crate::ui::glass::GlassCache;
   use crate::ui::media::MediaSnapshot;
   use crate::ui::motion::MotionFrame;
   use crate::ui::text::TextEngine;
@@ -3682,6 +3812,98 @@ mod tests {
       angle,
     )
     .controls
+  }
+
+  /// Renders the three new first-party widgets from a plain [`View`], which is
+  /// the same path the live window and `--screenshot` use. A fake battery and
+  /// system snapshot keep the test independent of the host hardware. Setting
+  /// `DAWN_WIDGET_SCREENSHOT` also writes the frame as a PNG for visual review;
+  /// a normal test run writes nothing.
+  #[test]
+  fn first_party_widgets_paint_from_the_view_snapshot() {
+    let mut config = Config::default();
+    config.clock.enabled = false;
+    config.media.enabled = false;
+    config.calendar.enabled = true;
+    config.calendar.placement.anchor = Anchor::TopRight;
+    config.calendar.placement.offset = (40, 40);
+    config.battery.enabled = true;
+    config.battery.placement.anchor = Anchor::BottomRight;
+    config.battery.placement.offset = (40, 40);
+    config.system.enabled = true;
+    config.system.placement.anchor = Anchor::TopLeft;
+    config.system.placement.offset = (40, 40);
+    config.system.style = crate::config::SystemStyle::Sparkline;
+    // The documented defaults are tuned for the light kinich wallpaper. On the
+    // default dark preset the screenshot uses the theme's muted tone so the
+    // labels stay readable.
+    config.system.label_color = Rgb::solid(0xA9, 0xB4, 0xC8);
+    config.calendar.muted_color = Rgb::solid(0xA9, 0xB4, 0xC8);
+
+    let theme = Theme::from(&config);
+    let battery = BatterySnapshot {
+      present: true,
+      percent: 73,
+      charging: true,
+      full: false,
+    };
+    let mut history = Vec::new();
+    for index in 0..32 {
+      history.push(0.45 + (index as f32 * 0.37).sin() * 0.35 + index as f32 * 0.01);
+    }
+    let system = SystemSnapshot {
+      hostname: "dawn".to_string(),
+      kernel: "6.12.4-dawn".to_string(),
+      uptime: Duration::from_secs(3 * 86_400 + 4 * 3_600 + 12 * 60),
+      load: [0.42, 0.31, 0.20],
+      mem_used: 6_501_171,
+      mem_total: 16_252_928,
+      load_history: history,
+    };
+    let view = View {
+      battery,
+      system,
+      ..View::default()
+    };
+    let builtins = plugin::builtins(&config);
+    let now = jiff::Zoned::now();
+    let drag = Drag::empty();
+    let frame_now = Instant::now();
+    let scene = Scene {
+      view: &view,
+      theme: &theme,
+      plugins: &builtins.plugins,
+      now: &now,
+      started: frame_now,
+      frame_now,
+      scale: 1.0,
+      motion: MotionFrame::settled(),
+      monitor: None,
+      background_color: config.background.color,
+      asset_warning: None,
+      drag: &drag,
+      cursor: None,
+      screen: (1280.0, 720.0),
+    };
+    let mut canvas = Canvas::new(1280, 720).unwrap();
+    let mut text = TextEngine::new(&config.ui.font);
+    let mut background = BackgroundView::new(&config);
+    background.load_blocking((1280, 720), None, frame_now);
+    let mut glass = GlassCache::new();
+    let regions = super::paint(&mut canvas, &mut text, &mut background, &mut glass, &scene);
+    for id in ["calendar", "battery", "system"] {
+      assert!(
+        regions.iter().any(|region| region.id == id),
+        "missing hit region for {id}"
+      );
+    }
+    if let Some(path) = std::env::var_os("DAWN_WIDGET_SCREENSHOT") {
+      let path = std::path::PathBuf::from(path);
+      if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+      }
+      canvas.save_png(&path).unwrap();
+    }
   }
 
   #[test]

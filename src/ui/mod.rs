@@ -17,6 +17,8 @@
 
 pub mod anim;
 pub mod background;
+pub mod battery;
+pub mod calendar;
 pub mod canvas;
 pub mod clock;
 pub mod drag;
@@ -29,6 +31,7 @@ pub mod motion;
 pub mod render;
 pub mod screenshot;
 pub mod stream;
+pub mod system;
 pub mod text;
 pub mod theme;
 pub mod video;

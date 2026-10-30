@@ -649,6 +649,161 @@ Plugin widgets do not have a plate or motion table yet. They choose a paint
 layer per widget with `layer = "behind" | "front"`, and the form still paints
 after both layers. See [the plugin API](plugins.md#layers).
 
+## `[calendar]`
+
+The calendar is a first-party month grid built from the local date. It has no
+event source and makes no network request: what you see is the system clock and
+a seven-column view of the current month. It is disabled by default so an
+existing config renders exactly as before.
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `enabled` | bool | `false` | Show the calendar. |
+| `layer` | string | `"behind"` | `behind` paints in screen space before decor; `front` paints after decor but before the form and uses card space. |
+| `anchor` | string | `"top-right"` | One of the anchors listed under `[login]`. |
+| `offset` | `[x, y]` | `[40, 40]` | Logical pixel margin from the anchor. |
+| `monitor` | string | unset | Output name restriction. Unset shows the widget on every output. |
+| `rotation` | number | `0` | Rotate the widget in degrees (-360 to 360). |
+| `size` | number | `13` | Day number font size, 8 to 48. The cell height is twice this value. |
+| `width` | number | `260` | Total content width, 120 to 800. The seven columns divide it evenly. |
+| `week_start` | string | `"monday"` | `monday` or `sunday`. |
+| `show_header` | bool | `true` | Draw the month name and year above the weekday row. |
+| `color` | colour | `#F7F3E9` | Ordinary day numbers. |
+| `muted_color` | colour | `#8A8D80` | Weekday labels and other secondary text. |
+| `today_color` | colour | `#E2734F` | Fill behind the current day. |
+| `header_color` | colour | `#E7DA19` | Month and year label. |
+| `draggable` | bool | `true` | Let the pointer move the calendar. Saved by `[layout]`. |
+| `plate` | table | see below | Backplate style, colour, border, glow, shadow, padding, radius, and opacity. |
+| `motion` | table | static | Animated decor motion applied to the whole widget. |
+| `show_on` | array | empty | States that may show the calendar. Empty means every state. |
+| `hide_on` | array | empty | States that hide the calendar. Wins over `show_on`. |
+
+```toml
+[calendar]
+enabled = true
+anchor = "top-right"
+offset = [40, 40]
+size = 13
+width = 260
+week_start = "monday"
+show_header = true
+color = "#F7F3E9"
+muted_color = "#8A8D80"
+today_color = "#E2734F"
+header_color = "#E7DA19"
+draggable = true
+```
+
+`[calendar.plate]`, `[calendar.motion]`, `show_on`, and `hide_on` accept exactly
+the same values as `[clock.plate]`, `[clock.motion]`, `[clock].show_on`, and
+`[clock].hide_on` above.
+
+## `[battery]`
+
+The battery widget reads `/sys/class/power_supply` and nothing else. It is
+disabled by default, and on a desktop with no battery it draws a muted
+`NO BATTERY` label instead of a fake percentage.
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `enabled` | bool | `false` | Show the battery widget. |
+| `layer` | string | `"behind"` | `behind` paints in screen space before decor; `front` paints after decor but before the form and uses card space. |
+| `anchor` | string | `"bottom-right"` | Placement anchor. |
+| `offset` | `[x, y]` | `[40, 40]` | Logical pixel margin. |
+| `monitor` | string | unset | Output name restriction. |
+| `rotation` | number | `0` | Rotate the widget in degrees (-360 to 360). |
+| `size` | number | `14` | Text and geometry scale, 8 to 48. |
+| `width` | number | `220` | Total content width, 120 to 800. |
+| `style` | string | `"ring"` | `ring` (sixty radial segments), `bar` (horizontal bar), or `pill` (battery body with a terminal nub). |
+| `color` | colour | `#F7F3E9` | Normal charge colour. |
+| `low_color` | colour | `#E2734F` | Colour at or below `low_at` while discharging. |
+| `charging_color` | colour | `#C6D62B` | Colour while the battery reports `Charging`. Charging wins over low. |
+| `low_at` | integer | `20` | Low threshold from 0 to 100. |
+| `show_percent` | bool | `true` | Draw the percentage text. The bolt is drawn independently. |
+| `draggable` | bool | `true` | Let the pointer move the widget. Saved by `[layout]`. |
+| `plate` | table | see below | Backplate style, colour, border, glow, shadow, padding, radius, and opacity. |
+| `motion` | table | static | Animated decor motion applied to the whole widget. |
+| `show_on` | array | empty | States that may show the battery widget. Empty means every state. |
+| `hide_on` | array | empty | States that hide the battery widget. Wins over `show_on`. |
+
+```toml
+[battery]
+enabled = true
+anchor = "bottom-right"
+offset = [40, 40]
+size = 14
+width = 220
+style = "ring"
+color = "#F7F3E9"
+low_color = "#E2734F"
+charging_color = "#C6D62B"
+low_at = 20
+show_percent = true
+draggable = true
+```
+
+The widget refreshes once every two seconds. Reading a handful of sysfs files
+on the existing UI tick is cheaper and simpler than keeping a background thread
+alive for the whole greeter session.
+
+## `[system]`
+
+The system monitor reads `proc/sys/kernel/hostname`, `proc/sys/kernel/osrelease`,
+`proc/uptime`, `proc/loadavg`, and `proc/meminfo`. It is disabled by default and
+never writes a file or contacts the network.
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `enabled` | bool | `false` | Show the system monitor. |
+| `layer` | string | `"behind"` | `behind` paints in screen space before decor; `front` paints after decor but before the form and uses card space. |
+| `anchor` | string | `"top-left"` | Placement anchor. |
+| `offset` | `[x, y]` | `[40, 40]` | Logical pixel margin. |
+| `monitor` | string | unset | Output name restriction. |
+| `rotation` | number | `0` | Rotate the widget in degrees (-360 to 360). |
+| `size` | number | `12` | Font and row scale, 8 to 48. |
+| `width` | number | `280` | Content width, 120 to 800. |
+| `style` | string | `"rows"` | `rows` for label and value pairs, `sparkline` for a load history above those rows. |
+| `fields` | array | all five | Ordered list of `hostname`, `kernel`, `uptime`, `load`, and `memory`. At most six; duplicates and unknown names are dropped with an issue. |
+| `color` | colour | `#F7F3E9` | Reading values and the sparkline. |
+| `label_color` | colour | `#4E5148` | Uppercase labels and the sparkline baseline. |
+| `draggable` | bool | `true` | Let the pointer move the widget. Saved by `[layout]`. |
+| `plate` | table | see below | Backplate style, colour, border, glow, shadow, padding, radius, and opacity. |
+| `motion` | table | static | Animated decor motion applied to the whole widget. |
+| `show_on` | array | empty | States that may show the monitor. Empty means every state. |
+| `hide_on` | array | empty | States that hide the monitor. Wins over `show_on`. |
+
+```toml
+[system]
+enabled = true
+anchor = "top-left"
+offset = [40, 40]
+size = 12
+width = 280
+style = "rows"
+fields = ["hostname", "kernel", "uptime", "load", "memory"]
+color = "#F7F3E9"
+label_color = "#4E5148"
+draggable = true
+```
+
+The sparkline keeps the last 32 one-minute load samples, collected on the same
+two-second refresh. Uptime is shown as `3d 04h`, `02h 14m`, or `14m`, and
+memory as `6.2 / 15.5 GiB`.
+
+All three widgets share the clock's plate and motion vocabulary, so a HUD theme
+can give them the same border and glow:
+
+```toml
+[calendar.plate]
+style = "gradient"
+color = "#17191CE6"
+color_end = "#17191C00"
+gradient_angle = 90
+border = "#E7DA1966"
+padding = 14
+radius = 10
+```
+
 ## `[background]`
 
 | Key | Type | Default | Notes |

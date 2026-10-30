@@ -39,6 +39,9 @@ The rest is small conveniences: a clock and an MPRIS media widget, plus
 declarative plugin widgets that draw text, clocks, media, or PNGs. Plugins are
 inert. They cannot run code, read keystrokes, or see credentials.
 
+- Calendar, battery, and system widgets for the corners of a HUD theme. They
+  read the local date, `/sys/class/power_supply`, and `/proc` only.
+
 ## When something is broken
 
 Failure is handled field by field, not by throwing away the whole config. A bad
