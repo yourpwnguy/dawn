@@ -150,18 +150,14 @@ else to run.
 Let dawn write the commented first-run config:
 
 ```sh
-sudo dawn init
+dawn init
 ```
 
 It refuses to replace an existing file; pass `--force` to rewrite it. Use
 `dawn init --config PATH` to write an explicit file, for example in a test or a
-staging directory.
-
-If you prefer to start from the built-in defaults, let dawn write them:
-
-```sh
-sudo dawn init
-```
+staging directory. dawn asks for sudo itself when the target is not writable and
+the process has a terminal. Set `DAWN_NO_SUDO=1` to get the printed command
+instead.
 
 dawn reads, in order:
 
@@ -228,9 +224,9 @@ the bundle root and must live under `assets/`. A bundle must not set
 Create a commented bundle and validate it before installing:
 
 ```sh
-dawn new ./themes --id midnight
+dawn new midnight --parent ./themes
 dawn check ./themes/midnight
-sudo dawn add ./themes/midnight
+dawn add ./themes/midnight
 ```
 
 `dawn check` exits 0 with zero issues and prints a numbered report such as
@@ -238,19 +234,20 @@ sudo dawn add ./themes/midnight
 Install one bundle, or a directory containing several bundles:
 
 ```sh
-sudo dawn add ./midnight
-sudo dawn add ./themes
+dawn add ./midnight
+dawn add ./themes
 dawn list
 ```
 
 The default store is `/usr/share/dawn/themes`. A real greeter runs as the
 `greeter` user, which usually cannot read your home directory, so system
-themes are the normal choice. `--user` installs into
-`$XDG_DATA_HOME/dawn/themes` instead, normally `~/.local/share/dawn/themes`,
-for packaging tests and sandboxes. `--system` is still accepted and is now the
-default. Lookup checks the system store and every `DAWN_THEME_DIRS` entry first;
-a theme that exists only in the user store still loads but warns that it should
-be reinstalled with `sudo dawn add PATH --force`.
+themes are the normal choice. `dawn add` asks for sudo itself when it has a
+terminal and the store is not writable; `DAWN_NO_SUDO=1` prints the command
+instead. `--user` installs into `$XDG_DATA_HOME/dawn/themes`, normally
+`~/.local/share/dawn/themes`, for packaging tests and sandboxes. `--system` is
+still accepted and is now the default. Lookup checks the system store and every
+`DAWN_THEME_DIRS` entry first; a theme that exists only in the user store still
+loads but warns that it should be reinstalled with `dawn add PATH --force`.
 
 `dawn add` validates the manifest, the full config, every asset reference, and
 the tree against the DSB-2 rules. It rejects symlinks, absolute asset paths,
@@ -262,20 +259,21 @@ Revision 1 bundles still install as before, with one warning naming the
 migration command. Upgrade a tree in place with:
 
 ```sh
-sudo dawn add ./old-theme --migrate --force
+dawn add ./old-theme --migrate --force
 ```
 
 Migration moves root-level media into `assets/`, patches the matching config
 references, fills in a placeholder author marked as a TODO, rewrites the
 manifest as revision 2, and validates the result before replacing anything.
 
-Run a theme for one session:
+Select the boot theme by id:
 
 ```sh
-dawn --theme midnight
+dawn use midnight
 ```
 
-Or make it persistent by pointing the system config at it:
+That writes `[theme] package = "midnight"` into `/etc/dawn/config.toml` and
+leaves the rest of the file as it is. The equivalent hand edit is:
 
 ```toml
 # /etc/dawn/config.toml
@@ -286,10 +284,17 @@ package = "midnight"
 A pointer config is not merged with the bundle. The bundle's config is the
 single source of truth, and the pointer file only chooses it.
 
-Remove a system theme with `sudo dawn remove midnight` (the default store).
+To try a theme without changing the config:
+
+```sh
+dawn --theme midnight --dry-run
+```
+
+Remove a system theme with `dawn remove midnight` (the default store).
 Use `dawn remove --user midnight` for the user store; `--system` is still
-accepted. `dawn list` shows each theme's id, version, source, and name. Broken
-bundles are reported as warnings and skipped instead of breaking the list.
+accepted. `dawn list` shows each theme's id, version, source, name, and which
+one is active. Broken bundles are reported as warnings and skipped instead of
+breaking the list.
 
 The repository has six complete bundles under `examples/themes/` you can add,
 inspect, or copy as a starting point.

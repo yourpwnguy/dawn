@@ -102,7 +102,7 @@ Common causes:
 - `dawn list` shows the stores dawn will read. A theme must be a directory with
   `theme.toml` and `config.toml`.
 - A theme installed in your user store is not readable by the `greeter` user.
-  Move it to the system store with `sudo dawn add PATH --force`. Lookup warns
+  Move it to the system store with `dawn add PATH --force`. Lookup warns
   when it has to fall back to the deprecated user store.
 - `dawn add` refuses absolute asset paths, `..`, symlinks, `layout.save = true`,
   and nested `[theme].package` pointers. Those rules keep a bundle portable.

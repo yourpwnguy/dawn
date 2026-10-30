@@ -23,14 +23,43 @@ use super::spec::PREVIEW_FILE;
 const PREVIEW_WIDTH: u32 = 640;
 const PREVIEW_HEIGHT: u32 = 400;
 
+/// Turns a display name into a bundle id: lowercase ASCII letters and digits,
+/// with every other run of characters collapsed to a single dash.
+///
+/// Returns `None` when nothing usable is left, so `dawn new "..."` can tell the
+/// user to pick a name with at least one letter or digit.
+#[must_use]
+pub fn slug(name: &str) -> Option<String> {
+  let mut id = String::new();
+  for character in name.chars() {
+    if character.is_ascii_alphanumeric() {
+      id.push(character.to_ascii_lowercase());
+    } else if !id.is_empty() && !id.ends_with('-') {
+      id.push('-');
+    }
+  }
+  let id = id.trim_end_matches('-').to_string();
+  if valid_spec_id(&id) { Some(id) } else { None }
+}
+
 /// Creates `<parent>/<id>/` with all four required artifacts.
 ///
 /// The parent directory is created when missing. The target must not already
 /// exist: silently merging into an existing bundle would make `dawn new` a
 /// destructive command. `dawn add --migrate` is the way to upgrade a tree.
-pub fn create(parent: &Path, id: &str) -> Result<PathBuf, String> {
+pub fn create(parent: &Path, id: &str, name: &str) -> Result<PathBuf, String> {
   if !valid_spec_id(id) {
     return Err(format!("invalid bundle id {id:?}: use [a-z0-9][a-z0-9_-]*"));
+  }
+  let name = name.trim();
+  if name.is_empty() {
+    return Err("give the theme a name with at least one printable character".to_string());
+  }
+  if name.chars().count() > 80 {
+    return Err("the theme name is longer than 80 characters".to_string());
+  }
+  if name.chars().any(char::is_control) {
+    return Err("the theme name contains control characters".to_string());
   }
   std::fs::create_dir_all(parent)
     .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
@@ -51,7 +80,7 @@ pub fn create(parent: &Path, id: &str) -> Result<PathBuf, String> {
   let root = staging.path();
   std::fs::create_dir(root.join("assets"))
     .map_err(|error| format!("cannot create {}: {error}", root.join("assets").display()))?;
-  std::fs::write(root.join("theme.toml"), manifest(id))
+  std::fs::write(root.join("theme.toml"), manifest(id, name))
     .map_err(|error| format!("cannot write theme.toml: {error}"))?;
   std::fs::write(root.join("config.toml"), CONFIG)
     .map_err(|error| format!("cannot write config.toml: {error}"))?;
@@ -80,12 +109,15 @@ pub fn create(parent: &Path, id: &str) -> Result<PathBuf, String> {
 pub fn next_steps(path: &Path, id: &str) -> [String; 3] {
   [
     format!("next: dawn check {}", super::shell_quote(path)),
-    format!("next: sudo dawn add {} --force", super::shell_quote(path)),
-    format!("next: dawn --theme {id}"),
+    format!("next: dawn add {} --force", super::shell_quote(path)),
+    format!("next: dawn use {id}"),
   ]
 }
 
-fn manifest(id: &str) -> String {
+fn manifest(id: &str, name: &str) -> String {
+  // `toml` serialises the name as a proper basic string, so quotes and
+  // backslashes in a display name cannot break the manifest.
+  let name = toml::Value::String(name.to_string()).to_string();
   format!(
     r#"# DSB-2 bundle manifest. The normative text is docs/bundle-spec.md.
 # Fill in your name and role below before publishing. An empty author list is
@@ -95,7 +127,7 @@ revision = 2
 
 [bundle]
 id = "{id}"
-name = "{id}"
+name = {name}
 version = "0.1.0"
 description = "A new dawn theme."
 preview = "preview.webp"
@@ -177,7 +209,7 @@ pub(crate) fn encode_webp(pixels: &[u8], width: u32, height: u32) -> Result<Vec<
 
 #[cfg(test)]
 mod tests {
-  use super::{CONFIG, create, next_steps};
+  use super::{CONFIG, create, next_steps, slug};
   use crate::theme::manifest::valid_semver;
 
   fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -196,7 +228,7 @@ mod tests {
   #[test]
   fn scaffold_has_all_four_artifacts() {
     let parent = temp_dir("layout");
-    let dir = create(&parent, "probe").expect("create");
+    let dir = create(&parent, "probe", "Probe").expect("create");
     assert!(dir.join("theme.toml").is_file());
     assert!(dir.join("config.toml").is_file());
     assert!(dir.join("preview.webp").is_file());
@@ -226,19 +258,47 @@ mod tests {
   }
 
   #[test]
-  fn three_next_steps_are_check_add_run() {
+  fn three_next_steps_are_check_add_use() {
     let steps = next_steps(std::path::Path::new("/tmp/probe"), "probe");
     assert_eq!(steps.len(), 3);
     assert!(steps[0].contains("dawn check"), "{steps:?}");
     assert!(steps[1].contains("dawn add"), "{steps:?}");
-    assert!(steps[2].contains("--theme probe"), "{steps:?}");
+    assert!(!steps[1].contains("sudo"), "{steps:?}");
+    assert!(steps[2].contains("dawn use probe"), "{steps:?}");
+  }
+
+  #[test]
+  fn the_display_name_goes_into_the_manifest() {
+    let parent = temp_dir("name");
+    let dir = create(&parent, "crimson-stage", "Crimson Stage").expect("create");
+    let manifest = std::fs::read_to_string(dir.join("theme.toml")).expect("read manifest");
+    let value: toml::Value = toml::from_str(&manifest).expect("manifest parses");
+    let bundle = value.get("bundle").expect("bundle table");
+    assert_eq!(
+      bundle.get("name").and_then(toml::Value::as_str),
+      Some("Crimson Stage")
+    );
+    assert_eq!(
+      bundle.get("id").and_then(toml::Value::as_str),
+      Some("crimson-stage")
+    );
+    std::fs::remove_dir_all(&parent).expect("cleanup");
+  }
+
+  #[test]
+  fn slug_collapses_punctuation_and_case() {
+    assert_eq!(slug("Crimson Stage").as_deref(), Some("crimson-stage"));
+    assert_eq!(slug("  Hu Tao!! ").as_deref(), Some("hu-tao"));
+    assert_eq!(slug("Midnight_2").as_deref(), Some("midnight-2"));
+    assert_eq!(slug("!!!"), None);
+    assert_eq!(slug(""), None);
   }
 
   #[test]
   fn leading_dot_and_uppercase_ids_are_rejected() {
     let parent = temp_dir("ids");
-    assert!(create(&parent, "../escape").is_err());
-    assert!(create(&parent, "Upper").is_err());
+    assert!(create(&parent, "../escape", "Escape").is_err());
+    assert!(create(&parent, "Upper", "Upper").is_err());
     std::fs::remove_dir_all(&parent).expect("cleanup");
   }
 }

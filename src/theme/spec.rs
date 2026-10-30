@@ -477,7 +477,7 @@ mod tests {
         .unwrap_or_default()
     ));
     std::fs::create_dir_all(&parent).expect("create parent");
-    scaffold::create(&parent, "probe").expect("scaffold")
+    scaffold::create(&parent, "probe", "Probe").expect("scaffold")
   }
 
   fn rules(check: &super::TreeCheck) -> Vec<u8> {

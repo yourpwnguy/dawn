@@ -27,6 +27,7 @@ mod install;
 mod manifest;
 mod migrate;
 mod scaffold;
+pub mod select;
 mod spec;
 
 use std::collections::BTreeMap;
@@ -315,8 +316,8 @@ pub fn check_tree(path: &Path) -> TreeCheck {
 }
 
 /// Creates a minimal DSB-2 bundle with `dawn new`.
-pub fn new_bundle(parent: &Path, id: &str) -> Result<PathBuf, String> {
-  scaffold::create(parent, id)
+pub fn new_bundle(parent: &Path, id: &str, name: &str) -> Result<PathBuf, String> {
+  scaffold::create(parent, id, name)
 }
 
 /// The three lines `dawn new` prints after a successful scaffold.

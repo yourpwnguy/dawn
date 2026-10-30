@@ -75,8 +75,9 @@ pub enum ThemeCommand {
     path: PathBuf,
   },
   New {
+    name: String,
+    id: Option<String>,
     parent: PathBuf,
-    id: String,
   },
   Add {
     paths: Vec<PathBuf>,
@@ -88,6 +89,11 @@ pub enum ThemeCommand {
   Remove {
     id: String,
     system: bool,
+  },
+  /// Select the theme the next login uses.
+  Use {
+    id: String,
+    config: Option<PathBuf>,
   },
 }
 
@@ -157,15 +163,15 @@ pub struct Cli {
   args_conflicts_with_subcommands = true,
   after_help = "THEMES:
     A DSB-2 bundle is a directory with theme.toml, config.toml, preview.webp,
-    and an assets/ root. `dawn check PATH` validates a tree before install and
-    `dawn new PARENT --id ID` scaffolds one. `dawn add` accepts one bundle or a
-    directory of bundles and installs into the canonical system store
-    /usr/share/dawn/themes. `--migrate` upgrades a revision 1 tree. --user
-    installs into the deprecated $XDG_DATA_HOME/dawn/themes store instead.
-    Lookup checks the system stores first; DAWN_THEME_DIRS adds colon-separated
-    read-only system stores (useful on NixOS). A theme found only in the user
-    store still loads but warns that it should be reinstalled with
-    `sudo dawn add PATH --force`.
+    and an assets/ root. `dawn new NAME` scaffolds one, `dawn check PATH`
+    validates a tree, and `dawn add PATH` installs it into the system store
+    /usr/share/dawn/themes. `dawn use ID` switches the theme the next login
+    starts, so nobody has to edit /etc/dawn/config.toml by hand. `dawn dev PATH`
+    opens a bundle with hot reload.
+
+    Commands that write /etc or /usr/share ask for sudo themselves when they
+    have a terminal. Set DAWN_NO_SUDO=1 to disable that and get the plain
+    command instead.
 
 KEYBOARD:
     Tab / Shift+Tab      Move between username, password, and sessions
@@ -183,6 +189,10 @@ struct Root {
 
 #[derive(Debug, ClapSubcommand)]
 enum Subcommand {
+  /// Switch the theme the next login uses
+  #[command(alias = "switch")]
+  Use(UseArgs),
+
   /// List installed theme bundles
   #[command(alias = "ls")]
   List,
@@ -243,13 +253,28 @@ struct CheckArgs {
 
 #[derive(Debug, Args)]
 struct NewArgs {
-  /// Parent directory that will contain the new bundle
-  #[arg(value_name = "PARENT")]
-  parent: PathBuf,
+  /// Display name for the theme, for example "Crimson Stage"
+  #[arg(value_name = "NAME")]
+  name: String,
 
-  /// Bundle id, also the new directory name
-  #[arg(long, value_name = "ID", required = true)]
+  /// Bundle id and folder name (default: the name in lowercase with dashes)
+  #[arg(long, value_name = "ID")]
+  id: Option<String>,
+
+  /// Folder that will contain the new bundle
+  #[arg(short = 'p', long, value_name = "DIR", default_value = ".")]
+  parent: PathBuf,
+}
+
+#[derive(Debug, Args)]
+struct UseArgs {
+  /// Theme id, as shown by `dawn list`
+  #[arg(value_name = "ID")]
   id: String,
+
+  /// Edit this config instead of the discovered one
+  #[arg(short = 'c', long, value_name = "PATH")]
+  config: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -327,8 +352,13 @@ fn from_root(root: Root) -> Result<Command, clap::Error> {
     Some(Subcommand::List) => Command::Theme(ThemeCommand::List),
     Some(Subcommand::Check(args)) => Command::Theme(ThemeCommand::Check { path: args.path }),
     Some(Subcommand::New(args)) => Command::Theme(ThemeCommand::New {
-      parent: args.parent,
+      name: args.name,
       id: args.id,
+      parent: args.parent,
+    }),
+    Some(Subcommand::Use(args)) => Command::Theme(ThemeCommand::Use {
+      id: args.id,
+      config: args.config,
     }),
     Some(Subcommand::Dev(args)) => Command::Dev(DevCommand {
       path: args.path,
@@ -405,6 +435,8 @@ fn parse_size(value: &str) -> Result<(u32, u32), String> {
 
 #[cfg(test)]
 mod tests {
+  use std::path::PathBuf;
+
   use clap::Parser;
   use clap_complete::Shell;
 
@@ -545,8 +577,9 @@ mod tests {
     assert_eq!(
       parse(&["new", "out", "--id", "probe"]).ok(),
       Some(Command::Theme(ThemeCommand::New {
-        parent: "out".into(),
-        id: "probe".to_string()
+        name: "out".to_string(),
+        id: Some("probe".to_string()),
+        parent: ".".into()
       }))
     );
     assert_eq!(
@@ -593,7 +626,60 @@ mod tests {
     assert!(parse(&["init", "--user"]).is_err());
     assert!(parse(&["init", "-u"]).is_err());
     assert!(parse(&["init", "extra"]).is_err());
-    assert!(parse(&["new", "out"]).is_err());
+    assert!(parse(&["new"]).is_err());
+  }
+
+  #[test]
+  fn new_takes_a_name_and_derives_a_default_id() {
+    assert_eq!(
+      parse(&["new", "midnight"]).ok(),
+      Some(Command::Theme(ThemeCommand::New {
+        name: "midnight".to_string(),
+        id: None,
+        parent: PathBuf::from("."),
+      }))
+    );
+    assert_eq!(
+      parse(&[
+        "new",
+        "Crimson Stage",
+        "--id",
+        "crimson",
+        "-p",
+        "/tmp/themes"
+      ])
+      .ok(),
+      Some(Command::Theme(ThemeCommand::New {
+        name: "Crimson Stage".to_string(),
+        id: Some("crimson".to_string()),
+        parent: PathBuf::from("/tmp/themes"),
+      }))
+    );
+  }
+
+  #[test]
+  fn use_takes_an_id_and_an_optional_config() {
+    assert_eq!(
+      parse(&["use", "kinich"]).ok(),
+      Some(Command::Theme(ThemeCommand::Use {
+        id: "kinich".to_string(),
+        config: None,
+      }))
+    );
+    assert_eq!(
+      parse(&["switch", "kinich", "-c", "/tmp/dawn.toml"]).ok(),
+      Some(Command::Theme(ThemeCommand::Use {
+        id: "kinich".to_string(),
+        config: Some(PathBuf::from("/tmp/dawn.toml")),
+      }))
+    );
+    assert_eq!(
+      parse(&["use", "-c", "/tmp/dawn.toml", "kinich"]).ok(),
+      Some(Command::Theme(ThemeCommand::Use {
+        id: "kinich".to_string(),
+        config: Some(PathBuf::from("/tmp/dawn.toml")),
+      }))
+    );
   }
 
   #[test]
@@ -624,6 +710,18 @@ mod tests {
       parse(&["ls"]).ok(),
       Some(Command::Theme(ThemeCommand::List))
     );
+
+    let use_theme = Command::Theme(ThemeCommand::Use {
+      id: "midnight".to_string(),
+      config: None,
+    });
+    for alias in ["use", "switch"] {
+      assert_eq!(
+        parse(&[alias, "midnight"]).ok(),
+        Some(use_theme.clone()),
+        "{alias}"
+      );
+    }
   }
 
   #[test]
@@ -727,6 +825,7 @@ mod tests {
   fn theme_commands_reject_missing_values() {
     assert!(parse(&["add"]).is_err());
     assert!(parse(&["remove"]).is_err());
+    assert!(parse(&["use"]).is_err());
     assert!(parse(&["list", "extra"]).is_err());
   }
 

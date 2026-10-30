@@ -922,13 +922,16 @@ Set `package` to use an installed theme bundle instead of this file:
 package = "midnight"
 ```
 
+`dawn use midnight` writes this key for you and leaves the rest of the file
+alone.
+
 A pointer config is not merged with the bundle. The bundle's `config.toml`
 becomes the whole config, and its relative asset paths resolve against the
 bundle directory. Bundle lookup checks `/usr/share/dawn/themes` first, then
 every `DAWN_THEME_DIRS` entry, and only then the deprecated
 `$XDG_DATA_HOME/dawn/themes` store. A theme that exists only in the user store
 still loads but prints a warning asking for a system reinstall. See `dawn list`,
-`dawn add`, and the theme section in [installation.md](installation.md).
+`dawn use`, `dawn add`, and the theme section in [installation.md](installation.md).
 `package` is not a token, so the rest of the `[theme]` table is ignored when it
 is present.
 

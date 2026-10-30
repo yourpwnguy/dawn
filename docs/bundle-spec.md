@@ -150,10 +150,12 @@ The canonical store is `/usr/share/dawn/themes`. `DAWN_THEME_DIRS` adds
 read-only system stores. The per-user XDG store remains a deprecated read
 fallback. Lookup checks the system stores first. A bundle found only in the
 user store still loads, and the engine prints one line naming the corrective
-`sudo dawn add PATH --force` command.
+`dawn add PATH --force` command.
 
-`dawn add` writes to the system store by default. A permission failure prints
-one `sudo` rerun line and never attempts to escalate.
+`dawn add` writes to the system store by default. When the store is not
+writable it re-runs itself through `sudo` if the process has a terminal, and
+prints the exact command when it does not. `DAWN_NO_SUDO=1` always prints the
+command instead of escalating.
 
 Atomicity is part of the format, not an implementation detail an admin is
 expected to trust blindly: a bundle either appears under its id with every
@@ -190,12 +192,15 @@ fails validation and the source stays as it was.
 
 * `dawn check PATH` runs the full validation on an uninstalled tree. Zero issues
   exit 0. Any issue exits 1 and prints the numbered report.
-* `dawn new PARENT --id ID` creates `PARENT/ID/` with the four required
-  artifacts, a commented manifest, a minimal commented config, a generated
-  640 by 400 WebP preview, and an `assets/` directory. It prints exactly three
-  next steps: check, add, and run.
+* `dawn new NAME [--id ID] [--parent DIR]` creates `DIR/ID/` with the four
+  required artifacts, a commented manifest, a minimal commented config, a
+  generated 640 by 400 WebP preview, and an `assets/` directory. The id
+  defaults to the name in lowercase with dashes. It prints exactly three next
+  steps: check, add, and switch.
 * `dawn add PATH [--migrate] [--force]` installs one bundle or a directory of
   bundles. `--migrate` upgrades revision 1 trees as described in section 6.
+* `dawn use ID` writes `[theme] package = "ID"` into the machine config without
+  touching the rest of the file. `dawn list` marks the active theme.
 * `dawn list` and `dawn remove` operate on installed bundles by id.
 
 The six example bundles in `examples/themes/` remain revision 1 trees. They are

@@ -28,6 +28,8 @@ pub mod cli;
 pub mod color;
 pub mod config;
 pub mod dev;
+pub mod elevate;
+pub mod fsutil;
 pub mod init;
 pub mod layout;
 pub mod plugin;

@@ -28,6 +28,12 @@ fn main() -> ExitCode {
     }
   };
 
+  // Commands that write /etc or /usr/share ask for sudo themselves when they
+  // have a terminal. A child that ran under sudo returns its status here.
+  if let Some(code) = dawn::elevate::maybe_reexec(&command) {
+    return code;
+  }
+
   let cli = match command {
     Command::Theme(command) => return dawn::theme::cli::run(command),
     Command::Init(command) => return dawn::init::run(command),
