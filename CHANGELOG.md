@@ -2,6 +2,29 @@
 
 All notable changes to dawn are recorded here.
 
+## 0.6.0 - 2026-10-30
+
+### Added
+
+- `dawn use ID` switches the theme the next login starts. It rewrites only
+  `[theme] package` in the machine config, so comments and every other key stay
+  untouched, and it creates the config from the built-in defaults when none
+  exists.
+- `dawn list` now prints the active theme below the table.
+- `dawn new NAME [--id ID] [--parent DIR]` takes a display name and derives the
+  bundle id from it (`Crimson Stage` becomes `crimson-stage`). `--id` is
+  optional and `--parent` defaults to the current directory.
+- Commands that write `/etc` or `/usr/share` ask for sudo themselves when they
+  have a terminal. `DAWN_NO_SUDO=1` disables that and prints the command
+  instead.
+
+### Changed
+
+- `dawn init`, `dawn add`, `dawn remove`, and `dawn use` no longer need a
+  manual `sudo` in an interactive shell.
+- `dawn new` takes a name instead of a parent directory. The bundle is created
+  at `DIR/ID`, and the printed next steps now end with `dawn use ID`.
+
 ## 0.5.0 - 2026-10-30
 
 ### Added

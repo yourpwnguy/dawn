@@ -1,4 +1,5 @@
-//! `dawn list`, `dawn add`, `dawn check`, `dawn new`, and `dawn remove`.
+//! `dawn list`, `dawn use`, `dawn add`, `dawn check`, `dawn new`, and
+//! `dawn remove`.
 //!
 //! The CLI is intentionally small. It prints paths and next commands instead of
 //! hiding them behind a "wizard", because the people who need this are admins
@@ -16,7 +17,7 @@ pub fn run(command: ThemeCommand) -> ExitCode {
   match command {
     ThemeCommand::List => list(),
     ThemeCommand::Check { path } => check(&path),
-    ThemeCommand::New { parent, id } => new(&parent, &id),
+    ThemeCommand::New { name, id, parent } => new(&parent, &name, id.as_deref()),
     ThemeCommand::Add {
       paths,
       force,
@@ -24,6 +25,7 @@ pub fn run(command: ThemeCommand) -> ExitCode {
       migrate,
     } => add(&paths, force, system, migrate),
     ThemeCommand::Remove { id, system } => remove(&id, system),
+    ThemeCommand::Use { id, config } => super::select::run(&id, config.as_deref()),
   }
 }
 
@@ -38,7 +40,27 @@ fn list() -> ExitCode {
     return ExitCode::SUCCESS;
   }
   print_table(&entries);
+  print_active(&entries);
   ExitCode::SUCCESS
+}
+
+/// Prints which theme the next login starts. The config is optional, so a
+/// missing file simply reports that nothing is selected yet.
+fn print_active(entries: &[ThemeEntry]) {
+  match crate::config::load(None).package {
+    Some(id) if entries.iter().any(|entry| entry.id == id) => {
+      println!();
+      println!("active theme: {id}");
+    }
+    Some(id) => {
+      println!();
+      println!("active theme: {id} (not installed; choose one with `dawn use ID`)");
+    }
+    None => {
+      println!();
+      println!("active theme: none (choose one with `dawn use ID`)");
+    }
+  }
 }
 
 fn add(paths: &[PathBuf], force: bool, system: bool, migrate: bool) -> ExitCode {
@@ -74,9 +96,7 @@ fn add(paths: &[PathBuf], force: bool, system: bool, migrate: bool) -> ExitCode 
 /// system config because that is the only file the greeter reads, no matter
 /// which store the bundle came from.
 fn next_step(id: &str) -> String {
-  format!(
-    "next: select it with `dawn --theme {id}` or set [theme] package = \"{id}\" in /etc/dawn/config.toml"
-  )
+  format!("next: select it with `dawn use {id}`")
 }
 
 /// Full DSB-2 validation of an uninstalled tree.
@@ -105,10 +125,24 @@ fn check(path: &std::path::Path) -> ExitCode {
   }
 }
 
-fn new(parent: &std::path::Path, id: &str) -> ExitCode {
-  match super::new_bundle(parent, id) {
+fn new(parent: &std::path::Path, name: &str, id: Option<&str>) -> ExitCode {
+  let id = match id {
+    Some(id) if super::valid_id(id) => id.to_string(),
+    Some(id) => {
+      eprintln!("dawn: invalid bundle id {id:?}: use [a-z0-9][a-z0-9_-]*");
+      return ExitCode::FAILURE;
+    }
+    None => match super::scaffold::slug(name) {
+      Some(id) => id,
+      None => {
+        eprintln!("dawn: {name:?} has no letters or digits to build an id from; pass --id");
+        return ExitCode::FAILURE;
+      }
+    },
+  };
+  match super::new_bundle(parent, &id, name) {
     Ok(path) => {
-      for step in super::new_next_steps(&path, id) {
+      for step in super::new_next_steps(&path, &id) {
         println!("{step}");
       }
       ExitCode::SUCCESS
@@ -173,11 +207,9 @@ mod tests {
   use super::next_step;
 
   #[test]
-  fn install_hint_is_one_line_and_names_both_choices() {
+  fn install_hint_names_the_switch_command() {
     let hint = next_step("midnight");
     assert!(!hint.contains('\n'), "{hint}");
-    assert!(hint.contains("dawn --theme midnight"), "{hint}");
-    assert!(hint.contains("[theme] package = \"midnight\""), "{hint}");
-    assert!(hint.contains("/etc/dawn/config.toml"), "{hint}");
+    assert!(hint.contains("dawn use midnight"), "{hint}");
   }
 }

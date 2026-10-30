@@ -12,13 +12,11 @@
 //! same loader as any admin config, with no second Rust copy to maintain.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use tempfile::Builder;
-
 use crate::cli::{InitCommand, InitTarget};
+use crate::fsutil::write_atomic;
 use crate::theme::{is_permission_denied, shell_quote};
 
 /// The system config a real greeter reads when the user has no `HOME`. The
@@ -41,7 +39,7 @@ pub fn run(command: InitCommand) -> ExitCode {
     return ExitCode::FAILURE;
   }
 
-  match write_atomic(&path, DEFAULT_CONFIG) {
+  match write_atomic(&path, DEFAULT_CONFIG, 0o644) {
     Ok(()) => {
       print_next_steps(&path);
       ExitCode::SUCCESS
@@ -65,66 +63,10 @@ fn resolve_target(target: &InitTarget) -> PathBuf {
   }
 }
 
-/// Writes `contents` to `path` through a temporary sibling and a rename.
-///
-/// The temp file is created in the destination directory on purpose: a rename
-/// across filesystems is a copy, not an atomic replace. On success the old file
-/// is replaced in one step, so a reader never sees a half-written config.
-fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
-  let parent = path
-    .parent()
-    .filter(|parent| !parent.as_os_str().is_empty())
-    .unwrap_or_else(|| Path::new("."));
-  fs::create_dir_all(parent)
-    .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
-
-  let mut staging = Builder::new()
-    .prefix(".dawn-init-")
-    .tempfile_in(parent)
-    .map_err(|error| {
-      format!(
-        "cannot create a staging file in {}: {error}",
-        parent.display()
-      )
-    })?;
-
-  staging
-    .write_all(contents.as_bytes())
-    .map_err(|error| format!("cannot write {}: {error}", staging.path().display()))?;
-  // Flush and sync before the rename so a crash cannot leave an empty file
-  // under the final name while the bytes are still in the page cache.
-  staging
-    .as_file()
-    .sync_all()
-    .map_err(|error| format!("cannot flush {}: {error}", staging.path().display()))?;
-  set_config_mode(staging.path())?;
-
-  staging.persist(path).map_err(|error| {
-    format!(
-      "cannot move the config into place at {}: {}",
-      path.display(),
-      error.error
-    )
-  })?;
-  Ok(())
-}
-
-/// Config files are read by the unprivileged `greeter` user, so the staging
-/// file must not keep tempfile's private 0600 mode.
-fn set_config_mode(path: &Path) -> Result<(), String> {
-  #[cfg(unix)]
-  {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o644))
-      .map_err(|error| format!("cannot set permissions on {}: {error}", path.display()))?;
-  }
-  Ok(())
-}
-
 /// The four informational lines printed after a successful write.
 fn print_next_steps(path: &Path) {
   println!("wrote {}", path.display());
-  println!("next: install a theme with `sudo dawn add examples/themes/kinich`");
+  println!("next: install a theme with `dawn add examples/themes/kinich`");
   println!("greetd: command = \"cage -s -- /usr/local/bin/dawn\"");
   println!("then: sudo systemctl enable greetd.service");
 }
@@ -169,9 +111,10 @@ mod tests {
 
   use super::{
     DEFAULT_CONFIG, InitCommand, InitTarget, SYSTEM_CONFIG, failure_message, force_hint,
-    resolve_target, run, write_atomic,
+    resolve_target, run,
   };
   use crate::config;
+  use crate::fsutil::write_atomic;
 
   fn command(target: InitTarget) -> InitCommand {
     InitCommand {
@@ -259,7 +202,7 @@ mod tests {
     let path = dir.join("config.toml");
     std::fs::create_dir(&path).expect("create destination directory");
 
-    let error = write_atomic(&path, "replacement\n").expect_err("rename must fail");
+    let error = write_atomic(&path, "replacement\n", 0o644).expect_err("rename must fail");
     assert!(path.is_dir(), "{error}");
     assert!(
       std::fs::read_dir(&dir)
@@ -268,7 +211,7 @@ mod tests {
           .expect("entry")
           .file_name()
           .to_string_lossy()
-          .starts_with(".dawn-init-")),
+          .starts_with(".dawn-write-")),
       "staging file was left behind"
     );
   }
@@ -316,7 +259,7 @@ mod tests {
       return;
     }
 
-    let error = write_atomic(&path, "replacement\n").expect_err("locked dir must fail");
+    let error = write_atomic(&path, "replacement\n", 0o644).expect_err("locked dir must fail");
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).expect("unlock");
     assert_eq!(
       fs::read_to_string(&path).expect("old file survives"),
