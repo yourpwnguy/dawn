@@ -633,6 +633,15 @@ pub struct RawTheme {
   pub noise: Option<Field>,
   #[serde(default)]
   pub min_contrast: Option<Field>,
+  /// CRT scanline strength, 0 to 1.
+  #[serde(default)]
+  pub scanlines: Option<Field>,
+  /// Physical pixel spacing between scanlines, 2 to 12.
+  #[serde(default)]
+  pub scanline_gap: Option<Field>,
+  /// Sweep period in milliseconds, 1000 to 20000.
+  #[serde(default)]
+  pub scanline_ms: Option<Field>,
 }
 
 /// Hyprland's `decoration:blur` block, minus the compositor-only switches.

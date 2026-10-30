@@ -2,6 +2,17 @@
 
 All notable changes to dawn are recorded here.
 
+## 0.2.3 - 2026-10-30
+
+### Added
+
+- Configurable CRT scanlines in `[theme]`: `scanlines`, `scanline_gap`, and
+  `scanline_ms` add static rows and a moving sweep band over the wallpaper,
+  under the login form.
+- Clickable media transport controls. With `[media].controls = true`, the
+  previous, play/pause, and next glyphs now send the matching MPRIS command
+  when the widget is showing real metadata.
+
 ## 0.2.2 - 2026-10-30
 
 ### Added

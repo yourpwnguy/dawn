@@ -1248,16 +1248,19 @@ impl MediaProgress {
 /// Presentation choices for the media widget.
 ///
 /// The art, progress, and tint flags are purely visual. `controls` draws a
-/// transport row, but those glyphs are deliberately not clickable yet: pointer
-/// hit regions and the D-Bus control wiring are a separate change, and a
-/// greeter must never expose a control it cannot actually drive.
+/// transport row and, once the widget has real metadata, makes those glyphs
+/// clickable: the renderer records hit regions and the window sends the
+/// matching MPRIS command. A rotated widget keeps the picture but does not
+/// accept clicks, because the hit math stays honest only for the unrotated
+/// layout. That keeps a greeter from ever exposing a control it cannot drive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MediaLook {
   pub layout: MediaLayout,
   pub art: MediaArt,
   pub progress: MediaProgress,
-  /// Draw previous, play/pause, and next glyphs under the progress. Visual
-  /// only for now.
+  /// Draw clickable previous, play/pause, and next buttons under the progress.
+  /// They are only active while the widget is showing real metadata and is not
+  /// rotated.
   pub controls: bool,
   /// Derive the progress and plate accent from the dominant album-art colour.
   pub tint_from_art: bool,
@@ -1445,6 +1448,9 @@ impl ThemePreset {
         spacing: 1.0,
         noise: true,
         min_contrast: 4.5,
+        scanlines: 0.0,
+        scanline_gap: 3,
+        scanline_ms: 6000.0,
       },
       Self::GlassLight => ThemeConfig {
         preset: self,
@@ -1464,6 +1470,9 @@ impl ThemePreset {
         spacing: 1.0,
         noise: true,
         min_contrast: 4.5,
+        scanlines: 0.0,
+        scanline_gap: 3,
+        scanline_ms: 6000.0,
       },
       Self::Minimal => ThemeConfig {
         preset: self,
@@ -1484,6 +1493,9 @@ impl ThemePreset {
         spacing: 0.95,
         noise: false,
         min_contrast: 4.5,
+        scanlines: 0.0,
+        scanline_gap: 3,
+        scanline_ms: 6000.0,
       },
     }
   }
@@ -1510,6 +1522,17 @@ pub struct ThemeConfig {
   pub noise: bool,
   /// Minimum contrast ratio for text against the glass tint.
   pub min_contrast: f32,
+  /// CRT scanline strength, 0 to 1. Zero turns the overlay off. The lines are
+  /// painted straight onto the wallpaper, before the glass and the form, so
+  /// they texture the backdrop instead of the text.
+  pub scanlines: f32,
+  /// Physical pixel spacing between scanlines, 2 to 12. Smaller values are a
+  /// denser, finer CRT; the default reads as a subtle aperture grille.
+  pub scanline_gap: u32,
+  /// Time for the bright sweep band to travel the whole screen once, in
+  /// milliseconds, 1000 to 20000. Reduced motion keeps the static lines and
+  /// drops the sweep.
+  pub scanline_ms: f32,
 }
 
 /// Backdrop blur settings.
@@ -3440,6 +3463,47 @@ tint_from_art = 3
       "media.controls",
       "media.tint_from_art",
     ] {
+      assert!(
+        loaded.issues.iter().any(|issue| issue.key == key),
+        "missing issue {key}: {:?}",
+        loaded.issues
+      );
+    }
+  }
+
+  #[test]
+  fn scanlines_parse_and_bad_values_fall_back_with_issues() {
+    let path = temp_config(
+      "scanlines",
+      r##"
+[theme]
+scanlines = 0.4
+scanline_gap = 4
+scanline_ms = 2500
+"##,
+    );
+    let loaded = load(Some(&path));
+    assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+    assert_eq!(loaded.config.theme.scanlines, 0.4);
+    assert_eq!(loaded.config.theme.scanline_gap, 4);
+    assert_eq!(loaded.config.theme.scanline_ms, 2500.0);
+
+    let bad = temp_config(
+      "scanlines-bad",
+      r##"
+[theme]
+scanlines = 4.2
+scanline_gap = 1
+scanline_ms = 0
+"##,
+    );
+    let loaded = load(Some(&bad));
+    // Each bad field falls back on its own, so one typo cannot turn the whole
+    // overlay off or remove the other two settings.
+    assert_eq!(loaded.config.theme.scanlines, 0.0);
+    assert_eq!(loaded.config.theme.scanline_gap, 3);
+    assert_eq!(loaded.config.theme.scanline_ms, 6000.0);
+    for key in ["theme.scanlines", "theme.scanline_gap", "theme.scanline_ms"] {
       assert!(
         loaded.issues.iter().any(|issue| issue.key == key),
         "missing issue {key}: {:?}",

@@ -75,6 +75,7 @@ pub fn paint(
 ) -> Vec<HitRegion> {
   let scale = normalized_scale(scene.scale);
   background.paint(canvas, scene.frame_now);
+  draw_scanlines(canvas, scene);
   glass.prepare(
     canvas,
     background.frame_id(scene.frame_now),
@@ -84,6 +85,56 @@ pub fn paint(
     background.is_animated(),
   );
   paint_overlay(canvas, text, glass, scene)
+}
+
+/// Paints the CRT scanline overlay straight onto the wallpaper.
+///
+/// The CPU path calls this right after the wallpaper paint and before the glass
+/// cache. The GPU path calls it on the transparent UI layer before the form, so
+/// both presenters put the texture over the wallpaper and under the login UI.
+/// The static rows are cheap enough to repaint every frame. Only the sweep band
+/// moves, and reduced motion or low-power mode drops it while leaving the rows
+/// exactly where they were.
+pub(crate) fn draw_scanlines(canvas: &mut Canvas, scene: &Scene<'_>) {
+  let theme = scene.theme;
+  if theme.scanlines <= 0.0 {
+    return;
+  }
+  let width = canvas.width() as f32;
+  let height = canvas.height();
+  let gap = theme.scanline_gap.max(1);
+  let row_color = theme.text.with_alpha((theme.scanlines * 26.0) as u8);
+  for row in 0..scanline_rows(gap, height) {
+    let y = (row * gap) as f32;
+    canvas.fill(Rect::new(0.0, y, width, 1.0), row_color, 0.0);
+  }
+  if theme.motion.reduced || theme.low_power {
+    return;
+  }
+  // One cycle carries the band from just above the screen to just below it, so
+  // the wrap happens where nobody can see it. We compute the period in seconds
+  // and guard against zero even though validation already enforces a minimum.
+  let period = (theme.scanline_ms / 1000.0).max(0.001);
+  let elapsed = scene
+    .frame_now
+    .saturating_duration_since(scene.started)
+    .as_secs_f32();
+  let travel = height as f32 + 120.0;
+  let y = (elapsed / period) % 1.0 * travel - 120.0;
+  canvas.fill(
+    Rect::new(0.0, y, width, 120.0),
+    theme.accent.with_alpha((theme.scanlines * 18.0) as u8),
+    0.0,
+  );
+}
+
+/// Number of horizontal rows the static scanline pass paints.
+///
+/// A zero gap is clamped to one so a hand-built `Theme` (or a test) cannot
+/// divide by zero. The config validator rejects zero with an issue and falls
+/// back to the default, so this is only a safety net.
+fn scanline_rows(gap: u32, height: u32) -> u32 {
+  height.div_ceil(gap.max(1))
 }
 
 /// Paints only the interactive layer: plugins, the card, the picker, badges,
@@ -2464,8 +2515,20 @@ fn draw_plugins(
   layer: WidgetLayer,
   regions: &mut Vec<HitRegion>,
 ) {
+  let mut next_media = 0usize;
   for plugin in scene.plugins {
     for (index, widget) in plugin.widgets.iter().enumerate() {
+      // The window spawns one MediaHandle per media widget in app.media_states()
+      // order, which is this same plugin/widget order. The counter has to move
+      // before the visible_on check so a widget hidden on this output does not
+      // shift every later media widget onto the wrong player.
+      let media_slot = if matches!(widget, Widget::Media { .. }) {
+        let slot = next_media;
+        next_media += 1;
+        Some(slot)
+      } else {
+        None
+      };
       if !widget.placement().visible_on(scene.monitor) {
         continue;
       }
@@ -2626,6 +2689,7 @@ fn draw_plugins(
           draggable,
           ..
         } => {
+          let slot = media_slot.unwrap_or(0);
           let snapshot = state.snapshot();
           let bounds = media_bounds(
             text,
@@ -2640,6 +2704,7 @@ fn draw_plugins(
             scene.view.authenticated,
             *media_look,
           );
+          let mut painted = None;
           paint_transformed(
             canvas,
             bounds,
@@ -2648,10 +2713,11 @@ fn draw_plugins(
             scale,
             opacity,
             |layer, _| {
-              draw_media(
+              painted = Some(draw_media(
                 layer,
                 text,
                 scene,
+                slot,
                 &snapshot,
                 placement.anchor,
                 offset,
@@ -2665,13 +2731,33 @@ fn draw_plugins(
                 accent,
                 plate,
                 *media_look,
-              );
+                angle,
+              ));
             },
           );
+          // `paint_transformed` skips the closure entirely at zero opacity, so
+          // the fallback keeps the widget's own drag region even when it faded
+          // out this frame. Controls stay unclickable in that case.
+          let draw = painted.unwrap_or(MediaDraw {
+            bounds,
+            controls: [None; 3],
+          });
           regions.push(
-            HitRegion::rotated(id.clone(), bounds, *draggable, angle).with_drag_scale(frame.scale),
+            HitRegion::rotated(id.clone(), draw.bounds, *draggable, angle)
+              .with_drag_scale(frame.scale),
           );
-          draw_drag_highlight(canvas, bounds, &id, scene, accent, frame.scale);
+          // Pushed after the widget region, in the same order the glyphs were
+          // drawn. Reverse hit testing then sees a control before the plate.
+          for (action, rect) in ["prev", "play", "next"].into_iter().zip(draw.controls) {
+            if let Some(rect) = rect {
+              regions.push(HitRegion::new(
+                format!("media:{slot}:{action}"),
+                rect,
+                false,
+              ));
+            }
+          }
+          draw_drag_highlight(canvas, draw.bounds, &id, scene, accent, frame.scale);
         }
       }
     }
@@ -2830,16 +2916,61 @@ fn draw_progress(
   }
 }
 
-/// The three transport glyphs. They are visual only in this version: the
-/// renderer records no hit regions for them and no control message is sent,
-/// so a greeter never offers a button that cannot work.
-fn draw_controls(canvas: &mut Canvas, rect: Rect, size: f32, color: Rgb, playing: bool) {
+/// The three transport glyphs and their click targets.
+///
+/// The glyph geometry is the same one the widget always drew. The new part is
+/// that every centre also gets a button rectangle, returned in previous, play,
+/// next order so the caller can push hit regions without guessing. A hovered
+/// button gets a faint accent pill behind the glyph. The rectangles are always
+/// returned; the caller decides whether they are really clickable, which is how
+/// a rotated widget can keep the picture and still drop the hit regions.
+fn draw_controls(
+  canvas: &mut Canvas,
+  rect: Rect,
+  size: f32,
+  color: Rgb,
+  accent: Rgb,
+  playing: bool,
+  hovered: [bool; 3],
+) -> [Rect; 3] {
   let center_y = rect.y + rect.h * 0.5;
   let center_x = rect.x + rect.w * 0.5;
   let gap = size * 1.1;
   let half = rect.h * 0.45;
   let stroke = (size * 0.08).max(1.0);
-  let triangle = |canvas: &mut Canvas, points: [(f32, f32); 3]| {
+  let button_w = (gap * 0.85).max(size * 0.7);
+  let button_h = (rect.h * 1.15).max(size * 0.9);
+  let buttons = [
+    Rect::new(
+      center_x - gap - button_w * 0.5,
+      center_y - button_h * 0.5,
+      button_w,
+      button_h,
+    ),
+    Rect::new(
+      center_x - button_w * 0.5,
+      center_y - button_h * 0.5,
+      button_w,
+      button_h,
+    ),
+    Rect::new(
+      center_x + gap - button_w * 0.5,
+      center_y - button_h * 0.5,
+      button_w,
+      button_h,
+    ),
+  ];
+  for (button, active) in buttons.iter().zip(hovered) {
+    if active {
+      canvas.fill(*button, accent.with_alpha(40), (size * 0.25).max(2.0));
+    }
+  }
+  let colors = [
+    if hovered[0] { accent } else { color },
+    if hovered[1] { accent } else { color },
+    if hovered[2] { accent } else { color },
+  ];
+  let triangle = |canvas: &mut Canvas, points: [(f32, f32); 3], color: Rgb| {
     for index in 0..3 {
       let from = points[index];
       let to = points[(index + 1) % 3];
@@ -2849,7 +2980,7 @@ fn draw_controls(canvas: &mut Canvas, rect: Rect, size: f32, color: Rgb, playing
   let previous_x = center_x - gap;
   canvas.fill(
     Rect::new(previous_x - half * 0.8, center_y - half, stroke, half * 2.0),
-    color,
+    colors[0],
     1.0,
   );
   triangle(
@@ -2859,6 +2990,7 @@ fn draw_controls(canvas: &mut Canvas, rect: Rect, size: f32, color: Rgb, playing
       (previous_x + half * 0.55, center_y + half),
       (previous_x - half * 0.45, center_y),
     ],
+    colors[0],
   );
 
   if playing {
@@ -2869,7 +3001,7 @@ fn draw_controls(canvas: &mut Canvas, rect: Rect, size: f32, color: Rgb, playing
         half * 0.3,
         half * 2.0,
       ),
-      color,
+      colors[1],
       1.0,
     );
     canvas.fill(
@@ -2879,7 +3011,7 @@ fn draw_controls(canvas: &mut Canvas, rect: Rect, size: f32, color: Rgb, playing
         half * 0.3,
         half * 2.0,
       ),
-      color,
+      colors[1],
       1.0,
     );
   } else {
@@ -2890,6 +3022,7 @@ fn draw_controls(canvas: &mut Canvas, rect: Rect, size: f32, color: Rgb, playing
         (center_x - half * 0.4, center_y + half),
         (center_x + half * 0.65, center_y),
       ],
+      colors[1],
     );
   }
 
@@ -2901,12 +3034,14 @@ fn draw_controls(canvas: &mut Canvas, rect: Rect, size: f32, color: Rgb, playing
       (next_x - half * 0.55, center_y + half),
       (next_x + half * 0.45, center_y),
     ],
+    colors[2],
   );
   canvas.fill(
     Rect::new(next_x + half * 0.55, center_y - half, stroke, half * 2.0),
-    color,
+    colors[2],
     1.0,
   );
+  buttons
 }
 
 /// Circular progress used by the vinyl layout. Drawing the ring as short line
@@ -2942,11 +3077,24 @@ fn draw_ring_progress(
   }
 }
 
+/// What one media paint produced.
+///
+/// `bounds` is the widget rectangle the rotation layer and the drag region
+/// already used. `controls` holds clickable previous, play, and next rectangles
+/// in screen space, or `[None; 3]` when the widget has no metadata, controls
+/// are off, or the widget is rotated. Keeping both in one return value means
+/// the hit regions cannot drift from the pixels that were actually painted.
+struct MediaDraw {
+  bounds: Rect,
+  controls: [Option<Rect>; 3],
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_media(
   canvas: &mut Canvas,
   text: &mut TextEngine,
   scene: &Scene<'_>,
+  media_index: usize,
   snapshot: &MediaSnapshot,
   anchor: crate::layout::Anchor,
   offset: (i32, i32),
@@ -2960,7 +3108,8 @@ fn draw_media(
   accent: Rgb,
   plate: Option<&WidgetPlate>,
   look: MediaLook,
-) -> Rect {
+  angle: f32,
+) -> MediaDraw {
   let size = logical_size * scale;
   let rect = media_bounds(
     text,
@@ -2987,8 +3136,18 @@ fn draw_media(
       Style::new(size * 0.85, muted.with_alpha(160)),
       Area::new(rect.x, rect.y, rect.w.max(1.0)),
     );
-    return rect;
+    return MediaDraw {
+      bounds: rect,
+      controls: [None; 3],
+    };
   }
+
+  // A rotated widget keeps its controls as decoration but exposes no clicks:
+  // the hit math for a rotated button is easy to get subtly wrong, and a
+  // transport button that fires from the wrong pixel is worse than a static
+  // one. The same rule covers a motion sample that rotated the whole widget.
+  let interactive = angle.abs() <= 0.01;
+  let mut controls: [Option<Rect>; 3] = [None; 3];
 
   // Art tinting is opt-in and derived from pixels, never from metadata. The
   // progress bar and an existing plate border/glow pick up the same hue so the
@@ -3016,6 +3175,14 @@ fn draw_media(
   let (x, y) = (rect.x, rect.y);
   let width = rect.w;
   let playing = snapshot.playing;
+  // Hover is resolved by the same ids the hit regions will use, so the glyph
+  // and the click target cannot disagree about which button is under the
+  // pointer. When controls are off we never even format the ids.
+  let hovered = [
+    look.controls && scene.drag.is_hovered(&format!("media:{media_index}:prev")),
+    look.controls && scene.drag.is_hovered(&format!("media:{media_index}:play")),
+    look.controls && scene.drag.is_hovered(&format!("media:{media_index}:next")),
+  ];
   match look.layout {
     MediaLayout::Card => {
       let art_size = if art.is_some() { size * 3.0 } else { 0.0 };
@@ -3059,13 +3226,18 @@ fn draw_media(
         draw_progress(canvas, bar, fraction, look.progress, accent, muted, scale);
       }
       if look.controls {
-        draw_controls(
+        let rects = draw_controls(
           canvas,
           Rect::new(text_x, y + size * 3.15, text_width, size * 0.9),
           size,
           muted,
+          accent,
           playing,
+          hovered,
         );
+        if interactive {
+          controls = rects.map(Some);
+        }
       }
     }
     MediaLayout::Compact => {
@@ -3111,13 +3283,18 @@ fn draw_media(
         draw_progress(canvas, bar, fraction, look.progress, accent, muted, scale);
       }
       if look.controls {
-        draw_controls(
+        let rects = draw_controls(
           canvas,
           Rect::new(text_x, y + size * 2.75, text_width, size * 0.9),
           size,
           muted,
+          accent,
           playing,
+          hovered,
         );
+        if interactive {
+          controls = rects.map(Some);
+        }
       }
     }
     MediaLayout::Vinyl => {
@@ -3178,7 +3355,7 @@ fn draw_media(
         draw_progress(canvas, bar, fraction, look.progress, accent, muted, scale);
       }
       if look.controls {
-        draw_controls(
+        let rects = draw_controls(
           canvas,
           Rect::new(
             x + width * 0.25,
@@ -3188,12 +3365,20 @@ fn draw_media(
           ),
           size,
           muted,
+          accent,
           playing,
+          hovered,
         );
+        if interactive {
+          controls = rects.map(Some);
+        }
       }
     }
   }
-  rect
+  MediaDraw {
+    bounds: rect,
+    controls,
+  }
 }
 
 /// Scales a colour's existing alpha by `opacity`. Alpha is the only channel
@@ -3350,14 +3535,14 @@ fn scaled_offset(offset: (i32, i32), scale: f32) -> (i32, i32) {
 
 #[cfg(test)]
 mod tests {
-  use std::time::Instant;
+  use std::time::{Duration, Instant};
 
   use super::{
-    Scene, WidgetFrame, draw_media, glitch_window, parallax_offset, scramble_run, scramble_text,
-    widget_offset, widget_visible,
+    Scene, WidgetFrame, draw_media, glitch_window, parallax_offset, scanline_rows, scramble_run,
+    scramble_text, widget_offset, widget_visible,
   };
   use crate::color::Rgb;
-  use crate::config::{Config, MediaLook};
+  use crate::config::{Config, MediaLayout, MediaLook};
   use crate::layout::Anchor;
   use crate::ui::canvas::{Canvas, Rect};
   use crate::ui::drag::Drag;
@@ -3414,6 +3599,7 @@ mod tests {
       &mut canvas,
       &mut text,
       &scene,
+      0,
       &snapshot,
       Anchor::TopLeft,
       (0, 0),
@@ -3427,8 +3613,115 @@ mod tests {
       Rgb::solid(80, 120, 255),
       None,
       MediaLook::default(),
+      0.0,
     );
     canvas.pixmap().data().to_vec()
+  }
+
+  /// Renders one media widget and returns only the transport rectangles. The
+  /// pixel test above deliberately uses the default look (controls off), so
+  /// this keeps the clickability check independent from the metadata privacy
+  /// check.
+  fn media_control_rects(controls: bool, angle: f32, available: bool) -> [Option<Rect>; 3] {
+    let config = Config::default();
+    let theme = Theme::from(&config);
+    let view = View::default();
+    let now = jiff::Zoned::now();
+    let drag = Drag::empty();
+    let frame_now = Instant::now();
+    let scene = Scene {
+      view: &view,
+      theme: &theme,
+      plugins: &[],
+      now: &now,
+      started: frame_now,
+      frame_now,
+      scale: 1.0,
+      motion: MotionFrame::settled(),
+      monitor: None,
+      background_color: config.background.color,
+      asset_warning: None,
+      drag: &drag,
+      cursor: None,
+      screen: (480.0, 220.0),
+    };
+    let snapshot = MediaSnapshot {
+      available,
+      title: "Song".to_string(),
+      artist: "Artist".to_string(),
+      playing: true,
+      position: Duration::from_secs(30),
+      length: Duration::from_secs(180),
+      ..MediaSnapshot::default()
+    };
+    let look = MediaLook {
+      controls,
+      layout: MediaLayout::Card,
+      ..MediaLook::default()
+    };
+    let mut canvas = Canvas::new(480, 220).unwrap();
+    let mut text = TextEngine::new(&config.ui.font);
+    draw_media(
+      &mut canvas,
+      &mut text,
+      &scene,
+      2,
+      &snapshot,
+      Anchor::TopLeft,
+      (0, 0),
+      Rect::new(0.0, 0.0, 480.0, 220.0),
+      1.0,
+      16.0,
+      false,
+      true,
+      Rgb::solid(255, 255, 255),
+      Rgb::solid(200, 200, 200),
+      Rgb::solid(80, 120, 255),
+      None,
+      look,
+      angle,
+    )
+    .controls
+  }
+
+  #[test]
+  fn scanline_rows_cover_the_height_and_clamp_a_zero_gap() {
+    assert_eq!(scanline_rows(0, 10), 10);
+    assert_eq!(scanline_rows(3, 9), 3);
+    assert_eq!(scanline_rows(3, 10), 4);
+    assert_eq!(scanline_rows(2, 720), 360);
+  }
+
+  #[test]
+  fn media_controls_expose_click_targets_only_when_they_can_work() {
+    let controls = media_control_rects(true, 0.0, true);
+    assert!(
+      controls.iter().all(Option::is_some),
+      "a visible, unrotated widget with controls should expose all three buttons"
+    );
+    let [previous, play, next] = controls.map(Option::unwrap);
+    assert!(
+      previous.x < play.x && play.x < next.x,
+      "buttons should follow the drawn previous, play, next order"
+    );
+
+    // Controls off, a rotated widget, and the No media state all keep the
+    // picture but must not offer a click target.
+    assert!(
+      media_control_rects(false, 0.0, true)
+        .iter()
+        .all(Option::is_none)
+    );
+    assert!(
+      media_control_rects(true, 25.0, true)
+        .iter()
+        .all(Option::is_none)
+    );
+    assert!(
+      media_control_rects(true, 0.0, false)
+        .iter()
+        .all(Option::is_none)
+    );
   }
 
   #[test]

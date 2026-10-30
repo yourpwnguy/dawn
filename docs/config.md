@@ -525,7 +525,7 @@ UI or the greetd socket.
 | `layout` | string | `"card"` | `card` (art left, text right), `compact` (one tight row), or `vinyl` (circle with centred text). |
 | `art` | string | `"cover"` | `cover` keeps the square crop, `disc` masks it into a circle at load time, `none` hides it. |
 | `progress` | string | `"line"` | `line`, `segments` (twelve blocks), or `wave` (a decorative sine). The wave is deterministic and does not use audio data. |
-| `controls` | bool | `false` | Draw previous, play/pause, and next glyphs. Visual only for now: they are not clickable and send no player command. |
+| `controls` | bool | `false` | Draw previous, play/pause, and next buttons. They are clickable once the widget is showing real metadata; a rotated widget keeps the glyphs but ignores clicks. |
 | `tint_from_art` | bool | `false` | Derive the progress colour and plate border/glow from the dominant album-art colour, falling back to the theme accent. |
 | `color` | colour | theme text | Optional title colour override. |
 | `show_before_login` | bool | `true` | Draw the last visible track before authentication. Set `false` on shared machines where even the track name is private. |
@@ -576,9 +576,12 @@ glow = "#FFFFFF"
 glow_size = 8
 ```
 
-`controls = true` adds a transport row under the progress. Those glyphs are
-visual only in this release; pointer hit testing and the MPRIS control messages
-arrive in a later change.
+`controls = true` adds a transport row under the progress. Once the widget is
+showing real metadata, the three glyphs are real buttons: clicking one asks the
+MPRIS worker to send Previous, PlayPause, or Next to the player it is already
+polling. A rotated media widget still draws the row, but ignores clicks so the
+hit regions stay honest. The buttons also do nothing in the `No media` state,
+because there is no player to talk to.
 
 #### Widget plates
 
@@ -727,6 +730,22 @@ bundle directory. See `dawn list`, `dawn add`, and the theme section in
 | `spacing` | `1.0` | Padding and gap multiplier, 0.75 to 2.0. |
 | `noise` | `true` | Subtle grain over glass panels. |
 | `min_contrast` | `4.5` | Minimum contrast target used by the theme tests and text guards. |
+| `scanlines` | `0.0` | CRT scanline strength, 0 to 1. Zero turns the overlay off. |
+| `scanline_gap` | `3` | Physical pixel spacing between scanlines, 2 to 12. Smaller is denser. |
+| `scanline_ms` | `6000` | Time for the bright sweep band to cross the screen once, 1000 to 20000 ms. |
+
+A subtle CRT backdrop looks like this:
+
+```toml
+[theme]
+scanlines = 0.35
+scanline_gap = 3
+scanline_ms = 6000
+```
+
+The static lines paint directly onto the wallpaper, before the glass and the
+login form, so the effect textures the backdrop instead of the text. Reduced
+motion and low-power mode keep the lines but drop the moving sweep band.
 
 `card` is accepted as a legacy alias for `tint`. `blur_radius`,
 `blur_refresh_ms`, and `blur_downsample` are accepted for dawn 0.2 configs;
