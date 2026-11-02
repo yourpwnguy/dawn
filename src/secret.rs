@@ -5,7 +5,7 @@
 //! queued auth command is discarded because the window closed mid-login.
 //!
 //! There is deliberately no `Clone`, no `Display`, and the `Debug` impl prints
-//! a redaction marker. The only way to read the bytes is [`Secret::expose`],
+//! a redaction marker. The only way to read the bytes is `Secret::expose`,
 //! which is crate-private, so a plugin or a config structure cannot reach it.
 
 use std::fmt;

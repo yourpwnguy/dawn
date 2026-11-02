@@ -1,68 +1,87 @@
-# Hu Tao After Dark
+# AFTER DARK: STAGE CALL - ENCORE assets
 
-A decor pack for a dawn login greeter, styled as a late-night Liyue concert
-poster: crimson lacquer, old gold marquee bulbs, plum shadow, a cheeky ghost
-flame, and one butterfly for Papilio Charontis. The character cues are motifs
-only. Every path in this pack was drawn from scratch. There is no official
-HoYoverse artwork, logo, screenshot, font, or traced material here, and no asset
-depicts game UI.
+A small stage kit for the encore login: a printed wing, a ticket stub, a strip
+of tape, and three generated sound cues. The character and the montage live in
+`wallpaper.mp4`; this folder only supplies the paper and the hits around it.
 
-All nine SVGs use the same viewBox as their PNG. None of them contains a `text`
-element, and the 77 marks are drawn as geometry. Every background is
-transparent and no asset paints a full-canvas opaque rectangle. The sources use
-gradients, layered opacity, halftone patterns, and plain geometry only, with no
-filters that librsvg cannot render.
+Every SVG here was drawn from scratch for this bundle. There is no official
+artwork, logo, screenshot, or traced material in this folder. The palette is
+locked to the theme: void `#090606`, deep crimson `#A4001A`, hot red `#E80023`,
+rose-grey `#A06462`, and bone `#E6CBC0`.
 
-## Palette
+## Artwork
 
-| Role | Hex |
-| --- | --- |
-| ink | `#070408` |
-| lacquer | `#16090d` |
-| crimson | `#cf1230` |
-| hot red | `#ff3b52` |
-| bone | `#f3e7d2` |
-| antique gold | `#d8a84b` |
-| ember | `#ff7a3c` |
-| ghost cyan, accent | `#b9ede6` |
-| plum shadow, accent | `#4a1a33` |
+| Source | Render | Display | What it is |
+| --- | --- | --- | --- |
+| `wing.svg` | `wing.png`, 1960x2160 | 980x1080 | Left scrim: void gradient, halftone dust, and two quiet margin rules. It keeps the bone type legible over the red field without a card. |
+| `stub.svg` | `stub.png`, 1040x116 | 260x29 | Ticket stub: crimson face, bone hairline, notch, perforation dashes, and a hot red tear-off end. |
+| `tape.svg` | `tape.png`, 1040x120 | 360x42 | Translucent bone tape with ragged edges and a faint weave, used as texture under the kicker. |
 
-The ghost cyan and plum are small supporting accents, used only for the spirit
-and its shadow. The seven core colours carry the rest of the pack.
+The PNGs are rendered at twice their display width so they stay crisp on a
+1920x1080 panel and when the poster scales down to 1366x768. They are RGBA and
+keep the page outside the artwork transparent. No asset paints a full-canvas
+opaque rectangle.
 
-## Assets
-
-- `poster.svg` / `poster.png` (840x1000): black lacquer panel with a crimson edge, double gold border, halftone corners, a faint 77 watermark, art deco corner cuts, and a bottom marquee rule.
-- `sigil.svg` / `sigil.png` (512x512): gold bulb crest with a crimson centre, four butterfly wings and eyespots, and a ghost flame face.
-- `divider.svg` / `divider.png` (620x28): fading crimson and gold rule with a small butterfly and an eighth note.
-- `corner.svg` / `corner.png` (220x220): one gold and crimson art deco corner, made to be rotated into the other three.
-- `ghost.svg` / `ghost.png` (240x280): pale cyan ghost flame with a plum shadow, tiny grin, flame crest, and ember tail.
-- `note.svg` / `note.png` (110x150): bold bone and gold eighth note with an offset crimson plate.
-- `ring.svg` / `ring.png` (320x320): thirty-two gold bulbs on a transparent ring, made for a slow spin.
-- `ticket.svg` / `ticket.png` (280x130): bone concert stub with crimson print, a perforated tear line, a barcode, and a drawn 77.
-- `spark.svg` / `spark.png` (64x64): four point ember and gold sparkle with a faint halo.
-
-The poster keeps its middle dark and quiet on purpose, so the login form stays
-readable when the panel sits behind it. The ring has a fully transparent centre
-so it can turn around the form without boxing it in. The ticket, divider, and
-corner are meant to be layered at the edges of the greeting.
-
-## Rendering
-
-The PNGs are rendered from the SVGs with librsvg. From this directory:
+Render them again after editing a source, from this directory:
 
 ```sh
-for f in poster sigil divider corner ghost note ring ticket spark; do
-  rsvg-convert -o "$f.png" "$f.svg"
-done
+rsvg-convert -w 1960 -h 2160 -o wing.png wing.svg
+rsvg-convert -w 1040 -h 116 -o stub.png stub.svg
+rsvg-convert -w 1040 -h 120 -o tape.png tape.svg
 ```
 
-Or render one file:
+Checked with rsvg-convert 2.63.4 and ImageMagick 7.1.2.
+
+## Audio
+
+`audio/key.wav`, `audio/success.wav`, and `audio/failure.wav` are original
+synthesis, not samples. They were generated with ffmpeg from sine and pink
+noise sources, mixed and limited, then written as mono 44.1 kHz PCM 16-bit:
+
+- `key.wav` (0.11 s): a soft two-part tick, 1046.5 Hz and 1568 Hz with a tiny
+  pink-noise transient. It is mixed at -16 dB and rate-limited by the theme.
+- `success.wav` (1.35 s): an E5, B5, E6 arpeggio with long decays. It lands under
+  the success cut and the TAKE THE STAGE slam.
+- `failure.wav` (0.42 s): an 82 Hz thud, a low pink-noise scratch, and a 116 Hz
+  body. It is dull on purpose, so a rejection reads as a dropped cue rather than
+  an alarm.
+
+All three are under 2 MiB and under 5 s, which is the bundle limit for event
+sounds. The commands below reproduce them:
 
 ```sh
-rsvg-convert -o poster.png poster.svg
+ffmpeg -y -f lavfi -i "sine=frequency=1046.5:duration=0.11" \
+  -f lavfi -i "sine=frequency=1568:duration=0.09" \
+  -f lavfi -i "anoisesrc=d=0.02:c=pink:r=44100" \
+  -filter_complex "[0]volume=0.26,afade=t=out:st=0:d=0.11[a];[1]volume=0.10,afade=t=out:st=0:d=0.09[b];[2]volume=0.05,highpass=f=1800,afade=t=out:st=0:d=0.02[c];[a][b][c]amix=inputs=3:duration=longest:normalize=0,alimiter=limit=0.7" \
+  -ar 44100 -ac 1 -c:a pcm_s16le audio/key.wav
+
+ffmpeg -y -f lavfi -i "sine=frequency=659.25:duration=0.9" \
+  -f lavfi -i "sine=frequency=987.77:duration=0.95" \
+  -f lavfi -i "sine=frequency=1318.5:duration=1.1" \
+  -filter_complex "[0]volume=0.18,afade=t=out:st=0:d=0.85[a];[1]volume=0.14,adelay=120,afade=t=out:st=0:d=0.8[b];[2]volume=0.09,adelay=250,afade=t=out:st=0:d=0.85[c];[a][b][c]amix=inputs=3:duration=longest:normalize=0,alimiter=limit=0.72" \
+  -ar 44100 -ac 1 -c:a pcm_s16le audio/success.wav
+
+ffmpeg -y -f lavfi -i "sine=frequency=82:duration=0.42" \
+  -f lavfi -i "anoisesrc=d=0.34:c=pink:r=44100" \
+  -f lavfi -i "sine=frequency=116:duration=0.30" \
+  -filter_complex "[0]volume=0.26,afade=t=out:st=0.02:d=0.4[a];[1]volume=0.13,lowpass=f=420,highpass=f=90,afade=t=out:st=0.04:d=0.3[b];[2]volume=0.12,afade=t=out:st=0:d=0.28[c];[a][b][c]amix=inputs=3:duration=longest:normalize=0,alimiter=limit=0.65" \
+  -ar 44100 -ac 1 -c:a pcm_s16le audio/failure.wav
 ```
 
-The PNGs are RGBA and keep the transparent page outside the artwork. They were
-checked with rsvg-convert 2.63.4 and ImageMagick 7.1.2. Re-render after editing
-an SVG so the PNG and the source stay in sync.
+The ambient bed is the wallpaper's own AAC track (`[background].audio = true`).
+Sound is on by default; the machine can mute it with `[audio].enabled = false`
+or `DAWN_AUDIO=0`. The theme is complete without it.
+
+## Wallpaper
+
+`wallpaper.mp4` is example media shipped with the bundle. Check its provenance
+and rights before redistributing this theme. It is not generated by the scripts
+above and it is not covered by the artwork provenance statement.
+
+## Font
+
+The poster voice is IBM Plex Sans Condensed. The font is not bundled; the config
+asks for it by family name and dawn falls back to its embedded Inter face when
+the family is missing. Nothing in the layout is measured from the condensed face
+at config time.

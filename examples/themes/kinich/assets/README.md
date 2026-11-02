@@ -67,3 +67,13 @@ rsvg-convert -w 40 -o cursorbar.png cursorbar.svg
 `wallpaper.mp4` and `preview.webp` are example media for this bundle. They are
 not covered by the project licence; check their provenance before
 redistributing them. Playing the video needs ffmpeg on `PATH`.
+
+
+## Audio
+
+`audio/key.wav`, `audio/success.wav`, and `audio/failure.wav` are the shared
+starter cues. They are original synthesis and are mixed low enough for a login
+screen. Replace them with your own files under the same names, or remove the
+`[audio.events.*]` tables from `config.toml` for a silent theme. The wallpaper
+track is used as the ambient bed when the clip has one and
+`[background].audio = true`.

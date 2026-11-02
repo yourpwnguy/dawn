@@ -62,6 +62,17 @@ preset = "glass-dark"
 enabled = true
 reduced = false
 
+[audio]
+# On by default, but silent when the selected theme has no sound. `auto` asks
+# ALSA for the best local output and prefers analog cards, so a bundle needs no
+# per-machine edit. Check the chosen device with `dawn audio devices` and
+# `dawn audio test`, then turn sound off with `enabled = false` or DAWN_AUDIO=0.
+enabled = true
+volume = 60
+device = "auto"
+max_voices = 8
+stop_on_login = true
+
 [layout]
 # Remember dragged widget positions. Off so a greeter writes nothing.
 save = false

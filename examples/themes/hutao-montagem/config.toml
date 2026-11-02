@@ -1,17 +1,20 @@
-# dawn showcase: Hu Tao, 77th Director of the Wangsheng Funeral Parlor.
+# AFTER DARK: STAGE CALL - ENCORE.
 #
-# AFTER DARK: THE STAGE CALL. The wallpaper is the stage: hard-cut crimson
-# kinetic type and Hu Tao dancing. Nothing floats on a card here. The poster is
-# the login: the headline is set directly on the video, the credentials sit on
-# two crimson hairlines at the lower left, and the session list is the support
-# act on the bottom marquee. Hairlines are the only chrome.
+# The login is the encore of the montagem show. The wallpaper is the stage and
+# the user is the headliner walking back out. Everything is set directly on the
+# poster: a void wing on the left for the type, the crimson field for the act,
+# hairline rules and a ticket-stub tab as the only chrome. There is no card.
 #
-# The theme needs IBM Plex Sans Condensed for the poster voice. If it is
-# missing, dawn falls back to the embedded Inter face and the layout still
-# works: nothing is measured from the condensed face at config time.
+# The beat clock is the spine of the whole theme. It starts with the greeter and
+# runs at the track's 136 BPM with a 50 ms offset so the first pulse lands on the
+# first onset. The decor marquee, ticker, particle burst, splash underline, and
+# submit speed lines all read the same clock, so silent mode moves exactly like
+# audio mode. The wallpaper's own AAC track is the optional bed; the three
+# stingers in assets/audio are generated for this bundle and stay optional.
 #
-# The wallpaper is example media in the bundle. Check its provenance before
-# redistributing it. Playing it needs ffmpeg on PATH.
+# IBM Plex Sans Condensed carries the poster voice. If it is missing, dawn falls
+# back to the embedded Inter face; nothing here is measured from the font at
+# config time, so the layout still holds.
 
 [ui]
 font = "IBM Plex Sans Condensed"
@@ -22,20 +25,25 @@ fullscreen = true
 kind = "video"
 image = "wallpaper.mp4"
 fit = "cover"
+# The clip is a 1080p59.94 source. Follow its own clock so the stage lighting
+# moves at the rate the edit was cut at. A slower machine can still cap this.
 fps = 0
-memory_limit_mb = 1024
+memory_limit_mb = 256
 idle_pause_secs = 0
+# The wallpaper has an AAC track. The host switch still owns whether sound is
+# on; this only says which bed to use when it is.
+audio = true
 
 [theme]
-preset = "glass-dark"
-text = "#f3e7d2"
-muted = "#b9a893"
-accent = "#d8a84b"
-error = "#ff7a3c"
-tint = "#0e0b1000"
-border = "#d8a84b00"
-shadow = "#0e0b1000"
-focus_ring = "#d41830"
+preset = "minimal"
+text = "#E6CBC0"
+muted = "#A06462"
+accent = "#E80023"
+error = "#FFD8CD"
+tint = "#09060600"
+border = "#A4001A00"
+shadow = "#09060600"
+focus_ring = "#E80023"
 corner_radius = 0
 spacing = 1.0
 noise = false
@@ -45,41 +53,31 @@ scanlines = 0.0
 [theme.blur]
 enabled = false
 
-[motion]
-enabled = true
-reduced = false
-boot_ms = 520
-focus_ms = 160
-shake_ms = 240
-drag_ms = 120
-
-[layout]
-save = false
-
-# Top-left stack: the presenter, the clock, the date. No plate.
+# One stage clock, top right, kept small and out of the poster lockup. The dot
+# separator and two-line date read as a set list header rather than a desktop
+# clock.
 [clock]
 enabled = true
 style = "digital"
-layer = "behind"
-anchor = "top-left"
-offset = [72, 66]
-size = 64
+layer = "front"
+anchor = "top-right"
+offset = [96, 118]
+size = 42
 date_size = 14
-time_format = "%H:%M"
-date_format = "%a %d %b"
-color = "#f3e7d2"
-date_color = "#ff6274"
-label = "WANGSHENG PRESENTS"
-label_color = "#d8a84b"
-label_size = 11
+time_format = "%H.%M"
+date_format = "%d %b"
+color = "#E6CBC0"
+date_color = "#090606"
+label = "ENCORE NIGHT"
+label_color = "#090606"
+label_size = 9
 label_tracking = 0.3
 
 [clock.plate]
 style = "none"
 
-# The login is inline type, not a form in a box. Poster is the full-bleed
-# frame with no surface; the two rules are the only chrome and the selected
-# session lives in the marquee, not in a card.
+# The poster is the full frame. The form offset and decor offsets are screen
+# coordinates at 1920x1080 and scale uniformly down to 1366x768.
 [login]
 layout = "poster"
 anchor = "center"
@@ -87,183 +85,375 @@ offset = [0, 0]
 width = 1920
 height = 1080
 padding = 0
-gap = 16
+gap = 14
 radius = 0
 surface = "none"
 show_shadow = false
 show_border = false
 draggable = false
-show_session = false
+show_session = true
 show_hints = true
 show_picker = true
 show_dry_run_badge = true
 tab = ""
 greeting = ""
-form_offset = [72, 700]
-form_width = 660
-busy_text = "TAKING THE STAGE"
-no_sessions = "NO SUPPORT ACT ON THE BILL"
+form_offset = [96, 648]
+form_width = 600
+busy_text = "THE CROWD IS CALLING"
+no_sessions = "NO SET ON THE BILL TONIGHT"
+dry_run_badge = "STAGE CHECK"
 
+# Stage gear, not form fields: a hairline rule under the run, no box, a hot red
+# focus and a single-glyph passcode. The key pop is the smallest possible hit.
 [login.field]
-height = 74
-font_size = 44
+height = 68
+font_size = 38
 radius = 0
 padding = 1
 background = "#00000000"
-underline = "#d41830"
-underline_size = 2
-label_size = 11
+underline = "#A4001A"
+underline_size = 1
+label_size = 10
 label_tracking = 0.3
-label_color = "#d8a84b"
-text = "#f3e7d2"
-placeholder_color = "#b9a89399"
-focus = "#d41830"
-caret = "#ff7a3c"
+label_color = "#E80023"
+text = "#E6CBC0"
+placeholder_color = "#A06462aa"
+focus = "#E80023"
+caret = "#E80023"
 caret_width = 2
 caret_style = "bar"
 icon = ""
-key_pop_ms = 140
-key_pop_scale = 1.18
-key_pop_color = "#ff7a3c"
+key_pop_ms = 120
+key_pop_scale = 1.14
+key_pop_color = "#E80023"
 
 [login.username]
-label = "YOU ARE"
-placeholder = "YOUR NAME"
+label = "STAGE NAME"
+placeholder = "THE HEADLINER"
 
 [login.password]
-label = "THE PASSCODE"
+label = "PASSCODE"
 placeholder = "\u25c6 \u25c6 \u25c6 \u25c6 \u25c6 \u25c6"
 mask = "\u25c6"
 
 [login.button]
 show = false
 
+[login.session]
+label = "TONIGHT'S SET"
+change_hint = "TAB TO SWAP"
+empty = "NO SET ON THE BILL TONIGHT"
+
 [login.hints]
-username = "ENTER \u00b7 TAKE THE STAGE    TAB \u00b7 PASSCODE"
-password = "ENTER \u00b7 TAKE THE STAGE    TAB \u00b7 SUPPORT ACT"
+username = "ENTER \u00b7 TAKE THE STAGE    TAB \u00b7 PASSCODE    ESC \u00b7 CLEAR"
+password = "ENTER \u00b7 TAKE THE STAGE    TAB \u00b7 TONIGHT'S SET"
 picker = "UP/DOWN \u00b7 CHOOSE    ENTER \u00b7 CONFIRM    ESC \u00b7 BACK"
-busy = "TAKING THE STAGE"
+busy = "THE CROWD IS CALLING"
 
-# The poster headline. The hero frame is full-bleed and unpainted, so these
-# offsets are screen coordinates, not a card.
+# The boot card is a crimson stage title, not a splash screen over the login.
+# It holds for six beats, then crossfades, and Enter skips it. Escape is never
+# consumed, so the app keeps its normal clear/cancel meaning.
+[login.splash]
+enabled = true
+ms = 2647
+title = "AFTER DARK"
+sub = "STAGE CALL: ENCORE"
+fade_ms = 320
+dismiss_on = "enter"
+bg = "#A4001A"
+accent = "#090606"
+
+# ---- the left wing ----
+
+# A printed scrim, halftone and all, so bone type stays legible over the red
+# field without putting a card or a centred glass panel over the art.
 [[login.decor]]
-kind = "text"
-text = "TONIGHT:"
-size = 76
-bold = true
-tracking = 0.02
-color = "#f3e7d2"
-stroke = "#0e0b10"
-stroke_width = 2
+kind = "image"
+image = "assets/wing.png"
+width = 980
 anchor = "top-left"
-offset = [72, 326]
+offset = [0, 0]
+
+# A tape strip under the kicker. It is texture, not a label plate.
+[[login.decor]]
+kind = "image"
+image = "assets/tape.png"
+width = 360
+anchor = "top-left"
+offset = [82, 160]
+rotation = -2
+opacity = 0.9
 
 [[login.decor]]
 kind = "text"
-text = "HUTAO"
-size = 156
+text = "WANGSHENG PRESENTS / ONE NIGHT ONLY"
+size = 11
+bold = true
+tracking = 0.28
+color = "#A06462"
+anchor = "top-left"
+offset = [96, 176]
+
+# The poster lockup. Three weights, one accent word.
+[[login.decor]]
+kind = "text"
+text = "AFTER DARK"
+size = 118
 bold = true
 tracking = 0.01
-color = "#8a0b1b"
-stroke = "#0e0b10"
-stroke_width = 3
+color = "#E6CBC0"
 anchor = "top-left"
-offset = [72, 410]
+offset = [90, 210]
 
-# A crimson hairline between the headline and the form, the only other chrome
-# on the poster.
-[[login.decor]]
-kind = "panel"
-width = 660
-height = 4
-color = "#d8a84b55"
-anchor = "top-left"
-offset = [72, 664]
-
-# A small credit above the headline, kept out of Hu Tao's wing.
 [[login.decor]]
 kind = "text"
-text = "AFTER DARK / ONE NIGHT ONLY"
-size = 11
-tracking = 0.24
-color = "#d8a84b"
+text = "STAGE CALL"
+size = 34
+bold = true
+tracking = 0.26
+color = "#A06462"
 anchor = "top-left"
-offset = [72, 292]
+offset = [96, 362]
 
-# Embers from the stage floor. Calm by design: 24 low-opacity flames.
+# The marquee word pulses on the beat. The 6 percent pop is deliberately small:
+# the eye should catch it, the layout should not move.
+[[login.decor]]
+kind = "text"
+text = "ENCORE"
+size = 96
+bold = true
+tracking = 0.04
+color = "#E80023"
+anchor = "top-left"
+offset = [96, 398]
+pulse_on_beat = true
+
+# A hairline and a two-cell beat block under the accent word. The hot cell is
+# the only ornament that pulses in the form column.
+[[login.decor]]
+kind = "panel"
+width = 360
+height = 4
+color = "#E80023aa"
+anchor = "top-left"
+offset = [96, 512]
+
+# The underline ends in a 15 degree cut instead of a square stop. The slash
+# continues the rule up into the red field, so the poster has one deliberate
+# diagonal instead of a rectangle with a line under it.
+[[login.decor]]
+kind = "panel"
+width = 72
+height = 4
+color = "#E80023cc"
+anchor = "top-left"
+offset = [455, 499]
+rotation = -15
+
+[[login.decor]]
+kind = "panel"
+width = 10
+height = 10
+color = "#E80023"
+anchor = "top-left"
+offset = [96, 528]
+pulse_on_beat = true
+
+[[login.decor]]
+kind = "panel"
+width = 10
+height = 10
+color = "#E6CBC055"
+anchor = "top-left"
+offset = [112, 528]
+
+[[login.decor]]
+kind = "text"
+text = "HOUSE LIGHTS DOWN. THE SET IS YOURS."
+size = 13
+tracking = 0.18
+color = "#A06462"
+anchor = "top-left"
+offset = [96, 556]
+
+# ---- the ticket tab ----
+
+# A real stub shape with a notch and a perforation, not a rounded label. It sits
+# on the rule above the fields and names the pass.
+[[login.decor]]
+kind = "image"
+image = "assets/stub.png"
+width = 260
+anchor = "top-left"
+offset = [96, 588]
+
+[[login.decor]]
+kind = "text"
+text = "ADMIT ONE / 001"
+size = 10
+bold = true
+tracking = 0.3
+color = "#E6CBC0"
+anchor = "top-left"
+offset = [120, 596]
+
+# The rule runs out of the stub and past the field column, the way a ticket
+# tear line continues across a counter.
+[[login.decor]]
+kind = "panel"
+width = 600
+height = 4
+color = "#A4001A66"
+anchor = "top-left"
+offset = [96, 616]
+
+# Slow rose dust. The burst is a thin streak, so the beat reads as a light hit
+# rather than confetti every half second.
 [particles]
 enabled = true
-count = 24
-sprite = "flame"
-color = "#ffb46b"
-color2 = "#f3e7d2"
+count = 18
+sprite = "dot"
+color = "#E6CBC0"
+color2 = "#A06462"
 drift = "up"
-speed = 20.0
-size = 6.5
-opacity = 0.4
+speed = 16.0
+size = 2.6
+opacity = 0.3
 layer = "behind"
 burst_on = "success"
-burst_sprite = "butterfly"
-burst_count = 64
+burst_sprite = "streak"
+burst_count = 14
+burst_on_beat = true
 
-# The support act: the live session name is first, then the bill. Radius zero,
-# a translucent black strip, and a crimson rule along its top edge.
+# The bottom marquee is a text run above the engine letterbox, not a banner:
+# no plate, no fill, just the scrolling bill on the stage edge.
 [ticker]
 enabled = true
 session_first = true
 items = [
-  "77TH DIRECTOR",
-  "LIVE AT THE PARLOR",
-  "ONE MORE SONG BEFORE THE WITCHING HOUR",
-  "NO REFUNDS. NO REGRETS.",
+  "STAGE CALL: ENCORE",
+  "ONE MORE SONG",
+  "DOORS CLOSED / HOUSE LIGHTS DOWN",
+  "ALL ACCESS / TONIGHT ONLY",
 ]
 separator = "   \u00b7   "
 anchor = "bottom"
-offset = [0, 24]
-size = 17
-speed = 40.0
-color = "#d41830"
+offset = [72, 100]
+size = 15
+speed = 38.0
+color = "#E6CBC0"
 bold = true
-tracking = 0.2
+tracking = 0.18
 layer = "behind"
+pulse_on_beat = true
 
 [ticker.plate]
-style = "solid"
-color = "#0e0b10d9"
-radius = 0
-padding = 12
-border = "#d4183044"
+style = "none"
 
-# The success montage: two hard cuts, then the call slams over a transparent
-# field while the butterfly burst fills the stage. The transparent last cut is
-# deliberate, it lets the burst read through the slam. The hold is the normal
-# success hold and is capped by dawn at two seconds.
+# The finisher. Submit already punched the camera and opened the speed lines;
+# the success path adds three hard cuts and one line over the live burst. The
+# last cut is transparent so the streaks and the wallpaper read through the slam.
 [login.transition]
 enabled = true
 trigger = "success"
-cuts = ["#d41830", "#0e0b10", "#00000000"]
-cut_ms = 55
-shake = 8.0
-zoom = 0.06
+cuts = ["#E80023", "#090606", "#00000000"]
+cut_ms = 50
+shake = 10.0
+zoom = 0.05
 slam = "TAKE THE STAGE"
-slam_ms = 1500
-slam_color = "#f3e7d2"
-slam_size = 110
+slam_ms = 1400
+slam_color = "#E6CBC0"
+slam_size = 136
 
-# Kept, restyled: a small hairline player for a desktop dry run. Off by
-# default because the right wing belongs to Hu Tao.
+[motion]
+enabled = true
+reduced = false
+boot_ms = 520
+focus_ms = 160
+shake_ms = 260
+drag_ms = 120
+decor_fps = 60
+parallax = 0.0
+
+# The track grid: 136 BPM, first onset at 0.05 s. The wallpaper starts with the
+# greeter, so the same offset lines up in silent and audio mode.
+[motion.beat]
+bpm = 136
+offset_ms = 50
+
+# A camera that is always breathing a little, punches on submit and success,
+# and shakes once on a rejection. The punch is small because the cut carries
+# most of the impact.
+[motion.camera]
+punch = 0.032
+punch_ms = 160
+shake = 7.0
+shake_ms = 260
+breathing = 0.004
+breath_ms = 7000
+
+# Game-feel holds. The success hold is inside the existing two-second handoff
+# budget, so the finisher never delays a real login.
+[motion.hitstop]
+submit_ms = 90
+success_ms = 140
+failure_ms = 120
+
+# Letterbox 0.083 is the wallpaper's own bar height at 16:9, so the engine frame
+# lands on the video edge instead of showing two different black bars. The
+# vignette and chromatic pass are quiet; the glitch belongs to a rejection only.
+[motion.post]
+speed_lines = 0.72
+speed_lines_on = "submit"
+letterbox = 0.083
+letterbox_animate_ms = 600
+vignette = 0.22
+chromatic = 0.12
+glitch_ms = 260
+glitch_on = "failure"
+
+# Sound is optional. The wallpaper track is the bed; the stingers are generated
+# for this bundle and mixed low so key clicks never fight the music.
+[audio]
+# On by default and system independent: `auto` lets ALSA pick the local analog
+# output. A theme ships the sound design; the machine can still mute it with
+# `enabled = false` or DAWN_AUDIO=0.
+enabled = true
+volume = 60
+device = "auto"
+max_voices = 8
+stop_on_login = true
+
+[audio.ambient]
+volume_db = -16
+fade_in_ms = 900
+duck_db = -9
+duck_ms = 240
+
+[audio.events.key]
+file = "assets/audio/key.wav"
+volume_db = -16
+retrigger = "restart"
+cooldown_ms = 45
+pitch_jitter = 0.6
+
+[audio.events.success]
+file = "assets/audio/success.wav"
+volume_db = -4
+retrigger = "restart"
+cooldown_ms = 400
+
+[audio.events.failure]
+file = "assets/audio/failure.wav"
+volume_db = -6
+retrigger = "restart"
+cooldown_ms = 300
+
+[layout]
+save = false
+
 [media]
 enabled = false
-anchor = "bottom-right"
-offset = [72, 120]
-size = 13
-layout = "compact"
-show_art = false
-color = "#f3e7d2"
-layer = "behind"
-
-[media.plate]
-style = "none"
 
 [power]
 low_power = false

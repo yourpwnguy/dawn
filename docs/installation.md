@@ -16,6 +16,7 @@ That keeps the greeter portable. You can build the binary on one machine, copy
 | cage or another kiosk compositor | Wayland greeter | cage is the simplest supported setup. |
 | Xorg plus a focusing session manager | X11 fallback | A bare X server often leaves the window unfocused. |
 | `ffmpeg` on the greeter's `PATH` | MP4/WebM/MKV wallpapers | GIF and WebP do not need it. |
+| `alsa-lib` | Theme audio | dawn links libasound; audio is silent when no device is available. |
 | Vulkan or OpenGL driver | GPU compositor | Optional. dawn falls back to softbuffer. |
 | Fontconfig and fonts | Display type | The embedded Inter face is the last fallback. |
 
@@ -44,7 +45,7 @@ The result is `target/release/dawn`.
 
 ```sh
 sudo pacman -S --needed base-devel pkgconf wayland libxkbcommon \
-  libx11 libxcb vulkan-icd-loader mesa fontconfig rustup
+  libx11 libxcb vulkan-icd-loader mesa fontconfig rustup alsa-lib
 rustup default stable
 cargo build --release --locked
 ```
@@ -52,8 +53,7 @@ cargo build --release --locked
 Runtime packages:
 
 ```sh
-sudo pacman -S --needed greetd cage ffmpeg noto-fonts polkit
-```
+sudo pacman -S --needed greetd cage ffmpeg noto-fonts polkit alsa-lib```
 
 ### Debian and Ubuntu
 
@@ -64,7 +64,7 @@ sudo apt update
 sudo apt install build-essential pkg-config \
   libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
   libx11-dev libxcb1-dev libvulkan-dev \
-  libegl1-mesa-dev libgles2-mesa-dev libfontconfig1-dev
+  libegl1-mesa-dev libgles2-mesa-dev libfontconfig1-dev libasound2-dev
 ```
 
 Install Rust with rustup if the distro toolchain is older than 1.89:
@@ -78,7 +78,7 @@ cargo build --release --locked
 Runtime packages:
 
 ```sh
-sudo apt install greetd cage ffmpeg fonts-noto-core
+sudo apt install greetd cage ffmpeg fonts-noto-core libasound2
 ```
 
 If your Debian or Ubuntu release does not package `greetd` or `cage`, build
@@ -144,6 +144,37 @@ sudo install -Dm755 target/release/dawn /usr/local/bin/dawn
 
 Use `/usr/bin/dawn` if your package manager owns that prefix. There is nothing
 else to run.
+
+## Audio permissions
+
+The greeter opens ALSA directly, before any PipeWire or PulseAudio session
+exists. On distributions where `/dev/snd` is group `audio`, the `greeter`
+account must be in that group:
+
+```sh
+sudo usermod -aG audio greeter
+sudo systemctl restart greetd
+```
+
+Then find the output the greeter can actually open:
+
+```sh
+sudo -u greeter dawn audio devices
+sudo -u greeter dawn audio test --device hw:0,0
+```
+
+Put the name that prints `opened ... at ... Hz` in `/etc/dawn/config.toml`:
+
+```toml
+[audio]
+enabled = true
+device = "hw:0,0"
+```
+
+`auto` now ranks ALSA hints toward analog outputs, but an explicit name is the
+least surprising choice on a machine with several cards. A user-session test as
+your own account can succeed while the greeter fails, because the greeter may
+not be in `audio` and because `default` can point at a session sound server.
 
 ## Install a config
 

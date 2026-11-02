@@ -99,6 +99,7 @@ color = "#0b1020"         # shows through letterbox bars and during load
 | `fps` | integer, 0 to 240 | `0` | Upper bound on animated playback. `0` follows the source exactly. A positive value caps GIF and WebP delays and gives video an `ffmpeg` `fps` filter, which is useful on a slow panel or a heavy 4K clip. |
 | `memory_limit_mb` | integer, 16 to 1024 | `128` | Hard per-frame decode budget in MiB. Animated GIF, WebP, and video stream one frame at a time; a single frame larger than the budget is downscaled before it is published. |
 | `idle_pause_secs` | integer, 0 to 3600 | `45` | Freeze an animated wallpaper after this many seconds without input. `0` disables the idle pause. `[power].low_power = true` freezes it regardless. |
+| `audio` | bool | `false` | Use the video wallpaper's own audio track as the ambient bed. Requires a video in `image`; the host can still mute it with `[audio].enabled = false`. `[audio.ambient]` sets volume, fade, and ducking; its `file` is ignored. |
 | `monitors` | table with at most 16 entries | empty | Per-output overrides. The output name comes from the compositor and must be 1 to 64 printable characters. |
 
 Still wallpapers are decoded once on a loader thread. Animated GIF and WebP keep only the current frame, so a long 1080p animation does not fill memory. Video asks the system `ffmpeg` for raw RGBA frames on a pipe; frames arrive on the source clock, and each published frame wakes the window directly. Install `ffmpeg` if a video wallpaper is used. When it is missing, dawn falls back to the gradient, logs a warning, and the login form is unaffected.
@@ -227,6 +228,7 @@ form_width = 495
 | `rotation` | number, -360 to 360 | `0` | Rotate the whole card, including its form and decor, around its centre. |
 | `draggable` | bool | `false` | Let the pointer move the whole card. A click on a field still focuses it. Off by default so a stray click while typing cannot move the form. |
 | `greeting` | string, at most 128 characters | `""` | Line above the fields. Empty hides it. Falls back to `ui.greeting` when this key is absent. |
+| `prefill` | `auto`, `none`, or a username | `"auto"` | Starting value for the username field. `auto` uses the last local login, then the lowest-uid regular account. A filled field starts on the password, so one Enter signs in. `none` keeps the empty field. |
 | `show_session` | bool | `true` | Convenience alias for `login.session.show`. The more specific `[login.session].show` wins when both are present. |
 | `show_hints` | bool | `true` | Draw the keyboard hint line at the bottom of the form. |
 | `show_picker` | bool | `true` | Allow the session picker to open. Disable it for a single-session kiosk. |
@@ -240,6 +242,8 @@ form_width = 495
 | `form_width` | number, 0 to 2400 | `0` | Width of the credentials and button column in hero and poster layouts. Zero uses the card padding. |
 
 The card layout clamps its width and position so it always fits the current screen. A hero or poster frame keeps its authored proportions and scales down as one unit when the display is smaller than `width` by `height`. Saved drag offsets are clamped separately, so a position saved on a large panel cannot push the form out of reach on a laptop.
+
+`login.prefill = "auto"` is the default. It reads the last interactive login from `/var/log/wtmp` when the greeter can read it, then falls back to the lowest-uid regular account in `/etc/passwd`. A filled field starts on the password, so the common path is password then Enter. Set `prefill = "none"` for a shared machine or a literal username for a kiosk. The prefill is a convenience only; PAM still decides whether the login is accepted.
 
 When it goes wrong: `width = 3000` reports `login.width: must be between 260 and 2400 (got 3000)` and keeps `380`. `height = 2500` reports the range `0 to 2000`. An unknown layout reports `unknown layout "wide"; use card, hero, or poster` and keeps `card`. An unknown surface reports `unknown surface "blur"; use glass, flat, or none` and keeps `glass`. `panel_fade = [0.8, 0.2]` reports `fade start must not be after fade end` and keeps `[1.0, 1.0]`. A monitor name that does not match any output leaves the card on every output.
 
@@ -394,6 +398,37 @@ slam_size = 92
 A transparent last cut is useful for a success montage: the field lets the particle burst and the live poster read through while the slam line sits on top. That is how the `hutao-montagem` example gets butterflies and type in the same frame.
 
 When it goes wrong: an unknown trigger reports `unknown value "fail"; use enter, success, both, boot, or failure` and keeps `enter`. `cuts = []` is reported as `no usable colours; using the defaults` and the three default colours are used. `slam_size = 4` reports `must be between 8 and 240 (got 4)` and keeps `92`. A zero `slam_ms` and zero `cut_ms` make the sequence total zero time, which returns to the normal screen immediately.
+
+### `[login.splash]`
+
+This subsection controls an optional boot title card. It is disabled by default and never touches authentication: the splash owns only the clock and the keys listed below, so it cannot block a login that has not started yet.
+
+| Key | Type and range | Default | What it does |
+| --- | --- | --- | --- |
+| `enabled` | bool | `false` | Show the title card on startup. |
+| `ms` | integer, 500 to 10000 | `2500` | Time the card stays fully visible before the crossfade begins. |
+| `title` | string, at most 64 characters | `""` | Centred title line. An enabled splash with no title is reported and shows only the subtitle. |
+| `sub` | string, at most 96 characters | `""` | Smaller line under the title. |
+| `fade_ms` | integer, 100 to 2000 | `300` | Crossfade into the live login form. |
+| `dismiss_on` | enum: `timeout`, `enter`, `any` | `"timeout"` | `timeout` waits for `ms`. `enter` also allows Enter. `any` also allows any key except Escape. |
+| `bg` | colour | wallpaper colour | Full-screen splash background. |
+| `accent` | colour | theme accent | Subtitle and underline colour. |
+
+```toml
+[login.splash]
+enabled = true
+ms = 2500
+title = "ENCORE"
+sub = "the stage is warming up"
+fade_ms = 300
+dismiss_on = "enter"
+bg = "#0e0b10"
+accent = "#d8a84b"
+```
+
+While the splash covers the screen the login form is not painted and does not receive keys. Escape always keeps its normal app meaning, even though the form is hidden. Once the crossfade finishes, the app state is the ordinary login screen; there is no second timer and no splash frame left to leak. When `[motion.beat]` is on, the underline under the title pulses with the beat.
+
+When it goes wrong: `ms = 100` reports `must be between 500 and 10000 (got 100)` and keeps `2500`. An unknown dismiss value reports `unknown value "click"; use timeout, enter, or any` and keeps `timeout`. A title above 64 characters reports `must be at most 64 characters` and the default empty title, which also triggers the "enabled splash has no title" notice.
 
 ### `[login.session]` and `[login.hints]`
 
@@ -819,6 +854,7 @@ This section controls the kinetic marquee that scrolls one joined text run acros
 | `tracking` | number, 0 to 0.5 | `0.2` | Letter spacing in em. |
 | `layer` | enum: `behind`, `front` | `"behind"` | `behind` paints under the login form. `front` paints above the form and the warning line, and is the second-topmost layer after front particles. |
 | `session_first` | bool | `false` | Put the selected session name at the head of the run, uppercased, and flash the run in the accent colour for 80 ms when the session changes. The launch command is not touched. |
+| `pulse_on_beat` | bool | `false` | Multiply the scroll speed by `1 + 0.25 * (1 - beat_phase)` while `[motion.beat]` is on. The text stays the same width; only the travel speeds up. |
 | `plate` | table | theme `tint` scrim | Same table as [Widget plates](#widget-plates). `style = "glass"` gives the strip the shared blurred backdrop. |
 
 ```toml
@@ -866,6 +902,7 @@ This section controls the procedurally drawn ambient emitters and the optional s
 | `burst_on` | enum: `none` (alias `off`), `success` | `"none"` | Fire one burst when greetd accepts a login. The burst never changes the auth result. |
 | `burst_sprite` | enum: same sprite names as `sprite` | `"butterfly"` | Sprite used by the burst, independent of the ambient `sprite`. |
 | `burst_count` | integer, 0 to 64 | `24` | Number of sprites in the burst. |
+| `burst_on_beat` | bool | `false` | Fire the same burst once per `[motion.beat]` beat. It needs `enabled = true`, obeys `burst_count` and the 64-sprite cap, and freezes with `[motion].reduced` or `[power].low_power`. |
 
 ```toml
 [particles]
@@ -899,12 +936,77 @@ This section controls the boot, focus, error, and drag motion, plus the ambient 
 | `focus_ms` | integer, 0 to 1000 | `160` | Focus-ring settle duration. |
 | `shake_ms` | integer, 0 to 2000 | `320` | Error shake duration. |
 | `drag_ms` | integer, 0 to 1000 | `120` | Time constant for pointer-drag easing. `0` snaps to the pointer. |
-| `decor_fps` | integer, 10 to 60 | `30` | Refresh rate for ambient decor only. Focus, typing, boot, and button effects still use the full motion rate. |
+| `decor_fps` | integer, 10 to 60 | `60` | Refresh rate for ambient decor only. Focus, typing, boot, and button effects still use the full motion rate. Drop it to `30` on a low-power panel. |
 | `parallax` | number, 0 to 2 | `0` | Global cursor parallax multiplier. Each decor item or built-in widget also needs a positive `parallax_depth`. Zero disables it everywhere. |
 
 Animated decor is rasterised inside the cached UI overlay, so a moving ornament would otherwise force a full overlay repaint on every 60 fps wallpaper frame. `decor_fps` caps only that ambient path. Input, focus, the boot animation, and button hover effects stay at the full rate. Parallax only runs in a live window with a known pointer position, so screenshots stay at the neutral offset.
 
-When it goes wrong: `decor_fps = 5` reports `must be between 10 and 60 (got 5)` and keeps `30`. `parallax = 4` reports `must be between 0 and 2 (got 4)` and keeps `0`. A negative duration reports the range and keeps the default. `boot_ms = 0` is valid and removes the boot animation.
+On a settled full-bleed card, still decor is baked into one GPU texture and composited under the moving UI. A large still ornament therefore does not cost a full-screen CPU blend on every video frame, even at `decor_fps = 60`.
+
+When it goes wrong: `decor_fps = 5` reports `must be between 10 and 60 (got 5)` and keeps `60`. `parallax = 4` reports `must be between 0 and 2 (got 4)` and keeps `0`. A negative duration reports the range and keeps the default. `boot_ms = 0` is valid and removes the boot animation.
+
+### `[motion.beat]`
+
+This subsection is a shared musical clock. Turning it on does not change a pixel by itself: decor, the ticker, particles, post effects, and the splash underline each need their own opt-in key.
+
+| Key | Type and range | Default | What it does |
+| --- | --- | --- | --- |
+| `bpm` | number, `0` or 20 to 300 | `0` | Beats per minute. `0` means off. |
+| `offset_ms` | integer, 0 to 10000 | `0` | Delay before the first beat, in milliseconds. |
+
+The clock starts at the boot instant, so the same config always lines up identically. `beat_phase` is 0 at each beat and approaches 1 just before the next one; the renderer exposes it to decor, the ticker, particles, post effects, and the splash underline. Reduced motion and low power freeze every consumer, so the clock itself is never a reason for a frame.
+
+When it goes wrong: `bpm = 10` reports `must be 0 or between 20 and 300 (got 10)` and keeps `0`. `offset_ms = 20000` reports `must be between 0 and 10000 (got 20000)` and keeps `0`. `bpm = 0` is valid and means the clock is off.
+
+### `[motion.camera]`
+
+This subsection applies a whole-scene transform to the GPU composite: a scale punch, a decaying shake, and a slow breathing scale. The software path ignores it rather than resampling a finished CPU frame, so a machine without a GPU shows the scene without camera motion.
+
+| Key | Type and range | Default | What it does |
+| --- | --- | --- | --- |
+| `punch` | number, 0 to 0.2 | `0` | Extra scale at the instant of a punch. Zero is off. |
+| `punch_ms` | integer, 60 to 600 | `180` | Time for the punch to decay back to 1.0. |
+| `shake` | number, 0 to 40 | `0` | Peak shake in logical pixels. Zero is off. |
+| `shake_ms` | integer, 60 to 1000 | `300` | Time for the shake to decay to zero. |
+| `breathing` | number, 0 to 0.02 | `0` | Sinusoidal scale amplitude. Zero is off. |
+| `breath_ms` | integer, 1000 to 10000 | `6000` | Breathing period. |
+
+Punch fires on submit, success, and failure. Shake fires on submit and failure. The transform is applied around the screen centre and covers the wallpaper and the UI together, so the whole frame reads as one camera.
+
+When it goes wrong: `punch = 0.5` reports `must be between 0 and 0.2 (got 0.5)` and keeps `0`. `breath_ms = 200` reports `must be between 1000 and 10000 (got 200)` and keeps `6000`. A `punch_ms` outside its range keeps `180`.
+
+### `[motion.hitstop]`
+
+This subsection holds the last presented frame for a few milliseconds at a game-feel moment. The event loop keeps running, so auth replies and input are still delivered; only repaints pause.
+
+| Key | Type and range | Default | What it does |
+| --- | --- | --- | --- |
+| `submit_ms` | integer, 0 to 300 | `0` | Hold on an auth submit. |
+| `success_ms` | integer, 0 to 500 | `0` | Hold when greetd accepts the login. |
+| `failure_ms` | integer, 0 to 500 | `0` | Hold on a rejected attempt. |
+
+The success hold is clamped against the same two-second exit budget as the success transition. A hit-stop can therefore make the success moment feel heavier, but it can never add time beyond `MAX_SUCCESS_HOLD` before the greeter hands control to the session. Submit and failure holds never gate the exit.
+
+When it goes wrong: `submit_ms = 500` reports `must be between 0 and 300 (got 500)` and keeps `0`. A zero duration is a no-op, which is the default for every moment.
+
+### `[motion.post]`
+
+This subsection adds full-screen post effects. Letterbox, vignette, and speed lines are painted on both paths; chromatic aberration and glitch slices are GPU-only and the software path skips them silently.
+
+| Key | Type and range | Default | What it does |
+| --- | --- | --- | --- |
+| `speed_lines` | number, 0 to 1 | `0` | Translucent white diagonal streaks during their window. Zero is off. |
+| `speed_lines_on` | enum: `beat`, `submit`, `both` | `"submit"` | What opens the speed-line window. |
+| `letterbox` | number, 0 to 0.2 | `0` | Bar height as a fraction of the screen height. Zero is off. |
+| `letterbox_animate_ms` | integer, 0 to 2000 | `400` | Time for the bars to slide in on boot and out on success. |
+| `vignette` | number, 0 to 1 | `0` | Static radial darkening at the edges. |
+| `chromatic` | number, 0 to 1 | `0` | RGB channel offset in the GPU present pass. The software path ignores it. |
+| `glitch_ms` | integer, 0 to 600 | `0` | Duration of the glitch slice window. Zero is off. |
+| `glitch_on` | enum: `failure`, `submit`, `both` | `"failure"` | What opens the glitch window. |
+
+A speed-line punch lasts `400 + 500 * speed_lines` milliseconds, so a stronger setting also reads longer. Letterbox bars animate in over the boot and out again when the login succeeds. The glitch draws 3 to 6 horizontal slices with a new displacement seed each frame; it is implemented in the GPU shader, so `DAWN_GPU=0` shows the frame without slices. Camera and chromatic follow the same GPU-only rule.
+
+When it goes wrong: `speed_lines = 2` reports `must be between 0 and 1 (got 2)` and keeps `0`. `letterbox = 0.5` reports `must be between 0 and 0.2 (got 0.5)` and keeps `0`. An unknown `speed_lines_on` reports `unknown value "fade"; use beat, submit, or both` and keeps `submit`.
 
 ## `[theme]`
 
@@ -1050,6 +1152,7 @@ This section lists the keys shared by every decor kind.
 | `anchor` | enum: the seven anchors | `"top-left"` | Anchor point inside the card. |
 | `offset` | `[x, y]`, each component -2048 to 4096 | `[0, 0]` | Logical pixel offset from the anchor. |
 | `rotation` | number, -360 to 360 | `0` | Rotate the item around its own centre. |
+| `pulse_on_beat` | bool | `false` | Multiply the item's scale by `1 + 0.06 * (1 - beat_phase)^2` on each `[motion.beat]` beat. It stacks with `[login.decor.motion].pulse`, so one ornament can breathe and pop at the same time. |
 | `motion` | table | static | Per-item motion. See [Animated decor](#animated-decor). |
 
 `opacity` is accepted by images and panels; text items ignore it and use only the motion fade.
@@ -1263,6 +1366,60 @@ The remaining keys are escape hatches. The `adapter` keywords already set the de
 `[gpu]` always comes from the host config, even when `--theme ID` replaces the rest of the file. A theme bundle cannot change which adapter the greeter uses. When `--config PATH` is passed without a theme, that file is the host config and its `[gpu]` table applies. `DAWN_GPU` is applied after the host table is chosen: `0` or `cpu` disables the GPU, `vulkan`, `gl`, or `software` selects a backend, `auto` resets `adapter` to `"auto"`, and any other value is treated as an adapter name.
 
 When it goes wrong: `backend = "metal"` reports `unknown value "metal"; use auto, vulkan, gl, or software` and keeps `auto`. `device = "apu"` reports `unknown value "apu"; use auto, discrete, integrated, virtual, or cpu` and keeps `auto`. `power = "max"` reports `unknown value "max"; use low, high, or default` and keeps `low`. `present = "fast"` reports `unknown value "fast"; use fifo, mailbox, or immediate` and keeps `fifo`. `fallback = "retry"` reports `unknown value "retry"; use chain, software, cpu, or none` and keeps `chain`. See [troubleshooting.md](troubleshooting.md) for a black screen with the GPU compositor.
+
+## `[audio]`
+
+Sound is on by default. The host owns `enabled`, `volume`, `device`,
+`max_voices`, and `stop_on_login`; a selected theme supplies the ambient bed
+and the event files. Every shipped theme uses `device = "auto"`, so the same
+bundle works on a new machine without editing it. The event table, formats, and
+limits are documented in [audio.md](audio.md).
+
+```toml
+[audio]
+enabled = true
+volume = 60
+device = "auto"
+stop_on_login = true
+```
+
+| Key | Type and range | Default | What it does |
+| --- | --- | --- | --- |
+| `enabled` | bool | `true` | The machine owner's switch. A theme can declare sound, but the host policy is reapplied after selection. Set `false` to mute, or use `DAWN_AUDIO=0` for one run. |
+| `volume` | integer 0 to 100 | `60` | Master gain after mixing. |
+| `device` | ALSA device name | `"auto"` | `auto` ranks ALSA hints: analog `sysdefault`/`front`, then `plughw`/`hw`, then `default`; loopback and helper PCMs are skipped. Run `dawn audio devices` and `dawn audio test --device NAME` to find the name that works for the greeter user. |
+| `max_voices` | integer 1 to 16 | `8` | Simultaneous one-shot sounds. |
+| `stop_on_login` | bool | `true` | Stop playback and release the device on success. |
+
+`DAWN_AUDIO=0` mutes for one process and `DAWN_AUDIO=1` enables for one process.
+See [audio.md](audio.md) for the ambient table and the event names.
+
+## `[rituals]`
+
+Opt-in streaks, milestones, rarity drops, and achievements. They are cosmetic,
+per machine, and never touch authentication.
+
+```toml
+[rituals]
+enabled = true
+achievements = false
+state_path = "/var/lib/dawn/rituals.toml"
+seed = "date"
+```
+
+| Key | Type and range | Default | What it does |
+| --- | --- | --- | --- |
+| `enabled` | bool | `false` | Turns the rituals engine on. |
+| `achievements` | bool | `false` | Award the achievement list. Off keeps the streak and drops only. |
+| `drops` | bool | `true` | Pick one rarity drop per local date. |
+| `seed` | `date` or `boot` | `"date"` | A date seed gives one drop per day; a boot seed rolls every boot. |
+| `state_path` | path | unset | Defaults to `$XDG_STATE_HOME/dawn/rituals.toml` or `$HOME/.local/state/dawn/rituals.toml`. |
+| `weights.common` | integer 0 to 100 | `70` | Drop weight for common. |
+| `weights.rare` | integer 0 to 100 | `25` | Drop weight for rare. |
+| `weights.saga` | integer 0 to 100 | `5` | Drop weight for saga. |
+
+`dawn rituals status` prints the current state and `dawn rituals reset` removes
+it. See [audio.md](audio.md) for the achievement list and the boot behaviour.
 
 ## Full examples
 

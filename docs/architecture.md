@@ -77,6 +77,16 @@ throughout (the surface must offer `Bgra8Unorm` or `Rgba8Unorm`), so the GPU
 result matches the CPU path instead of round-tripping through linear space.
 Presentation uses FIFO so the compositor paces the video.
 
+A settled full-bleed card is split into layers. Still decor, including the large
+wing image, is baked once into its own screen-sized texture. The live overlay
+then carries only the moving decor, the ticker, particles, and the form. The
+shader composites wallpaper, still decor, and live UI in that order. The
+vignette is also a shader value now; the CPU radial gradient cost about 22 ms per
+frame at 1920x1080. Shaped text buffers are cached, so an overlay repaint does
+not re-shape every label, placeholder, and marquee tile. Those three changes are
+what keep a fullscreen 60 fps video at its source rate instead of dropping to
+the low twenties.
+
 The fallback is the original softbuffer path. It is selected when wgpu cannot
 create an adapter, device, or surface, or when the surface only offers HDR or
 sRGB formats. The failure is logged with its reason, the login form still
@@ -102,6 +112,14 @@ wallpaper, while input, auth changes, motion, and hover effects mark the overlay
 dirty. The glass cache is the one exception; when a new blurred backdrop
 arrives, the overlay is re-rasterised because the panel pixels themselves
 changed.
+
+A single animation clock owns splash, transitions, input effects, motion, and
+decor. `about_to_wait` marks what changed and requests a redraw only when the
+next deadline is due, instead of asking for one on every event-loop turn. A
+camera-only frame does not mark the overlay dirty: the camera is a GPU
+transform, so rebuilding every text run for it would be pure waste. Breathing
+alone runs at half the motion cadence; punch, shake, beat pulses, and text
+animations keep the full rate.
 
 Animated decor is ambient rather than input-driven, so it gets its own cadence.
 `[motion].decor_fps` caps how often a moving ornament forces a fresh overlay
@@ -140,6 +158,25 @@ contain rotated fields and a rotated button; their hit regions carry the sum of
 both angles and inverse-rotate the pointer instead of using a loose bounding
 box. A fully transparent card is `surface = "none"`: it skips the panel, border,
 and shadow while keeping the form and its hit regions.
+
+## Audio
+
+Audio is on by default but the machine config can mute it. The `dawn-audio`
+thread owns the ALSA sink, decodes every asset once, and mixes 10 ms chunks.
+Nothing on the UI or auth path waits for it. A missing device, a bad file, or a
+full queue simply means less sound.
+
+The mixer decodes to 48 kHz stereo but asks the device for the nearest rate it
+accepts and resamples while mixing, so 44.1 kHz hardware is not played at the
+wrong pitch. The ALSA sink completes partial writes and recovers from an
+underrun at most twice. Wallpaper audio is the one subprocess: the video track
+is extracted through `ffmpeg` at load. Event sounds and ambient files use the
+pure Rust OGG and WAV decoders.
+
+The theme owns the sound design but not the policy. `[audio].enabled`,
+`volume`, `device`, `max_voices`, and `stop_on_login` survive theme selection,
+the same way `[gpu]` does. See [audio.md](audio.md) for the practical guide,
+the limits, and the design decisions.
 
 ## Background engine
 

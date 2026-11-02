@@ -50,6 +50,43 @@ impl Line {
   }
 }
 
+/// One frame of the optional boot title card.
+///
+/// The state machine lives in `ui::splash`; this is only the already-resolved
+/// text, opacity, and colours the renderer needs. `None` on `View::splash`
+/// means the normal login form is the whole scene.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SplashView {
+  pub title: String,
+  pub sub: String,
+  /// 1.0 while the card is fully visible, falling to 0 during the crossfade.
+  pub opacity: f32,
+  /// Beat phase, used for the pulsing underline when the beat clock is on.
+  pub beat_phase: f32,
+  /// True when `[motion.beat]` has a positive BPM, so the underline pulses.
+  pub underline: bool,
+  /// Optional overrides. `None` follows the wallpaper or theme accent.
+  pub bg: Option<crate::color::Rgb>,
+  pub accent: Option<crate::color::Rgb>,
+}
+
+impl SplashView {
+  /// True while the splash fully covers the form, so the renderer can skip the
+  /// login overlay entirely instead of painting it under an opaque card.
+  #[must_use]
+  pub fn covers(&self) -> bool {
+    self.opacity >= 0.999
+  }
+
+  /// True when the card also hides the wallpaper. A fixed background colour is
+  /// opaque; a colour override with alpha still needs the wallpaper underneath,
+  /// and a fading card always does.
+  #[must_use]
+  pub fn opaque(&self, background: crate::color::Rgb) -> bool {
+    self.covers() && self.bg.unwrap_or(background).a == 255
+  }
+}
+
 /// Everything the renderer needs for one frame.
 #[derive(Debug, Clone, Default)]
 pub struct View {
@@ -88,6 +125,8 @@ pub struct View {
   /// user data (the media widget in particular) must stay inert until this is
   /// set, because the greeter is a pre-login surface.
   pub authenticated: bool,
+  /// Boot title card, or `None` once the normal form is visible.
+  pub splash: Option<SplashView>,
   /// Last local battery reading. `present = false` on a desktop.
   pub battery: BatterySnapshot,
   /// Last local system reading. The renderer reads `load_history` for the

@@ -134,6 +134,13 @@ impl Canvas {
     &self.pixmap
   }
 
+  /// Consumes the canvas and returns its pixels. The splash cache keeps one
+  /// fully painted frame and does not need the drawing surface afterwards.
+  #[must_use]
+  pub fn into_pixmap(self) -> Pixmap {
+    self.pixmap
+  }
+
   pub fn clear(&mut self, color: Rgb) {
     self.pixmap.fill(color.to_skia());
   }
@@ -142,7 +149,10 @@ impl Canvas {
   /// transparent full-screen canvas so the compositor can put the wallpaper
   /// underneath it instead of repainting the background on the CPU.
   pub fn clear_transparent(&mut self) {
-    self.pixmap.fill(tiny_skia::Color::TRANSPARENT);
+    // The pixmap is straight RGBA and transparent is four zero bytes, so a
+    // slice fill lets the allocator use memset instead of a per-pixel colour
+    // conversion. This runs once per animated overlay frame.
+    self.pixmap.data_mut().fill(0);
   }
 
   fn local(&self, rect: Rect) -> Rect {
@@ -502,11 +512,28 @@ impl Canvas {
       .max(self.height() as f32 / image.height() as f32);
     let dx = (self.width() as f32 - image.width() as f32 * scale) / 2.0;
     let dy = (self.height() as f32 - image.height() as f32 * scale) / 2.0;
+    // The common video/still path is an opaque, screen-sized frame. A plain
+    // memcpy is exact and avoids running the sampler over two million pixels
+    // at 60 fps. Crossfades and cropped frames still take the general path.
+    if opacity >= 0.999
+      && self.offset == (0.0, 0.0)
+      && image.width() == self.width()
+      && image.height() == self.height()
+    {
+      self.pixmap.data_mut().copy_from_slice(image.data());
+      return;
+    }
+    let untouched = (scale - 1.0).abs() < 0.001 && dx.abs() < 0.5 && dy.abs() < 0.5;
+    let quality = if untouched {
+      FilterQuality::Nearest
+    } else {
+      FilterQuality::Bilinear
+    };
     self.draw_image(
       image,
       Transform::from_scale(scale, scale).post_translate(dx, dy),
       opacity,
-      FilterQuality::Bilinear,
+      quality,
     );
   }
 
@@ -761,3 +788,6 @@ fn circle_path(center: (f32, f32), radius: f32) -> Option<Path> {
   builder.push_circle(center.0, center.1, radius);
   builder.finish()
 }
+
+#[cfg(test)]
+mod tests;

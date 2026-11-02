@@ -104,6 +104,9 @@ Every file path in `config.toml` that names a bundle asset MUST resolve inside
 * Migration patches exactly two path-valued keys when it moves a root-level
   file: `image` and `art`. Matching is exact, so unrelated values are never
   rewritten.
+* Audio and motion keys add no bundle artifacts. Audio paths follow this rule.
+  Their schemas, limits, and optional behaviour live in [audio.md](audio.md)
+  and [config.md](config.md), not in this format specification.
 
 ## 4. Validation rules
 
@@ -189,7 +192,6 @@ guesses at an asset reference it does not understand: an unresolvable tree
 fails validation and the source stays as it was.
 
 ## 7. Command surface
-
 * `dawn check PATH` runs the full validation on an uninstalled tree. Zero issues
   exit 0. Any issue exits 1 and prints the numbered report.
 * `dawn new NAME [--id ID] [--parent DIR]` creates `DIR/ID/` with the four

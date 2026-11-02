@@ -84,7 +84,12 @@ fn writable_target(command: &Command) -> Option<PathBuf> {
     | Command::Theme(ThemeCommand::Remove { system: true, .. }) => {
       Some(crate::theme::system_root())
     }
-    Command::Theme(_) | Command::Dev(_) | Command::Completions(_) | Command::Run(_) => None,
+    Command::Theme(_)
+    | Command::Rituals(_)
+    | Command::Audio(_)
+    | Command::Dev(_)
+    | Command::Completions(_)
+    | Command::Run(_) => None,
   }
 }
 

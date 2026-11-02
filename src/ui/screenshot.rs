@@ -69,13 +69,20 @@ pub fn render(
 
   // No worker: a screenshot must work without a greetd socket, and it never
   // accepts input. The view is built exactly as the live app would build it.
-  let app = crate::app::App::new(
+  let mut app = crate::app::App::new(
     config.clone(),
     sessions.to_vec(),
     plugins.to_vec(),
     None,
     warning,
     dry_run,
+  );
+  app.prepare_splash(
+    frame_now,
+    (width, height),
+    1.0,
+    config.background.color,
+    &mut text,
   );
   let view: View = app.view();
   let zoned = jiff::Zoned::now();
@@ -98,6 +105,8 @@ pub fn render(
     screen: (width as f32, height as f32),
     burst_at: None,
     hud: None,
+    splash_art: app.splash_art(),
+    post_gpu: false,
   };
   let _ = render::paint(&mut canvas, &mut text, &mut background, &mut glass, &scene);
 

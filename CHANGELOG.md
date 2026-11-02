@@ -2,6 +2,106 @@
 
 All notable changes to dawn are recorded here.
 
+## 0.6.3 - 2026-10-30
+
+### Added
+
+- `[motion.beat]`: a shared BPM clock with an optional offset. Consumers opt in
+  through `[[login.decor]].pulse_on_beat`, `[ticker].pulse_on_beat`,
+  `[particles].burst_on_beat`, and `[motion.post].speed_lines_on = "beat"`.
+- `[motion.camera]`: GPU whole-scene punch, decaying shake, and breathing. The
+  software path ignores it silently.
+- `[motion.hitstop]`: short frame holds on submit, success, and failure. The
+  success hold is clamped against the existing two-second handoff budget.
+- `[motion.post]`: speed lines, animated letterbox, vignette, chromatic
+  aberration, and glitch slices. Chromatic and glitch are GPU-only.
+- `[login.splash]`: an optional boot title card with a clock or key dismissal
+  and a crossfade into the login form.
+- `[login.prefill]`: `auto` fills the username from the last local login, then
+  the lowest-uid regular account. A filled field starts on the password, so one
+  Enter signs in. `none` and a literal name are also accepted.
+
+### Changed
+
+- The hutao-montagem example is rebuilt as AFTER DARK: STAGE CALL - ENCORE. It
+  is a beat-clocked stage login with a crimson splash card, a letterboxed poster,
+  camera punch and hitstop, a rejection glitch, generated key, success, and
+  failure stingers, and a TAKE THE STAGE finisher. The bundle now declares
+  `[engine] min = "0.6.3"`.
+- Every ENCORE key defaults to a no-op, so a config without them renders exactly
+  as it did in 0.6.2.
+
+### Fixed
+
+- The boot splash no longer re-shapes its title and subtitle every 16 ms. The
+  static card is rasterised once and reused, and an opaque splash skips the
+  hidden wallpaper upload and blur work. This removes the stutter at the start
+  of a video wallpaper.
+- Fullscreen video keeps its source frame rate. Still decor on a settled
+  full-bleed card is baked into one GPU texture, the vignette moved from a
+  22 ms CPU radial gradient into the shader, and shaped text buffers are
+  cached. A 1920x1200 presentation of the ENCORE clip now measures about
+  59.8 fps instead of 23 fps.
+- Wallpaper audio resolved the theme directory twice, so the video's own track
+  was never found. Asset paths are now resolved once at config load time.
+- The mixer applied a 900 ms ambient fade in roughly 100 ms, and a hard duck
+  edge could click. The fade follows its configured curve and only the duck
+  factor is eased.
+- ALSA output assumed 48 kHz and ignored partial writes. dawn now reads the
+  rate the device accepted, resamples in the mixer, completes partial writes,
+  and bounds underrun recovery.
+- A camera-only frame no longer rebuilds and re-shapes the text overlay. A
+  breathing camera animates on the GPU without a CPU repaint every frame.
+- Decor images are scaled once at load instead of resampling a 1960x2160
+  source on every frame.
+- The wallpaper identity path is now an opaque memcpy instead of a full-screen
+  bilinear resample on every frame.
+- `[audio].device = "auto"` ranks ALSA hints and prefers analog outputs. It no
+  longer picks a loopback or HDMI card just because it has a low card index.
+
+### Added
+
+- `dawn audio devices` lists ALSA playback names and descriptions, and
+  `dawn audio test --device NAME` opens one device and plays a short tone. This
+  is the supported way to find the correct `[audio].device` for the greeter
+  user.
+- `dawn init` now writes an `[audio]` section. Audio is on by default and the
+  device is `auto`, so a bundle does not need a per-machine edit. `enabled` and
+  `DAWN_AUDIO` remain the mute switches.
+- Every example theme ships the same starter key, success, and failure cues,
+  and the video themes with an AAC track use it as the ambient bed.
+- `[motion].decor_fps` defaults to 60. A low-power machine can drop it to 30.
+
+### Changed
+
+- The config, validation, renderer, window, app, GPU, clock, and wallpaper
+  modules are split into focused files. Their public APIs are unchanged.
+
+## 0.6.2 - 2026-10-30
+
+### Added
+
+- Theme audio: an ambient bed and 15 event sounds (`boot`, `key`, `backspace`,
+  `field_focus`, `submit`, `success`, `failure`, `cancel`, `session_change`,
+  the three rarity drops, `milestone`, `achievement`, `error_config`).
+  Playback goes straight to ALSA, decodes OGG Vorbis and WAV in pure Rust,
+  ducks the bed under stingers, and caps key clicks at 12 per second.
+- `[audio]` host policy: `enabled`, `volume`, `device`, `max_voices`, and
+  `stop_on_login`. The policy survives theme selection, so a bundle cannot
+  turn sound on or change the device. `DAWN_AUDIO=0/1` overrides one process.
+- Opt-in rituals: per-machine streaks with one grace day per week, milestones
+  at 3, 7, 14, 30, 100, and 365 days, weighted rarity drops seeded by date or
+  boot, and six achievements. `dawn rituals status` and `dawn rituals reset`
+  manage the local state file.
+- `dawn check` validates audio references, formats, and size caps.
+- Video wallpapers can use their own audio track as the ambient bed with
+  `[background].audio = true`. The track is decoded through ffmpeg at load and
+  falls back to `[audio.ambient].file` when the video has no audio.
+
+### Changed
+
+- Theme audio is off unless the machine config enables it.
+
 ## 0.6.1 - 2026-10-30
 
 ### Fixed

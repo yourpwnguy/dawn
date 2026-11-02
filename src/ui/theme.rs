@@ -16,7 +16,7 @@ use crate::config::{
   SecondHand, TickerConfig, WidgetLayer, WidgetLook,
 };
 use crate::layout::Anchor;
-use crate::ui::image::{DecodeLimits, load_native};
+use crate::ui::image::{DecodeLimits, load_scaled_width};
 
 /// A cosmetic image, text run, or plate inside the login card.
 #[derive(Debug, Clone)]
@@ -35,6 +35,8 @@ pub struct Decor {
   pub offset: (i32, i32),
   pub rotation: f32,
   pub motion: crate::config::DecorMotion,
+  /// Opt-in scale pop on each `[motion.beat]` beat.
+  pub pulse_on_beat: bool,
   /// True for a `kind = "panel"` item. Panels have no image or text, so an
   /// explicit flag keeps the renderer from guessing based on empty strings.
   pub panel: bool,
@@ -174,7 +176,20 @@ impl Theme {
         || self.clock_face_animating
         || self.scanlines > 0.0
         || (self.ticker.enabled && self.ticker.speed > 0.0 && !self.ticker.items.is_empty())
-        || (self.particles.enabled && self.particles.count > 0))
+        || (self.particles.enabled && self.particles.count > 0)
+        || self.beat_consumed())
+  }
+
+  /// True when the beat clock has at least one opt-in consumer. The beat itself
+  /// never paints, so an enabled clock with no consumer must not ask the window
+  /// for animation frames.
+  #[must_use]
+  pub fn beat_consumed(&self) -> bool {
+    self.motion.beat.bpm > 0.0
+      && (self.decor.iter().any(|item| item.pulse_on_beat)
+        || (self.ticker.enabled && self.ticker.pulse_on_beat)
+        || (self.particles.enabled && self.particles.burst_on_beat)
+        || (self.motion.post.speed_lines > 0.0 && self.motion.post.speed_lines_on.beat()))
   }
 }
 
@@ -224,10 +239,13 @@ impl From<&Config> for Theme {
   }
 }
 
-/// Loads a decor image once. The renderer scales it to the configured width,
-/// so keeping the native size avoids a second resample at every paint.
-fn load_decor_image(path: &Path) -> Option<Pixmap> {
-  match load_native(path, DecodeLimits::default()) {
+/// Loads a decor image once, already scaled to its configured width.
+///
+/// The old path kept the native asset and asked tiny-skia to resample it every
+/// frame. For a 1960x2160 wing shown at 980 px that is millions of source
+/// samples per paint, which is enough to make a login screen feel laggy.
+fn load_decor_image(path: &Path, width: f32) -> Option<Pixmap> {
+  match load_scaled_width(path, DecodeLimits::default(), width) {
     Ok(pixmap) => Some(pixmap),
     Err(error) => {
       warn!(path = %path.display(), %error, "cannot load a login decor image");
@@ -250,6 +268,7 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       offset,
       rotation,
       motion,
+      pulse_on_beat,
     } => Some(Decor {
       image: None,
       text: text.clone(),
@@ -264,6 +283,7 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       offset: *offset,
       rotation: *rotation,
       motion: *motion,
+      pulse_on_beat: *pulse_on_beat,
       panel: false,
       color_end: None,
       gradient_angle: 0.0,
@@ -281,8 +301,9 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       opacity,
       rotation,
       motion,
+      pulse_on_beat,
     } => {
-      let image = load_decor_image(path)?;
+      let image = load_decor_image(path, *width)?;
       Some(Decor {
         image: Some(image),
         text: String::new(),
@@ -297,6 +318,7 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
         offset: *offset,
         rotation: *rotation,
         motion: *motion,
+        pulse_on_beat: *pulse_on_beat,
         panel: false,
         color_end: None,
         gradient_angle: 0.0,
@@ -321,6 +343,7 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       offset,
       rotation,
       motion,
+      pulse_on_beat,
     } => Some(Decor {
       image: None,
       text: String::new(),
@@ -337,6 +360,7 @@ fn decor_from_spec(spec: &DecorSpec, config: &Config) -> Option<Decor> {
       offset: *offset,
       rotation: *rotation,
       motion: *motion,
+      pulse_on_beat: *pulse_on_beat,
       panel: true,
       color_end: *color_end,
       gradient_angle: *gradient_angle,

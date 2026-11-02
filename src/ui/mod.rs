@@ -32,6 +32,7 @@ pub mod motion;
 pub mod particles;
 pub mod render;
 pub mod screenshot;
+pub mod splash;
 pub mod stream;
 pub mod system;
 pub mod text;
