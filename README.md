@@ -10,7 +10,7 @@ theme, takes the username and password, and hands the login back to greetd.
 
 | Hu Tao | Genshin | Kinich | Hu Tao Montagem |
 | --- | --- | --- | --- |
-| [![Hu Tao theme in motion](docs/dawn-hutao.webp)](docs/dawn-hutao.mp4) | [![Genshin theme in motion](docs/dawn-genshin.webp)](docs/dawn-genshin.mp4) | [![Kinich theme in motion](docs/dawn-kinich.webp)](docs/dawn-kinich.mp4) | [![Hu Tao Montagem in motion](docs/dawn-hutao-montagem.webp)](docs/dawn-hutao-montagem.mp4) |
+| [![Hu Tao theme in motion](docs/dawn-hutao.webp)](docs/dawn-hutao.mp4) | [![Genshin theme in motion](docs/dawn-genshin.webp)](docs/dawn-genshin.mp4) | [![Kinich theme in motion](docs/dawn-kinich.webp)](docs/dawn-kinich.mp4) | [![Hu Tao Montagem in motion](docs/dawn-hutao-montagem-preview.webp)](docs/dawn-hutao-montagem-preview.mp4) |
 
 Four of the six example themes in `examples/themes`: `hutao-chibi`, `genshin`,
 `kinich`, and `hutao-montagem`. Click a preview to open the clip.
