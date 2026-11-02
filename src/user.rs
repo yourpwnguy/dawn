@@ -94,7 +94,7 @@ fn last_login() -> Option<String> {
 /// failed logins.
 fn last_login_from(data: &[u8]) -> Option<String> {
   let mut last = None;
-  for record in data.chunks_exact(WTMP_RECORD) {
+  for record in data.as_chunks::<WTMP_RECORD>().0 {
     let kind = i16::from_ne_bytes([record[0], record[1]]);
     if kind != WTMP_USER_PROCESS {
       continue;

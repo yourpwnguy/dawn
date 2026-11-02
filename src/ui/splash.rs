@@ -588,7 +588,9 @@ mod tests {
       first
         .pixmap
         .data()
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .any(|pixel| pixel[3] > 0)
     );
     let second = splash

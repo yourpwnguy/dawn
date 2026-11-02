@@ -105,8 +105,9 @@ pub fn decode_video_audio(path: &Path) -> Result<Clip, String> {
   if bytes.len() < 2 {
     return Err(format!("{} has no audio samples", path.display()));
   }
-  let samples: Vec<f32> = bytes
-    .chunks_exact(2)
+  let (pairs, _) = bytes.as_chunks::<2>();
+  let samples: Vec<f32> = pairs
+    .iter()
     .map(|pair| f32::from(i16::from_le_bytes([pair[0], pair[1]])) / 32_768.0)
     .collect();
   let frames = samples.len() / 2;
