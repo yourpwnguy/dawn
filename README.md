@@ -40,13 +40,15 @@ will run the greeter.
   [packaging/greetd-x11.toml](packaging/greetd-x11.toml).
 - Rust 1.89 or newer.
 - ffmpeg, only if you want video wallpapers. Stills and GIFs do not need it.
+- ALSA (`alsa-lib` / `libasound2`) for theme audio. Without a usable device dawn
+  stays silent and the login is unaffected.
 
 Arch:
 
 ```sh
 sudo pacman -S --needed rustup base-devel git curl pkgconf wayland \
   libxkbcommon libx11 libxcb vulkan-icd-loader mesa fontconfig
-sudo pacman -S --needed greetd cage noto-fonts polkit
+sudo pacman -S --needed greetd cage noto-fonts polkit alsa-lib
 sudo pacman -S --needed ffmpeg   # optional
 rustup default stable
 ```
@@ -58,7 +60,7 @@ sudo apt update
 sudo apt install build-essential git curl pkg-config \
   libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
   libx11-dev libxcb1-dev libvulkan-dev \
-  libegl1-mesa-dev libgles2-mesa-dev libfontconfig1-dev
+  libegl1-mesa-dev libgles2-mesa-dev libfontconfig1-dev libasound2-dev
 sudo apt install greetd cage fonts-noto-core
 sudo apt install ffmpeg   # optional
 ```
@@ -291,6 +293,8 @@ It also supports `elvish` and `powershell`.
 | `dawn check PATH` | Check a theme folder without installing it. |
 | `dawn new NAME` | Create a theme folder to start from. `--id` sets the id. |
 | `dawn dev PATH` | Open a theme in a window that reloads when you save. |
+| `dawn rituals status` | Show the streak, drops, and achievements. |
+| `dawn rituals reset` | Remove the ritual state file. |
 | `dawn completions SHELL` | Print shell completions. |
 | `dawn --theme ID` | Use an installed theme for this run. |
 | `dawn --dry-run` | Open the login screen and simulate authentication. |
@@ -333,6 +337,25 @@ contacts greetd, so you can leave it open while you work.
 
 The full theme format is in [docs/bundle-spec.md](docs/bundle-spec.md), and
 `dawn dev` is covered in [docs/dev.md](docs/dev.md).
+
+## Sound
+
+Themes can ship an ambient bed and sounds for typing, focus, submit, success,
+and failure. Sound is off until the machine enables it:
+
+```toml
+[audio]
+enabled = true
+volume = 60
+```
+
+Sound is on by default and every shipped theme uses `device = "auto"`, which
+ranks ALSA hints toward an analog output. A theme describes its sound design;
+the machine can still mute it with `enabled = false` or `DAWN_AUDIO=0`. Run
+`dawn audio devices` and `dawn audio test --device NAME` if `auto` picks the
+wrong card on your machine. Video wallpapers can also use their own audio track
+with `[background] audio = true`. Formats, limits, the event list, and the
+opt-in rituals layer are in [docs/audio.md](docs/audio.md).
 
 ## Configuration
 
@@ -378,6 +401,7 @@ before reporting a credential issue.
 
 - [docs/installation.md](docs/installation.md): package lists, greetd and cage setup, X11, upgrade, uninstall.
 - [docs/config.md](docs/config.md): every configuration key.
+- [docs/audio.md](docs/audio.md): sound design, event list, and rituals.
 - [docs/bundle-spec.md](docs/bundle-spec.md): the theme folder format.
 - [docs/dev.md](docs/dev.md): the hot-reload theme window.
 - [docs/architecture.md](docs/architecture.md): modules, authentication flow, rendering.

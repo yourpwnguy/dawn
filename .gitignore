@@ -3,10 +3,17 @@
 /pkg
 *.swp
 *.swo
+*.bak
+*.orig
+*.rej
 .DS_Store
+.env
+.idea/
+.vscode/
 .opencode/
 .ruff_cache/
 dawn-preview.png
 
-# Working notes kept locally, never published.
+# Working notes and machine-specific overrides kept locally, never published.
 /docs/ideas/
+*.local.toml

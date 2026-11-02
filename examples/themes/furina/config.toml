@@ -384,6 +384,8 @@ fit = "cover"
 fps = 0
 memory_limit_mb = 1024
 idle_pause_secs = 0
+# This clip has an AAC track. Use it as the ambient bed, no extra asset.
+audio = true
 
 [theme]
 preset = "glass-dark"
@@ -431,3 +433,32 @@ enabled = false
 
 [auth]
 timeout_secs = 120
+
+[audio]
+# On by default and system independent: `auto` lets ALSA pick the local analog
+# output. A theme ships the sound design; the machine can still mute it with
+# `enabled = false` or DAWN_AUDIO=0.
+enabled = true
+volume = 60
+device = "auto"
+max_voices = 8
+stop_on_login = true
+
+[audio.events.key]
+file = "assets/audio/key.wav"
+volume_db = -16
+retrigger = "restart"
+cooldown_ms = 45
+pitch_jitter = 0.6
+
+[audio.events.success]
+file = "assets/audio/success.wav"
+volume_db = -4
+retrigger = "restart"
+cooldown_ms = 400
+
+[audio.events.failure]
+file = "assets/audio/failure.wav"
+volume_db = -6
+retrigger = "restart"
+cooldown_ms = 300

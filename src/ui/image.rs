@@ -65,6 +65,35 @@ pub fn load_native(path: &Path, limits: DecodeLimits) -> Result<Pixmap, String> 
   to_pixmap(image).ok_or_else(|| "image dimensions are not representable".to_string())
 }
 
+/// Loads a decor image already scaled to its configured display width.
+///
+/// The old path kept a 1960x2160 source and resampled it on every paint. That
+/// is fine for a screenshot and terrible for a 60 fps login screen. Scaling
+/// once at load keeps the compositor on a 1:1 blit for the common 1x display.
+/// If the panel is HiDPI the renderer may upscale the cached image slightly;
+/// that is cheaper and still visually clean for soft ornaments.
+pub fn load_scaled_width(path: &Path, limits: DecodeLimits, width: f32) -> Result<Pixmap, String> {
+  let image = decode_static(path, limits)?;
+  let source_width = image.width().max(1);
+  let source_height = image.height().max(1);
+  let target_width = (width.round() as u32)
+    .clamp(1, limits.max_dimension)
+    .min(source_width);
+  let target_height =
+    ((u64::from(source_height) * u64::from(target_width)) / u64::from(source_width)).max(1) as u32;
+  let image = if target_width == source_width {
+    image
+  } else {
+    imageops::resize(
+      &image,
+      target_width,
+      target_height,
+      imageops::FilterType::Lanczos3,
+    )
+  };
+  to_pixmap(image).ok_or_else(|| "image dimensions are not representable".to_string())
+}
+
 /// Decodes a still image into RGBA. The caller must not change its size.
 pub fn decode_static(path: &Path, limits: DecodeLimits) -> Result<RgbaImage, String> {
   check_file(path, limits)?;
@@ -419,6 +448,20 @@ mod tests {
     )
     .unwrap();
     assert_eq!((loaded.width(), loaded.height()), (16, 16));
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+
+  #[test]
+  fn a_decor_image_is_scaled_once_at_load() {
+    let dir = std::env::temp_dir().join(format!("dawn-decor-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("wing.png");
+    let mut source = tiny_skia::Pixmap::new(64, 32).unwrap();
+    source.fill(tiny_skia::Color::from_rgba8(10, 20, 30, 255));
+    source.save_png(&path).unwrap();
+
+    let loaded = super::load_scaled_width(&path, DecodeLimits::default(), 16.0).unwrap();
+    assert_eq!((loaded.width(), loaded.height()), (16, 8));
     let _ = std::fs::remove_dir_all(&dir);
   }
 

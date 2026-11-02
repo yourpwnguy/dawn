@@ -1,6 +1,6 @@
 [package]
 name = "dawn"
-version = "0.6.1"
+version = "0.6.3"
 edition = "2024"
 rust-version = "1.89"
 description = "A GPU-composited greetd login greeter with animated wallpapers, themes, widgets, and declarative plugins"
@@ -48,6 +48,15 @@ tempfile = "3"
 # Theme bundles are validated and copied with an explicit symlink policy.
 # WalkDir is battle-tested and keeps that logic small.
 walkdir = "2"
+
+# Audio goes straight to ALSA because a greeter starts before the session's
+# sound server exists. libasound is a build and runtime dependency; see
+# docs/installation.md.
+alsa = "0.12.1"
+
+# Audio decoding stays pure Rust so a theme cannot pull in a C codec stack.
+lewton = "0.10.2"
+hound = "3.5.1"
 
 # `dawn dev` hot reload. notify is the standard inotify wrapper, owned by the
 # notify-rs org; the pinned 8.x line is the newest stable release. If the

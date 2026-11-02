@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="1080" viewBox="0 0 980 1080">
+  <defs>
+    <linearGradient id="wing" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#090606" stop-opacity="0.94"/>
+      <stop offset="0.42" stop-color="#090606" stop-opacity="0.90"/>
+      <stop offset="0.68" stop-color="#090606" stop-opacity="0.66"/>
+      <stop offset="0.88" stop-color="#090606" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#090606" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="halftone" width="14" height="14" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="1.1" fill="#E6CBC0" opacity="0.05"/>
+      <circle cx="10" cy="10" r="0.8" fill="#A06462" opacity="0.06"/>
+    </pattern>
+    <linearGradient id="dots-fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#E6CBC0" stop-opacity="0.55"/>
+      <stop offset="0.75" stop-color="#E6CBC0" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="dots-mask">
+      <rect width="700" height="1080" fill="url(#dots-fade)"/>
+    </mask>
+  </defs>
+  <rect width="980" height="1080" fill="url(#wing)"/>
+  <rect width="700" height="1080" fill="url(#halftone)" mask="url(#dots-mask)"/>
+  <rect x="61" y="112" width="2" height="828" fill="#E80023" opacity="0.32"/>
+  <rect x="68" y="112" width="1" height="828" fill="#A4001A" opacity="0.60"/>
+  <rect x="61" y="112" width="22" height="2" fill="#E6CBC0" opacity="0.30"/>
+  <rect x="61" y="938" width="22" height="2" fill="#E6CBC0" opacity="0.30"/>
+</svg>

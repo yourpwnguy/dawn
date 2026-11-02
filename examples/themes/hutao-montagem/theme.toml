@@ -1,6 +1,9 @@
 schema = 1
 id = "hutao-montagem"
-name = "After Dark: The Stage Call"
-version = "2.0.0"
-description = "A cardless concert-poster login: hard-cut crimson stage, inline poster headline, hairline credential rules, support-act marquee, keystroke pop, and a butterfly success burst."
+name = "After Dark: Stage Call - Encore"
+version = "3.0.0"
+description = "A rhythm-game encore: crimson splash card, beat-clocked marquee and dust, stage-gear fields, a rejection glitch, and an ENCORE finisher."
 preview = "preview.webp"
+
+[engine]
+min = "0.6.3"

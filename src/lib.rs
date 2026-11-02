@@ -23,6 +23,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod app;
+pub mod audio;
 pub mod auth;
 pub mod cli;
 pub mod color;
@@ -33,9 +34,11 @@ pub mod fsutil;
 pub mod init;
 pub mod layout;
 pub mod plugin;
+pub mod rituals;
 pub mod secret;
 pub mod session;
 pub mod sysinfo;
 pub mod theme;
 pub mod tty;
 pub mod ui;
+pub mod user;

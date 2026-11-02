@@ -142,6 +142,23 @@ A warning means a config key, plugin, or wallpaper could not be used and dawn
 fell back. The login remains usable. Run `--check-config` and read the named
 key. Warnings are intentionally short on screen so they cannot cover the form.
 
+## No sound
+
+- Sound is on by default. Check `dawn --check-config` for the `audio:` line:
+  `enabled=false` means the machine config muted it, and `events=0` with
+  `ambient=none` means the selected theme has no sound.
+- Run `dawn audio devices` and `dawn audio test --device NAME` as the greeter
+  user. `default` is often a PipeWire or PulseAudio plugin that works in your
+  desktop session but not at boot. An explicit name such as `hw:0,0` or
+  `sysdefault:CARD=Generic` is more reliable. Put the name that prints
+  `opened ... at ... Hz` in `[audio].device` only when `auto` picked wrong.
+- `device = "auto"` ranks ALSA hints for an analog output and keeps `default` last.
+- Key clicks are capped at 12 per second, and a theme's `cooldown_ms` can
+  silence rapid repeats.
+- `DAWN_AUDIO=0` mutes one run. Use it while debugging anything else.
+- Formats are `.ogg` and `.wav` only, with the size limits in
+  [audio.md](audio.md).
+
 ## Reporting a problem
 
 Include:

@@ -26,6 +26,27 @@ impl TextInput {
     }
   }
 
+  /// Starts with `value` already typed and the caret at the end. The login
+  /// prefill uses this for the account name; passwords never do.
+  #[must_use]
+  pub fn with_value(value: String, max_chars: usize) -> Self {
+    let mut text = Zeroizing::new(value);
+    if text.chars().count() > max_chars {
+      let keep = text
+        .char_indices()
+        .nth(max_chars)
+        .map_or(text.len(), |(index, _)| index);
+      text.truncate(keep);
+    }
+    text.retain(|ch| !ch.is_control());
+    let cursor = text.len();
+    Self {
+      text,
+      cursor,
+      max_chars,
+    }
+  }
+
   #[must_use]
   pub fn value(&self) -> &str {
     &self.text
@@ -217,6 +238,21 @@ mod tests {
     input.clear();
     assert!(input.is_empty());
     assert_eq!(input.cursor(), 0);
+  }
+
+  #[test]
+  fn a_prefill_lands_at_the_end_and_is_bounded() {
+    let mut input = TextInput::with_value("alice".to_string(), 4);
+    assert_eq!(input.value(), "alic");
+    assert_eq!(input.cursor(), 4);
+    input.insert('!');
+    assert_eq!(input.value(), "alic");
+  }
+
+  #[test]
+  fn a_prefill_drops_control_characters() {
+    let input = TextInput::with_value("a\nb".to_string(), 8);
+    assert_eq!(input.value(), "ab");
   }
 
   #[test]

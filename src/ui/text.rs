@@ -95,6 +95,45 @@ impl Area {
   }
 }
 
+/// One shaped line. The position and colour are deliberately not part of the
+/// key: the same shaped buffer can be painted at a new x for a scrolling ticker
+/// and in a new colour during a hover, without shaping it again.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TextKey {
+  text: String,
+  size: u32,
+  width: u32,
+  weight: u32,
+  tracking: u32,
+  wrap: bool,
+  align: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct MeasureKey {
+  text: String,
+  size: u32,
+  width: u32,
+  weight: u32,
+  tracking: u32,
+  wrap: bool,
+}
+
+struct CachedLine {
+  buffer: Buffer,
+  height: f32,
+}
+
+fn align_key(align: Align) -> u8 {
+  match align {
+    Align::Left => 0,
+    Align::Right => 1,
+    Align::Center => 2,
+    Align::Justified => 3,
+    Align::End => 4,
+  }
+}
+
 /// Owns the font database and glyph cache. Creating this is the expensive part
 /// of startup, so it is built once and reused for every frame.
 pub struct TextEngine {
@@ -104,6 +143,13 @@ pub struct TextEngine {
   /// Ink bounds are requested every frame for the fields and the button, so a
   /// small cache avoids re-shaping the same placeholder twice.
   ink_cache: HashMap<(String, u32, u32, u32), (f32, f32)>,
+  /// Shaped buffers for static UI text and the ticker. At fullscreen this is
+  /// the difference between a 16 ms card pass and a few milliseconds: the
+  /// overlay is rebuilt when decor moves, but most of the text does not.
+  line_cache: HashMap<TextKey, CachedLine>,
+  /// Width and height of measured runs. Card layout asks for the same field
+  /// measurements on every frame.
+  measure_cache: HashMap<MeasureKey, (f32, f32)>,
 }
 
 impl std::fmt::Debug for TextEngine {
@@ -132,6 +178,8 @@ impl TextEngine {
       swash_cache: SwashCache::new(),
       family,
       ink_cache: HashMap::new(),
+      line_cache: HashMap::new(),
+      measure_cache: HashMap::new(),
     }
   }
 
@@ -187,6 +235,17 @@ impl TextEngine {
     if text.is_empty() || max_width <= 0.0 {
       return (0.0, line_height(size));
     }
+    let key = MeasureKey {
+      text: text.to_string(),
+      size: size.to_bits(),
+      width: max_width.max(1.0).to_bits(),
+      weight: u32::from(weight.0),
+      tracking: tracking.to_bits(),
+      wrap,
+    };
+    if let Some(bounds) = self.measure_cache.get(&key) {
+      return *bounds;
+    }
     let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_height(size)));
     buffer.set_size(Some(max_width.max(1.0)), None);
     buffer.set_wrap(if wrap { Wrap::WordOrGlyph } else { Wrap::None });
@@ -199,7 +258,12 @@ impl TextEngine {
       width = width.max(run.line_w);
       height = height.max(run.line_top + run.line_height);
     }
-    (width, height.max(line_height(size)))
+    let bounds = (width, height.max(line_height(size)));
+    if self.measure_cache.len() >= 256 {
+      self.measure_cache.clear();
+    }
+    self.measure_cache.insert(key, bounds);
+    bounds
   }
 
   /// Vertical ink bounds of a single line, relative to the text area's top.
@@ -292,14 +356,36 @@ impl TextEngine {
 
     let left = area.x.round() as i32;
     let top = area.y.round() as i32;
-    let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_height(size)));
-    buffer.set_size(Some(area.width.max(1.0)), None);
-    buffer.set_wrap(if wrap { Wrap::WordOrGlyph } else { Wrap::None });
-    let attrs = self.attrs(style.weight, style.tracking);
-    buffer.set_text(text, &attrs, Shaping::Advanced, Some(area.align));
+    let key = TextKey {
+      text: text.to_string(),
+      size: size.to_bits(),
+      width: area.width.max(1.0).to_bits(),
+      weight: u32::from(style.weight.0),
+      tracking: style.tracking.to_bits(),
+      wrap,
+      align: align_key(area.align),
+    };
+    // Remove before drawing so the cache is not borrowed while the font and
+    // glyph caches are mutable. The entry goes straight back afterwards.
+    let mut entry = match self.line_cache.remove(&key) {
+      Some(entry) => entry,
+      None => {
+        let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, line_height(size)));
+        buffer.set_size(Some(area.width.max(1.0)), None);
+        buffer.set_wrap(if wrap { Wrap::WordOrGlyph } else { Wrap::None });
+        let attrs = self.attrs(style.weight, style.tracking);
+        buffer.set_text(text, &attrs, Shaping::Advanced, Some(area.align));
+        buffer.shape_until_scroll(&mut self.font_system, false);
+        let height = buffer
+          .layout_runs()
+          .map(|run| run.line_top + run.line_height)
+          .fold(0.0, f32::max);
+        CachedLine { buffer, height }
+      }
+    };
 
     let cosmic_color = to_cosmic(style.color);
-    buffer.draw(
+    entry.buffer.draw(
       &mut self.font_system,
       &mut self.swash_cache,
       cosmic_color,
@@ -308,10 +394,12 @@ impl TextEngine {
       },
     );
 
-    buffer
-      .layout_runs()
-      .map(|run| run.line_top + run.line_height)
-      .fold(0.0, f32::max)
+    let height = entry.height;
+    if self.line_cache.len() >= 128 {
+      self.line_cache.clear();
+    }
+    self.line_cache.insert(key, entry);
+    height
   }
 
   fn attrs(&self, weight: Weight, tracking: f32) -> Attrs<'_> {

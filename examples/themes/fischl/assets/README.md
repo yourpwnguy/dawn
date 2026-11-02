@@ -78,3 +78,13 @@ rsvg-convert -w 1520 -h 1800 -o banner@2x.png banner.svg
   illustrations, so they stay readable at small sizes.
 - Every PNG has an alpha channel and was rendered at the exact viewBox size.
   No filters or text elements are used, so the assets stay portable.
+
+
+## Audio
+
+`audio/key.wav`, `audio/success.wav`, and `audio/failure.wav` are the shared
+starter cues. They are original synthesis and are mixed low enough for a login
+screen. Replace them with your own files under the same names, or remove the
+`[audio.events.*]` tables from `config.toml` for a silent theme. The wallpaper
+track is used as the ambient bed when the clip has one and
+`[background].audio = true`.

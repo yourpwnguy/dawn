@@ -34,3 +34,13 @@ rsvg-convert -o crest.png crest.svg
 
 The wallpaper (`examples/themes/hutao-chibi/wallpaper.mp4`) is example media, not
 part of the drawn asset pack. Check its provenance before redistributing it.
+
+
+## Audio
+
+`audio/key.wav`, `audio/success.wav`, and `audio/failure.wav` are the shared
+starter cues. They are original synthesis and are mixed low enough for a login
+screen. Replace them with your own files under the same names, or remove the
+`[audio.events.*]` tables from `config.toml` for a silent theme. The wallpaper
+track is used as the ambient bed when the clip has one and
+`[background].audio = true`.

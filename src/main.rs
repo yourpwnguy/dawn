@@ -36,6 +36,8 @@ fn main() -> ExitCode {
 
   let cli = match command {
     Command::Theme(command) => return dawn::theme::cli::run(command),
+    Command::Rituals(command) => return dawn::rituals::run_cli(command),
+    Command::Audio(command) => return dawn::audio::run_cli(command),
     Command::Init(command) => return dawn::init::run(command),
     Command::Dev(command) => {
       init_logging(false);
@@ -74,10 +76,12 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<ExitCode> {
   let mut loaded = config::load(cli.config.as_deref());
-  // A theme bundle replaces the whole config, but the GPU belongs to the
-  // machine, not to the theme. Save the host table before selection and put it
-  // back afterwards so `--theme` can never change which adapter boots.
+  // A theme bundle replaces the whole config, but the GPU and the audio policy
+  // belong to the machine, not to the theme. Save both before selection and put
+  // them back afterwards so `--theme` can never change the adapter or turn
+  // sound on.
   let host_gpu = loaded.config.gpu.clone();
+  let host_audio = loaded.config.audio.policy();
   if let Some(id) = cli.theme.as_deref() {
     loaded = load_theme(id).unwrap_or_else(|| {
       let mut fallback = config::load(None);
@@ -91,12 +95,15 @@ fn run(cli: Cli) -> Result<ExitCode> {
     });
   }
   loaded.config.gpu = host_gpu;
+  loaded.config.audio.apply_policy(&host_audio);
   let mut config = loaded.config.clone();
   config.gpu.apply_env();
+  config.audio.apply_env();
   // Keep the diagnostics view in sync with the env override. The fields below
   // read `loaded.config`, and an admin running `--check-config` should see the
   // adapter policy that will actually be used.
   loaded.config.gpu = config.gpu.clone();
+  loaded.config.audio = config.audio.clone();
   if cli.fullscreen {
     config.ui.fullscreen = true;
   }
@@ -162,6 +169,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
     dawn::tty::run(&config, &sessions, cli.dry_run).context("terminal login failed")?
   } else {
     let window_config = config.clone();
+    let audio = dawn::audio::AudioHandle::start(&config.audio);
     match window::run(
       window_config,
       sessions.clone(),
@@ -169,6 +177,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
       warning,
       cli.dry_run,
       config.ui.fullscreen,
+      audio,
     ) {
       Ok(finish) => finish,
       Err(error) => {
@@ -213,6 +222,8 @@ fn check_config(loaded: &LoadedConfig, sessions: &[Session], report: &Report) ->
     None => println!("config: built-in defaults (no file found)"),
   }
   println!("gpu: {}", loaded.config.gpu.summary());
+  println!("audio: {}", loaded.config.audio.summary());
+  println!("rituals: {}", loaded.config.rituals.summary());
 
   if loaded.issues.is_empty() {
     println!("issues: none");
