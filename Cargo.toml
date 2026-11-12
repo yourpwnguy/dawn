@@ -62,7 +62,7 @@ hound = "3.5.1"
 # notify-rs org; the pinned 8.x line is the newest stable release. If the
 # watcher cannot start, dev falls back to its own mtime poller, so this
 # dependency can never make the studio unusable.
-notify = "=8.2.1"
+notify = "=8.2.2"
 
 # Credentials live in zeroizing buffers; nothing else holds them.
 zeroize = "1.8"
