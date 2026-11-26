@@ -107,7 +107,7 @@ jobs:
         # EmbarkStudios/cargo-deny-action v2.1.1. Runs advisories, bans,
         # licenses, and sources against deny.toml, with the same cargo-deny
         # version this repository was checked against locally.
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25
+        uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd
         with:
           command: check
           arguments: --all-features
